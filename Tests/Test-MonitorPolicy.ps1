@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference='Stop'
 $base=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName System.Drawing
-Add-Type -Path (Join-Path $base 'Native/DeskPagesMonitorPolicy.cs')
+Add-Type -Path (Join-Path $base 'Native/DeskPagesMonitorPolicy.cs') -ReferencedAssemblies @([Drawing.Rectangle].Assembly.Location)
 $main=[Drawing.Rectangle]::new(0,0,1920,1040);$right=[Drawing.Rectangle]::new(1920,0,2560,1400);$left=[Drawing.Rectangle]::new(-1920,0,1920,1040)
 foreach($other in @($left,$right)){
  $areas=[Drawing.Rectangle[]]@($main,$other)
