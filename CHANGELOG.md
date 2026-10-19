@@ -1,3 +1,13 @@
+# Changelog
+
+## 0.8.9 — Interactive quick start
+
+- New installations begin with Main only; existing organization is preserved on upgrade.
+- A non-overlapping coach highlights the actual Add Page button and advances only after a successful add.
+- Redesigned animated touchpad/keyboard cards, EN/AR/HE, reduced motion and replay from Settings.
+- Added policy stress and real-control fixtures; published screenshots use fixture data.
+- Release automation handles UTF-8 BOM version files and updates the README EXE link only after successful publication.
+
 ﻿## 0.8.8 preview — navigation feedback
 
 - Acknowledge accepted page navigation before source layout verification/capture.

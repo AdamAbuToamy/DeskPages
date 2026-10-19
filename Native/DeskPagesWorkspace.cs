@@ -30,6 +30,8 @@ public static class DeskPagesWorkspaceApi {
         try{if(settings==null || settings.IsDisposed){settings=new DeskPagesSimpleSettings();settings.Show();settings.QueueRefresh();}else{settings.Show();settings.Activate();}}
         catch(Exception ex){DeskPagesStartupGate.Log("settings: "+ex.ToString());DeskPagesHost.ShowError(ex.Message);}
     }
+    public static void MaybeWelcome(){try{if(DeskPagesTourStore.Seen || Request==null)return;var rows=Execute("pages");int count=0;foreach(var row in rows){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")count++;}if(count<=1)StartTour();else DeskPagesTourStore.Mark();}catch(Exception ex){DeskPagesStartupGate.Log("welcome: "+ex.Message);}}
+    public static void StartTour(){if(settings!=null)settings.Hide();Open();if(window!=null && !window.IsDisposed)window.BeginTour();}
     public static void RefreshSettingsLanguage(){if(settings!=null){settings.Dispose();settings=null;}OpenSettings();}
     public static string[] Execute(string command,params string[] args){return DeskPagesHost.WorkspaceCommand(delegate{return Request(command,args)??new string[0];});}
     public static void PinSelected(bool pin){try{Execute(pin?"pin-selected":"unpin-selected");}catch(Exception ex){DeskPagesHost.ShowError(ex.Message);}}
@@ -53,9 +55,16 @@ public sealed class DeskPagesWorkspace:Form {
         pages.DoubleClick+=delegate{Go();};pages.KeyDown+=delegate(object sender,KeyEventArgs e){if(e.KeyCode==Keys.Enter){Go();e.Handled=true;}};
         pages.ContextMenuStrip=menu;pages.MouseDown+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Right){int index=pages.IndexFromPoint(e.Location);if(index>=0)pages.SelectedIndex=index;}};
         menu.Opening+=delegate{Safe(BuildMenu);};
-        var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=true,Margin=new Padding(0,10,0,0)};actions.Controls.Add(DeskPagesFluent.Button(L("Open","فتح","פתיחה"),Go,true));actions.Controls.Add(DeskPagesFluent.Button(L("+ Page","+ صفحة","+ דף"),delegate{Safe(delegate{DeskPagesWorkspaceApi.Execute("add",L("New page","صفحة جديدة","דף חדש"));RefreshData();});},false));actions.Controls.Add(DeskPagesFluent.Button(L("Settings","الإعدادات","הגדרות"),DeskPagesWorkspaceApi.OpenSettings,false));grid.Controls.Add(actions,0,2);
+        var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=true,Margin=new Padding(0,10,0,0)};actions.Controls.Add(DeskPagesFluent.Button(L("Open","فتح","פתיחה"),Go,true));addPage=DeskPagesFluent.Button(L("+ Page","+ صفحة","+ דף"),delegate{Safe(delegate{DeskPagesWorkspaceApi.Execute("add",L("New page","صفحة جديدة","דף חדש"));RefreshData();if(tour.PageAdded(rows.Count))ShowNavigation();});},false);actions.Controls.Add(addPage);actions.Controls.Add(DeskPagesFluent.Button(L("Settings","الإعدادات","הגדרות"),DeskPagesWorkspaceApi.OpenSettings,false));grid.Controls.Add(actions,0,2);
+        VisibleChanged+=delegate{if(!Visible){if(tour.Step>0)FinishTour();StopCoach();if(walkthrough!=null && !walkthrough.IsDisposed)walkthrough.Close();}};
         load.Tick+=delegate{load.Stop();RefreshData();};FormClosing+=delegate(object sender,FormClosingEventArgs e){if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}};
     }
+    private readonly DeskPagesTourPolicy tour=new DeskPagesTourPolicy();
+    private DeskPagesActionButton addPage;private DeskPagesTourCoach coach;private DeskPagesNavigationTour walkthrough;
+    public void BeginTour(){RefreshData();tour.Start(rows.Count);if(tour.Step==1){StopCoach();addPage.Primary=true;addPage.Invalidate();coach=new DeskPagesTourCoach(this,addPage,FinishTour);coach.Show(this);coach.Place();}else ShowNavigation();}
+    private void StopCoach(){if(coach!=null){coach.Dispose();coach=null;}if(addPage!=null){addPage.Primary=false;addPage.Invalidate();}}
+    private void FinishTour(){tour.Finish();StopCoach();DeskPagesTourStore.Mark();}
+    private void ShowNavigation(){StopCoach();if(walkthrough!=null && !walkthrough.IsDisposed){walkthrough.Activate();return;}walkthrough=new DeskPagesNavigationTour(FinishTour);walkthrough.Show(this);}
     private Page Selected(){if(pages.SelectedIndex<0 || pages.SelectedIndex>=rows.Count)throw new InvalidOperationException(L("Select a page.","اختر صفحة.","בחרו דף."));return rows[pages.SelectedIndex];}
     private void Safe(Action action){try{action();}catch(Exception ex){DeskPagesStartupGate.Log("pages: "+ex.ToString());DeskPagesHost.ShowError(ex.Message);}}
     private void Go(){Safe(delegate{DeskPagesWorkspaceApi.Execute("open",Selected().Id.ToString());Hide();});}
@@ -72,5 +81,5 @@ public sealed class DeskPagesWorkspace:Form {
         var text=new Rectangle(rtl?r.Left+12:r.Left+54,r.Top+9,r.Width-68,22);var flags=TextFormatFlags.SingleLine|TextFormatFlags.EndEllipsis|TextFormatFlags.VerticalCenter|(rtl?TextFormatFlags.Right|TextFormatFlags.RightToLeft:TextFormatFlags.Left);TextRenderer.DrawText(e.Graphics,p.Name,Font,text,DeskPagesTheme.Ink,flags);text.Y+=24;string status=p.Active?L("Current page","الصفحة الحالية","הדף הנוכחי"):p.Count+" "+L("items","عنصر","פריטים");if(p.Locked)status+=" · "+L("Locked","مقفلة","נעול");TextRenderer.DrawText(e.Graphics,status,Font,text,p.Active?DeskPagesTheme.Accent:DeskPagesTheme.Muted,flags);if((e.State&DrawItemState.Focus)!=0){r.Inflate(-3,-3);ControlPaint.DrawFocusRectangle(e.Graphics,r);}
     }
     public void OpenNearPointer(){var area=Screen.FromPoint(Cursor.Position).WorkingArea;Location=new Point(Math.Max(area.Left,Math.Min(Cursor.Position.X-Width+10,area.Right-Width)),Math.Max(area.Top,Math.Min(Cursor.Position.Y-Height-12,area.Bottom-Height)));Show();Activate();}
-    protected override void Dispose(bool disposing){if(disposing){load.Dispose();menu.Dispose();}base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing){StopCoach();if(walkthrough!=null)walkthrough.Dispose();load.Dispose();menu.Dispose();}base.Dispose(disposing);}
 }

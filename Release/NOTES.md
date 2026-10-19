@@ -1,4 +1,16 @@
-﻿# DeskPages 0.8.8 — Navigation feedback preview
+# DeskPages 0.8.9 Alpha
+
+## Interactive quick start
+
+The first-run guide points to the real + Page button, then shows animated touchpad and Win + arrow examples. Replay it from Settings > Quick tour > Replay. New installations start with Main only; upgrades preserve existing pages. When multiple pages exist, replay skips adding another page.
+
+The guide supports English, Arabic, Hebrew and reduced motion. It does not enable disabled input settings; touchpad support depends on the device/driver.
+
+The UI was compiled and checked with isolated policy/real-control fixtures under Mono/Xvfb. Physical Windows installation, reboot, touchpad, Explorer/OLE and DPI/GPU behavior remain acceptance items. Windows CI results are available in Actions.
+
+## Existing Alpha guidance
+
+﻿# DeskPages 0.8.9 — Navigation feedback preview
 
 A focused visual update to the 0.8.7 Alpha:
 
@@ -8,7 +20,7 @@ A focused visual update to the 0.8.7 Alpha:
 - Rejected transitions show a short error cue. Stale completion signals cannot hide newer feedback.
 - A wider 18 logical-pixel white edge cue (previously 3 physical pixels), with a bright core and soft blue-white fill. Drag hit areas and dwell timing are unchanged.
 
-The capture/compositor, page transaction engine, file membership, visibility rules, drag IPC and drop placement algorithms are unchanged. Startup/install version metadata is 0.8.8.0.
+The capture/compositor, page transaction engine, file membership, visibility rules, drag IPC and drop placement algorithms are unchanged. Startup/install version metadata is 0.8.9.0.
 
 This is an unsigned preview. Portable regression tests and Mono/Xvfb UI rendering passed; actual Windows focus/capture/OLE and upgrade/reboot acceptance still require Windows. Do not interpret a simulated UI test as a physical touchpad, GPU or reboot certification.
 

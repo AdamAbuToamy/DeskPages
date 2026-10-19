@@ -1,0 +1,25 @@
+﻿using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
+public static class DeskPagesHost {public static string[] WorkspaceCommand(Func<string[]> action){return action();}public static void ShowError(string text){throw new Exception(text);}}
+public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
+public static class TourUiHarness {
+ static int count=1,adds,otherWrites;static string output;
+ static string[] Request(string command,string[] args){if(command=="pages"){var r=new string[count];for(int i=0;i<count;i++)r[i]=(i+1)+"\t"+(i==0?"Main":"New page")+"\t"+(i==0?71:0)+"\tFalse\tFalse\t"+(i==0);return r;}if(command=="add"){adds++;count++;return new string[0];}otherWrites++;throw new Exception("Tour issued unexpected command: "+command);}
+ static void Require(bool value,string message){if(!value)throw new Exception(message);}
+ static T Field<T>(object o,string name){return (T)o.GetType().GetField(name,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(o);}
+ static void Capture(Form f,string name){f.Refresh();Application.DoEvents();using(var b=new Bitmap(f.ClientSize.Width,f.ClientSize.Height)){using(var g=Graphics.FromImage(b))g.CopyFromScreen(f.PointToScreen(Point.Empty),Point.Empty,b.Size);b.Save(Path.Combine(output,name+".png"));}}
+ [STAThread]public static void Main(string[] args){output=args[0];Directory.CreateDirectory(output);bool markerExisted=File.Exists(DeskPagesTourStore.PathName);byte[] marker=markerExisted?File.ReadAllBytes(DeskPagesTourStore.PathName):null;try{Application.EnableVisualStyles();Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+ if(File.Exists(DeskPagesTourStore.PathName))File.Delete(DeskPagesTourStore.PathName);DeskPagesWorkspaceApi.Request=Request;DeskPagesWorkspaceApi.MaybeWelcome();Application.DoEvents();Require(Application.OpenForms.Count>=1,"Fresh install did not open guide");Require(adds==0 && otherWrites==0,"Auto guide mutated workspace");DeskPagesWorkspaceApi.Close();
+ var p=new DeskPagesTourPolicy();for(int i=0;i<10000;i++){p.Start(1);Require(p.Step==1 && !p.PageAdded(1),"Advances without a new page");Require(p.PageAdded(2) && p.Step==2 && !p.PageAdded(3),"Add progression incorrect");p.Finish();Require(p.Step==0,"Not finished");p.Start(5);Require(p.Step==2,"Replay must skip creating extra pages");}
+ foreach(string lang in new[]{"en","ar","he"}){count=1;adds=0;otherWrites=0;DeskPagesWorkspaceApi.Language=lang;DeskPagesWorkspaceApi.Request=Request;DeskPagesWorkspaceApi.ReduceMotion=false;
+ using(var owner=new DeskPagesWorkspace()){owner.Show();owner.Location=new Point(420,370);owner.RefreshData();owner.BeginTour();Application.DoEvents();Require(Field<DeskPagesTourCoach>(owner,"coach")!=null,"Missing coach");Require(adds==0 && otherWrites==0,"Opening tour mutated state");Capture(owner,lang+"-pages");var coach=Field<DeskPagesTourCoach>(owner,"coach");Capture(coach,lang+"-coach");Require(!coach.Bounds.IntersectsWith(owner.Bounds),"Coach covers the page list");var union=Rectangle.Union(owner.Bounds,coach.Bounds);union.Inflate(12,12);using(var b=new Bitmap(union.Width,union.Height)){using(var g=Graphics.FromImage(b))g.CopyFromScreen(union.Location,Point.Empty,b.Size);b.Save(Path.Combine(output,lang+"-guided.png"));}
+ Field<DeskPagesActionButton>(owner,"addPage").PerformClick();Application.DoEvents();Require(count==2 && adds==1 && otherWrites==0,"Real button did not add exactly one page");var nav=Field<DeskPagesNavigationTour>(owner,"walkthrough");Require(nav!=null && nav.Visible && Field<DeskPagesTourCoach>(owner,"coach")==null,"Did not advance after add");nav.Location=new Point(325,200);Capture(nav,lang+"-navigation");
+ for(int frame=0;frame<240;frame+=4){nav.Touchpad.SetPreviewFrame(frame);nav.Keyboard.SetPreviewFrame(frame);Capture(nav,lang+"-frame-"+frame.ToString("D3"));}
+ nav.Close();Require(DeskPagesTourStore.Seen,"Completion not persisted");owner.BeginTour();Application.DoEvents();Require(adds==1 && Field<DeskPagesNavigationTour>(owner,"walkthrough").Visible,"Replay created page or did not show");Field<DeskPagesNavigationTour>(owner,"walkthrough").Close();
+ DeskPagesWorkspaceApi.ReduceMotion=true;using(var reduced=new DeskPagesTourIllustration(false)){Require(!Field<Timer>(reduced,"timer").Enabled,"Reduced motion timer running");}
+ Require(adds==1 && otherWrites==0,"Tour changed preferences/files");}
+ }
+ DeskPagesWorkspaceApi.Request=Request;DeskPagesWorkspaceApi.MaybeWelcome();Require(Application.OpenForms.Count==0,"Completed guide opened again");
+ Console.WriteLine("PASS: automatic welcome / completion suppression; 10,000 policy cycles; EN/AR/HE real forms; actual add button; no implicit mutations; replay without duplicate page; persistence; reduced motion; frame capture; disposal.");
+ }finally{if(markerExisted)File.WriteAllBytes(DeskPagesTourStore.PathName,marker);else if(File.Exists(DeskPagesTourStore.PathName))File.Delete(DeskPagesTourStore.PathName);}
+ }
+}

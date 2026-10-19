@@ -1,95 +1,73 @@
 # DeskPages — Windows 11 Desktop Icon Organizer
 
-DeskPages organizes icons on your original Windows 11 desktop into separate pages for work, study and personal projects. Your files keep their original paths; your wallpaper, taskbar and open application windows stay in place.
+DeskPages organizes icons on your original Windows 11 desktop into separate pages for work, study and personal projects. Files keep their original paths; your wallpaper, taskbar and open application windows stay in place.
 
-Created by Adam Abu Toamy · Windows 11 x64 · Alpha preview
+Created by **Adam Abu Toamy** · **Windows 11 x64** · **Alpha**
 
-## Download DeskPages
+<!-- deskpages-download:start -->
+## Download
 
-**[Download DeskPages for Windows 11 from GitHub Releases](https://github.com/AdamAbuToamy/DeskPages/releases)**
+[**Download DeskPages 0.8.8 for Windows 11 x64 — EXE installer**](https://github.com/AdamAbuToamy/DeskPages/releases/download/v0.8.8-alpha.1/DeskPages-Setup-0.8.8.exe)
 
-Choose the `DeskPages-Setup-*.exe` installer in the release's **Assets** section. Read its release notes and checksums before installing.
+Published installer: **0.8.8 Alpha**. Source on `main`: **0.8.9** with the new interactive tour. The download is updated after the Windows release build passes.
+<!-- deskpages-download:end -->
 
-## تحميل ديسك باجيس — DeskPages
+You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
-برنامج لتنظيم أيقونات سطح مكتب ويندوز 11 في صفحات للعمل والدراسة والمشاريع. تبقى الملفات في مساراتها الأصلية، وتبقى الخلفية وشريط المهام والنوافذ المفتوحة كما هي.
+## What's new in 0.8.9
 
-**[تحميل DeskPages من إصدارات GitHub الرسمية](https://github.com/AdamAbuToamy/DeskPages/releases)** — افتح **Assets** واختر ملف `DeskPages-Setup-*.exe`.
+- A first-run guide points to the real **+ Page** button and advances after you add a page.
+- Two animated cards demonstrate a two-finger touchpad swipe and **Win + Left / Right**.
+- Replay from **Settings → Quick tour → Replay**.
+- New installations start with **Main** only. Upgrades preserve existing pages; replay skips the add-page step when multiple pages already exist.
+- English, Arabic and Hebrew, with reduced-motion support.
 
-<!-- deskpages-demo:start -->
-## Preview
+### Actual tour preview
+
+![DeskPages interactive tour](media/DeskPages-tour-0.8.9.gif)
+
+*Captured from the actual UI with test data under Mono/Xvfb. Windows fonts and window borders may differ.*
+
+## Getting started
+
+1. Run the installer, then click the DeskPages icon beside the clock.
+2. Add a page using **+ Page**, or follow the first-run guide.
+3. On the desktop, use **Win + Left / Right** or a supported two-finger horizontal swipe.
+4. Drag desktop files to an external screen edge to switch pages and place them.
+
+Touchpad support depends on the device and driver. The tour does not enable input options you have disabled.
+
+## Everyday features
+
+- Separate pages on the original Explorer desktop.
+- Slide animation, immediate navigation feedback and a translucent page indicator.
+- Drag icons between pages without changing their file paths.
+- Rename pages, lock icon positions and show selected icons on every page.
+- Save and restore a known-good icon arrangement.
+- Protected deletion: nonempty pages cannot be deleted.
+- A separate, compact settings window with automatic saving.
+- Extended-display animation and an optional **Main display only** mode.
+
+Internal monitor boundaries remain available for ordinary dragging. Use an external edge or keyboard navigation to switch pages.
+
+## ديسك باجيس — تنظيم سطح مكتب ويندوز
+
+ينظّم DeskPages أيقونات سطح مكتب ويندوز 11 في صفحات للعمل والدراسة والمشاريع، مع إبقاء الملفات في مساراتها الأصلية. الإصدار 0.8.9 يضيف جولة تفاعلية قصيرة ورسومًا متحركة لتوضيح التنقل. لإعادتها: **الإعدادات ← الجولة التفاعلية ← إعادة**. استخدم زر التحميل أعلى الصفحة.
+
+## Concept video
 
 https://github.com/user-attachments/assets/1604baac-4e1b-4fa8-92d0-7a5c943df32d
 
-*A short concept visualization of DeskPages.*
+*AI-generated concept visualization; the actual tour preview is shown above.*
 
-**[Download DeskPages for Windows 11 x64 - Alpha](https://github.com/AdamAbuToamy/DeskPages/releases)**
-<!-- deskpages-demo:end -->
+## Safety and privacy
 
+No account, telemetry or cloud upload. See [Privacy](PRIVACY.txt), [License](LICENSE.txt) and [Third-party notices](THIRD-PARTY-NOTICES.md).
 
-Small icon pages for the original Windows desktop. Created by Adam Abu Toamy.
-Version 0.8.8 Alpha.
+The app starts at sign-in on Main. Run `DeskPagesRescue.exe` if the agent is unavailable. Uninstall through Windows Settings; do not manually delete page metadata while icons are hidden. Saved arrangements contain organization and icon positions, not backups of file contents.
 
-This Alpha is unsigned. Windows may display an unknown-publisher or SmartScreen warning.
+## Validation and known limitations
 
-Run the installer, then click the tray icon to see your pages. Double-click a
-page or choose Open. Add a page with + Page. Right-click a page to rename it,
-lock its icon positions or delete an empty page. Previously archived pages can
-be restored from that same context menu.
+The tour has isolated policy and real-control tests in English, Arabic and Hebrew, including replay, completion persistence and reduced motion. Local UI evidence uses Mono/Xvfb. Real Windows installation, reboot, touchpad, Explorer/OLE, monitor/DPI and frame pacing require Windows acceptance; passing isolated tests is not a guarantee for every device.
 
-Settings is a separate compact window, also available from the tray menu. It
-uses Windows 11-inspired neutral surfaces, Segoe UI, setting rows and toggles.
-Its four basic switches cover touchpad gestures, edge dragging, animation and
-page-number feedback. Changes save automatically. Keyboard/reverse/reduced
-motion, new-file destination and Main display only are under More options.
-
-Useful desktop features:
-
-- Drag physical desktop files to a screen edge to switch pages and place them.
-- Select desktop shortcuts, then use the tray's Selected desktop icons menu to
-  show them on every page or return them to their assigned page.
-- Save a known-good arrangement in Settings, then explicitly restore it later.
-  It includes page organization and icon positions, not file contents. Newer
-  files remain managed on Main. Restoring does not roll back current app
-  interaction/language preferences. Saving again replaces the saved point.
-- Files retain their original paths. Page deletion still refuses nonempty pages.
-
-Search, rules, operation history and diagnostic dashboards are absent from the
-daily interface. Existing organization metadata is preserved during upgrades.
-
-Extended displays use per-monitor clipped slides. Main display only keeps icons
-on other screens visible at their current positions while the primary page changes.
-Move an icon onto the main screen to make it page-specific again. On disconnection,
-icons belonging to the current page are fitted onto the remaining display; the
-saved display profile is retained for reconnection. Internal screen boundaries
-are not page-drag targets. Use external edges or keyboard navigation.
-
-Settings changes validate and atomically write preferences without running a
-Desktop visibility/layout transaction. Display-scope changes use a verified
-workspace transaction because they change what is visible. The saved manual arrangement is separate
-from rolling operation history.
-
-Run DeskPagesRescue.exe if the agent is unavailable. Uninstall through Windows
-Settings; do not manually delete local page metadata while icons are hidden.
-The app starts at sign-in on Main. It does not run before Windows or in BIOS.
-
-No account, telemetry or cloud upload. See PRIVACY.txt, LICENSE.txt and
-THIRD-PARTY-NOTICES.md. The installer is unsigned unless independently verified;
-the author name is not a trusted digital signature.
-
-This preview has isolated logic/file/crash tests and Mono/Xvfb UI evidence.
-Actual Windows installation, reboot, touchpad, Explorer/OLE, monitor/DPI and
-frame-pacing acceptance are not certified here. See Release/ACCEPTANCE.md.
-
-Automated tests: `Validate.cmd`. A real Windows DWM simulator can test two virtual
-regions on one physical screen: `Simulate-Monitors.cmd`. No display-driver changes
-or virtual-display software is required. CI/release instructions: [BUILD](Release/BUILD.md).
-Known limitations and Alpha notes: [release notes](Release/NOTES.md).
-
-<!-- deskpages-feedback-088 -->
-
-### Navigation feedback
-
-DeskPages acknowledges page navigation immediately with a translucent
-page indicator that stays visible until the transition completes.
-Edge dragging uses a wider illuminated cue.
+Run `Validate.cmd` for automated checks and `Simulate-Monitors.cmd` for the interactive monitor-region simulator. See [Build instructions](Release/BUILD.md), [Acceptance checklist](Release/ACCEPTANCE.md) and [Release notes](Release/NOTES.md).

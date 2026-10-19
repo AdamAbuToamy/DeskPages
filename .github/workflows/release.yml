@@ -41,7 +41,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   publish:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -59,9 +59,44 @@ jobs:
           cd dist
           sha256sum -c SHA256SUMS.txt
           cd ..
-                    tag="v$(sed '1s/^\xEF\xBB\xBF//; s/^DeskPages //' VERSION.txt | tr -d '\r\n')-alpha.1"
+          version="$(python3 -c 'from pathlib import Path; import re; text=Path("VERSION.txt").read_text(encoding="utf-8-sig").strip(); match=re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)",text); assert match, "Invalid VERSION.txt"; print(match.group(1))')"
+          tag="v${version}-alpha.1"
+          git check-ref-format "refs/tags/$tag"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag is already published; leaving its assets unchanged."
+            exit 0
+          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag -a "$tag" -m "DeskPages engineering preview" "$GITHUB_SHA"
-          git push origin "$tag"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$tag:refs/tags/$tag"
+            test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA" || { echo "Existing tag points to a different commit"; exit 1; }
+          else
+            git tag -a "$tag" -m "DeskPages engineering preview" "$GITHUB_SHA"
+            git push origin "$tag"
+          fi
           gh release create "$tag" dist/DeskPages-Setup-*.exe dist/DeskPages-Source-*.zip dist/SHA256SUMS.txt --verify-tag --prerelease --latest=false --title "DeskPages ${tag#v} · Alpha" --notes-file Release/NOTES.md
+      - name: Update README download after successful publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, re, subprocess
+          from pathlib import Path
+          version = re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)", Path("VERSION.txt").read_text(encoding="utf-8-sig").strip()).group(1)
+          tag = f"v{version}-alpha.1"
+          metadata = json.loads(subprocess.check_output(["gh", "api", "repos/{owner}/{repo}/contents/README.md?ref=main"]))
+          text = base64.b64decode(metadata["content"]).decode("utf-8")
+          block = f"""<!-- deskpages-download:start -->
+          ## Download
+
+          [**Download DeskPages {version} for Windows 11 x64 — EXE installer**](https://github.com/AdamAbuToamy/DeskPages/releases/download/{tag}/DeskPages-Setup-{version}.exe)
+
+          Published installer and source: **{version} Alpha**.
+          <!-- deskpages-download:end -->"""
+          text, count = re.subn(r"<!-- deskpages-download:start -->.*?<!-- deskpages-download:end -->", lambda _: block, text, flags=re.S)
+          assert count == 1, "README download section missing or duplicated"
+          body = {"message": f"Update download to DeskPages {version} [skip ci]", "branch": "main", "sha": metadata["sha"], "content": base64.b64encode(text.encode("utf-8")).decode("ascii")}
+          subprocess.run(["gh", "api", "--method", "PUT", "repos/{owner}/{repo}/contents/README.md", "--input", "-"], input=json.dumps(body).encode(), check=True)
+          PY

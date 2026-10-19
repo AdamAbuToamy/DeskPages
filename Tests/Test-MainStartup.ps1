@@ -24,7 +24,7 @@ try {
  $desktop=Join-Path $root 'Desktop';$common=Join-Path $root 'Public';New-Item -ItemType Directory -Path $desktop,$common | Out-Null
  [IO.File]::WriteAllText((Join-Path $desktop 'code.txt'),'unchanged');[IO.File]::WriteAllText((Join-Path $common 'app.lnk'),'shortcut')
  $initial=New-DpInitialState -Desktop $desktop -PublicDesktop $common -SystemBackup @()
- if($initial.Current -ne 1 -or $initial.Items.Count -ne 2 -or @($initial.Items | Where-Object Page -ne 1).Count){throw 'Incorrect first-run membership'}
+ if($initial.PageCount -ne 1 -or @($initial.Pages).Count -ne 1 -or $initial.Current -ne 1 -or $initial.Items.Count -ne 2 -or @($initial.Items | Where-Object Page -ne 1).Count){throw 'Incorrect first-run membership'}
  if([IO.File]::ReadAllText((Join-Path $desktop 'code.txt')) -ne 'unchanged'){throw 'First run mutated file'}
  Write-Host 'PASS: generic first run preserves paths and contents'
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
