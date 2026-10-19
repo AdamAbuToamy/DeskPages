@@ -14,7 +14,11 @@ try{
         $arguments=@('-NoProfile','-File',(Join-Path $PSScriptRoot $test))
         if($test -eq 'Test-Workspace.ps1'){$arguments+=@('-Rounds',$(if($Stress){$Rounds}else{30}),'-ItemCount',$(if($Stress){$ItemCount}else{100}))}
         $watch=[Diagnostics.Stopwatch]::StartNew()
-        $output=(& $exe @arguments 2>&1 | Out-String);$exitCode=$LASTEXITCODE
+        # PowerShell 5.1 promotes native stderr to ErrorRecord. Capture the full
+        # child report and exit code before restoring the parent's fail-fast policy.
+        $previousPreference=$ErrorActionPreference
+        try{$ErrorActionPreference='Continue';$output=(& $exe @arguments 2>&1 | Out-String);$exitCode=$LASTEXITCODE}
+        finally{$ErrorActionPreference=$previousPreference}
         Write-Host $output.TrimEnd()
         $results.Add([PSCustomObject]@{Test=$test;ExitCode=$exitCode;Milliseconds=$watch.ElapsedMilliseconds;Status=$(if($exitCode -ne 0){'FAIL'}elseif($output -match '(?m)^SKIP:'){'PARTIAL_OR_SKIP'}else{'PASS'});Output=$output})
         $results | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath ($report+'.json') -Encoding UTF8

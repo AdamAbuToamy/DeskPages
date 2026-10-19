@@ -3,6 +3,17 @@
 Small icon pages for the original Windows desktop. Created by Adam Abu Toamy.
 Version 0.8.7 preview.
 
+## Download
+
+**[⬇ Download for Windows 11 x64 — Alpha](https://github.com/AdamAbuToamy/DeskPages/releases)**
+
+Open a published release and choose **DeskPages-Setup-0.8.7.exe** under **Assets**.
+You only need the EXE installer; the source ZIP is optional for developers.
+If no release with an EXE is listed yet, the installer has not been published.
+[Check release build status](https://github.com/AdamAbuToamy/DeskPages/actions).
+
+This Alpha is unsigned. Windows may display an unknown-publisher or SmartScreen warning.
+
 Run the installer, then click the tray icon to see your pages. Double-click a
 page or choose Open. Add a page with + Page. Right-click a page to rename it,
 lock its icon positions or delete an empty page. Previously archived pages can

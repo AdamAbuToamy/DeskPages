@@ -7,6 +7,8 @@ public static class DeskPagesLayout {public static TestSpacing Spacing(object va
 '@
 . (Join-Path $base 'StateEngine.ps1');. (Join-Path $base 'Workspace.ps1');. (Join-Path $base 'WorkspaceCommands.ps1');. (Join-Path $base 'NewItemPlacement.ps1')
 function Assert($Pass,$Reason){if(-not $Pass){throw $Reason}}
+# Isolated fixture identity on every OS; no production COM/native type is loaded.
+function Get-DpWorkspaceIdentity {param([string]$Path) if(Test-Path -LiteralPath $Path){return [IO.File]::GetCreationTimeUtc($Path).Ticks.ToString()};return ''}
 function Get-DpMonitorGeometry {return $script:screens}
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-monitor-'+[guid]::NewGuid().ToString('N'))
 try{

@@ -11,6 +11,8 @@ public static class OriginalDesktopReader {public static object[] Icons;public s
 function Save-DpVerifiedSourceLayout {param($Page)}
 function Publish-DpWorkspacePreferences {}
 function Write-DpLog {param($Message)}
+# Isolated fixture identity on every OS; no production COM/native type is loaded.
+function Get-DpWorkspaceIdentity {param([string]$Path) if(Test-Path -LiteralPath $Path){return [IO.File]::GetCreationTimeUtc($Path).Ticks.ToString()};return ''}
 function Get-DpMonitorGeometry {return $script:screens}
 function Resume-DpCommittedPage {
  $page=[int]$script:DpState.Current
