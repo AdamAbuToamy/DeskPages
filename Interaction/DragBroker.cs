@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -12,8 +13,8 @@ using System.Windows.Forms;
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
 [assembly:AssemblyCopyright("Copyright 2026 Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.7.0")]
-[assembly:AssemblyFileVersion("0.8.7.0")]
+[assembly:AssemblyVersion("0.8.8.0")]
+[assembly:AssemblyFileVersion("0.8.8.0")]
 
 // Runs with Explorer's normal user token. An elevated process cannot accept
 // Explorer OLE drops across UIPI; this process never changes files or attributes.
@@ -57,7 +58,7 @@ internal sealed class DragBroker:ApplicationContext {
         mouseHook=OnMouse;keyHook=OnKey;
         mouseHandle=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
         if(mouseHandle==IntPtr.Zero || keyHandle==IntPtr.Zero)throw new InvalidOperationException("Drag input unavailable");
-        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.7");
+        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.8");
     }
     private long preferenceRead;
     private void Tick(){
@@ -202,17 +203,30 @@ internal sealed class DragBroker:ApplicationContext {
         }
     }
     private sealed class EdgeCue:Form {
+        private int edgeDirection;
         public long PresentedAt{get;private set;}
-        public EdgeCue(){FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;StartPosition=FormStartPosition.Manual;BackColor=Color.White;Opacity=0.55;Enabled=false;}
+        public EdgeCue(){FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;StartPosition=FormStartPosition.Manual;BackColor=Color.FromArgb(233,240,250);Opacity=0.80;Enabled=false;SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);}
         protected override bool ShowWithoutActivation{get{return true;}}
         protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x080000A0;return p;}}
         protected override void WndProc(ref Message m){if(m.Msg==0x84){m.Result=new IntPtr(-1);return;}if(m.Msg==0x21){m.Result=new IntPtr(3);return;}base.WndProc(ref m);}
         public void Present(Rectangle area,int direction){
-            var bounds=new Rectangle(direction<0?area.Left:area.Right-3,area.Top,3,area.Height);
+            int width=Math.Max(16,(int)Math.Round(18.0*DeviceDpi/96));
+            edgeDirection=direction;
+            var bounds=new Rectangle(direction<0?area.Left:area.Right-width,area.Top,width,area.Height);
             if(Visible && Bounds==bounds)return;
             IntPtr desktop=Desktop();if(desktop==IntPtr.Zero)return;
             PresentedAt=Now();Bounds=bounds;Show();IntPtr after=GetWindow(desktop,3);if(after==Handle)after=GetWindow(Handle,3);
             SetWindowPos(Handle,after,bounds.X,bounds.Y,bounds.Width,bounds.Height,0x0010|0x0040);
+        }
+        protected override void OnPaint(PaintEventArgs e){
+            base.OnPaint(e);if(Width<2 || Height<2)return;
+            using(var fill=new LinearGradientBrush(ClientRectangle,Color.White,Color.FromArgb(213,226,246),LinearGradientMode.Horizontal)){
+                if(edgeDirection>0)fill.LinearColors=new[]{Color.FromArgb(213,226,246),Color.White};
+                e.Graphics.FillRectangle(fill,ClientRectangle);
+            }
+            int core=Math.Max(3,Width/4);
+            using(var white=new SolidBrush(Color.White))e.Graphics.FillRectangle(white,edgeDirection<0?0:Width-core,0,core,Height);
+            using(var border=new Pen(Color.FromArgb(148,166,190),1))e.Graphics.DrawLine(border,edgeDirection<0?Width-1:0,0,edgeDirection<0?Width-1:0,Height);
         }
     }
     private static IntPtr Desktop(){IntPtr found=IntPtr.Zero;EnumWindows(delegate(IntPtr h,IntPtr p){if(FindWindowExW(h,IntPtr.Zero,"SHELLDLL_DefView",null)==IntPtr.Zero)return true;found=h;return false;},IntPtr.Zero);return found;}

@@ -1,3 +1,12 @@
+﻿## 0.8.8 preview — navigation feedback
+
+- Acknowledge accepted page navigation before source layout verification/capture.
+- Keep a click-through page HUD responsive on an independent STA while the agent works.
+- Complete feedback only after both transaction success and renderer retirement; failures retire with an error cue.
+- Widen the drag-edge cue from 3 px to 18 logical px, keeping hit zones, dwell timing, OLE data, renderer, page membership and saved layouts unchanged.
+- Include feedback lifecycle/bridge tests in release validation.
+- Preserve 0.8.7 public release assets; this update requires a separate preview build.
+
 # 0.8.7 Alpha
 
 - Keep DirectComposition animation on extended displays using independent monitor

@@ -7,12 +7,12 @@ https://github.com/user-attachments/assets/1604baac-4e1b-4fa8-92d0-7a5c943df32d
 
 *A short concept visualization of DeskPages.*
 
-**[Download DeskPages for Windows 11 x64 - Alpha](https://github.com/AdamAbuToamy/DeskPages/releases/download/v0.8.7-alpha.1/DeskPages-Setup-0.8.7.exe)**
+**[Download DeskPages for Windows 11 x64 - Alpha](https://github.com/AdamAbuToamy/DeskPages/releases)**
 <!-- deskpages-demo:end -->
 
 
 Small icon pages for the original Windows desktop. Created by Adam Abu Toamy.
-Version 0.8.7 preview.
+Version 0.8.8 Alpha.
 
 This Alpha is unsigned. Windows may display an unknown-publisher or SmartScreen warning.
 
@@ -69,3 +69,11 @@ Automated tests: `Validate.cmd`. A real Windows DWM simulator can test two virtu
 regions on one physical screen: `Simulate-Monitors.cmd`. No display-driver changes
 or virtual-display software is required. CI/release instructions: [BUILD](Release/BUILD.md).
 Known limitations and Alpha notes: [release notes](Release/NOTES.md).
+
+<!-- deskpages-feedback-088 -->
+
+### Navigation feedback
+
+DeskPages acknowledges page navigation immediately with a translucent
+page indicator that stays visible until the transition completes.
+Edge dragging uses a wider illuminated cue.

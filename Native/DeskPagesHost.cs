@@ -76,7 +76,8 @@ public sealed class DeskPagesHost : ApplicationContext
     private IntPtr lastDesktopRoot;
     private readonly ToolStripMenuItem pagesMenu;
     private DeskPagesPanel panel;
-    private DeskPagesIndicator indicator;
+    private DeskPagesIndicatorController indicator;
+    private readonly DeskPagesFeedbackLifecycle feedback=new DeskPagesFeedbackLifecycle();
     private int pendingIndicator;
     private DeskPagesPageNames pageNames;
     private int[] knownPages=new int[0];
@@ -100,6 +101,7 @@ public sealed class DeskPagesHost : ApplicationContext
         SetProcessShutdownParameters(0x3ff,1);
         sessionWindow=new SessionWindow(this);
         LoadPreferences();
+        try{indicator=new DeskPagesIndicatorController(DeskPagesStartupGate.Log);}catch(Exception ex){DeskPagesStartupGate.Log("page feedback unavailable: "+ex.Message);}
         if(DeskPagesWorkspaceApi.Input!=null)ApplyWorkspaceInput(DeskPagesWorkspaceApi.Input);
         if(dragSessionToken!=null){
             try{dragMailbox=new DeskPagesDragMailbox(dragSessionToken);}
@@ -151,6 +153,11 @@ public sealed class DeskPagesHost : ApplicationContext
             // Publish completion from the actual renderer lifetime, before the
             // visible-animation early return. Cue tracking never blocks OLE.
             if(dragMailbox!=null){try{dragMailbox.PublishVisualState(shown);}catch(IOException){}catch(UnauthorizedAccessException){}}
+            long completedFeedback=feedback.TakeCompletion(shown);
+            if(completedFeedback>0){
+                try{if(indicator!=null)indicator.Complete(completedFeedback);}catch(Exception ex){DeskPagesStartupGate.Log("page feedback completion skipped: "+ex.Message);}
+                pendingIndicator=0;
+            }
             if(busy || DeskPagesAnimation.IsVisible) return;
             if(dragMailbox!=null){
                 try{if(dragMailbox.Poll(currentPage,edgeDrag,knownPages.Length)){
@@ -161,7 +168,7 @@ public sealed class DeskPagesHost : ApplicationContext
             if(DeskPagesAnimation.IsVisible)return;
             if(pendingIndicator>0 && showPageIndicator){
                 int page=pendingIndicator;pendingIndicator=0;
-                try{if(indicator==null)indicator=new DeskPagesIndicator();indicator.Present(page);}
+                try{if(indicator==null)indicator=new DeskPagesIndicatorController(DeskPagesStartupGate.Log);indicator.Present(page);}
                 catch(Exception ex){DeskPagesStartupGate.Log("page indicator unavailable: "+ex.Message);}
             }
             if(contextClick!=null || (placementWatch && ElapsedMs()>=nextPlacementPoll)){
@@ -203,14 +210,14 @@ public sealed class DeskPagesHost : ApplicationContext
     public static void ApplyWorkspaceInput(bool[] values){
         if(active==null || values==null || values.Length!=6)return;
         active.swipe=values[0];active.reverse=values[1];active.winArrows=values[2];active.animate=values[3];active.showPageIndicator=values[4];active.edgeDrag=values[5];
-        if(!values[4]){active.pendingIndicator=0;if(active.indicator!=null)active.indicator.Dismiss();}
+        if(!values[4]){active.pendingIndicator=0;active.feedback.Cancel();if(active.indicator!=null)active.indicator.Dismiss();}
         active.SavePreferences();
     }
     public static void InputSettings(){DeskPagesWorkspaceApi.OpenSettings();}
     private void OpenQuickPanel(){
         if(panel==null){
             panel=new DeskPagesPanel(EnqueuePanel,DeskPagesWorkspaceApi.Name,delegate(int id,string value){if(DeskPagesWorkspaceApi.Request!=null)DeskPagesWorkspaceApi.Request("rename",new[]{id.ToString(),value});else pageNames.Rename(id,value);UpdatePages(knownPages,currentPage);},
-                new[]{swipe,reverse,winArrows,animate,showPageIndicator,edgeDrag},delegate(int setting,bool value){if(setting==0)swipe=value;else if(setting==1)reverse=value;else if(setting==2)winArrows=value;else if(setting==3)animate=value;else if(setting==4){showPageIndicator=value;if(!value){pendingIndicator=0;if(indicator!=null)indicator.Dismiss();}}else edgeDrag=value;SavePreferences();},
+                new[]{swipe,reverse,winArrows,animate,showPageIndicator,edgeDrag},delegate(int setting,bool value){if(setting==0)swipe=value;else if(setting==1)reverse=value;else if(setting==2)winArrows=value;else if(setting==3)animate=value;else if(setting==4){showPageIndicator=value;if(!value){pendingIndicator=0;feedback.Cancel();if(indicator!=null)indicator.Dismiss();}}else edgeDrag=value;SavePreferences();},
                 delegate(string file){try{Process.Start("notepad.exe","\""+Path.Combine(Path.GetDirectoryName(applicationIconPath),"..",file)+"\"");}catch(Exception ex){ShowError(ex.Message);}});
         }
         panel.SetPages(knownPages,currentPage);panel.OpenNearPointer();
@@ -276,7 +283,7 @@ public sealed class DeskPagesHost : ApplicationContext
     {
         if(active==null) return;
         if(active.knownPages.Length>0){foreach(int id in pages){if(Array.IndexOf(active.knownPages,id)<0){try{active.pageNames.Rename(id,id==1?"Main page":"Page "+id);}catch(Exception ex){DeskPagesStartupGate.Log("new page label reset failed: "+ex.Message);}}}}
-        if(active.showPageIndicator && active.knownPages.Length>0 && active.currentPage!=current)active.pendingIndicator=current;
+        if(active.showPageIndicator && !active.feedback.Active && active.knownPages.Length>0 && active.currentPage!=current)active.pendingIndicator=current;
         active.knownPages=(int[])pages.Clone();active.currentPage=current;
         var snapshot=new StringBuilder();snapshot.Append(current);
         foreach(int id in pages)snapshot.Append('|').Append(id).Append(':').Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(DeskPagesWorkspaceApi.Name(id))));
@@ -296,7 +303,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.7\r\n"+active.hidStatus+
+        return "Build: 0.8.8\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -567,14 +574,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.7 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.8 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.7 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.8 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }
@@ -618,11 +625,27 @@ public sealed class DeskPagesHost : ApplicationContext
         },IntPtr.Zero);
         return found;
     }
+    // Display-only acknowledgement, before any source layout/capture work.
+    public static void BeginPageFeedback(int page,int direction){
+        if(active==null || !active.showPageIndicator || page==active.currentPage)return;
+        try{
+            if(active.indicator==null)active.indicator=new DeskPagesIndicatorController(DeskPagesStartupGate.Log);
+            if(direction==0)direction=Math.Sign(Array.IndexOf(active.knownPages,page)-Array.IndexOf(active.knownPages,active.currentPage));
+            var request=DragRequest;if(request!=null && request.Kind=="Navigate")direction=request.X;
+            var area=DeskPagesWorkspaceApi.PrimaryOnly?Screen.PrimaryScreen.WorkingArea:Screen.FromPoint(Cursor.Position).WorkingArea;
+            active.feedback.Begin(active.indicator.Begin(page,direction,area));
+            active.pendingIndicator=0;
+        }catch(Exception ex){DeskPagesStartupGate.Log("page feedback acknowledgement skipped: "+ex.Message);}
+    }
+    public static void CompletePageFeedback(){if(active!=null)active.feedback.Commit();}
+    public static void FailPageFeedback(){
+        if(active==null || !active.feedback.Active)return;
+        try{if(active.indicator!=null)active.indicator.Fail(active.feedback.Token);}catch(Exception ex){DeskPagesStartupGate.Log("page feedback failure skipped: "+ex.Message);}
+        active.feedback.Cancel();active.pendingIndicator=0;
+    }
     public static void BeginAnimation(int direction)
     {
         if(active==null) return;
-        active.pendingIndicator=0;
-        if(active.indicator!=null)active.indicator.Dismiss();
         IntPtr foreground=GetForegroundWindow();
         string foregroundClass=ClassName(GetAncestor(foreground,2));
         Point pointer;bool pointerOnDesktop=GetCursorPos(out pointer) && DesktopAt(pointer);

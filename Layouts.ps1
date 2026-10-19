@@ -97,7 +97,15 @@ function Restore-DpPageLayout {
 
 function Set-DeskPage {
     param([ValidateRange(1,99)][int]$Page,[bool]$Animate=$true,[ValidateRange(-1,1)][int]$Direction=0)
-    Invoke-DpPageTransaction -Page $Page -Animate $Animate -Direction $Direction
+    $feedback=$script:hostReady -and [int]$script:DpState.Current -ne $Page
+    if($feedback){[DeskPagesHost]::BeginPageFeedback($Page,$Direction)}
+    try {
+        Invoke-DpPageTransaction -Page $Page -Animate $Animate -Direction $Direction
+        if($feedback){[DeskPagesHost]::CompletePageFeedback()}
+    } catch {
+        if($feedback){[DeskPagesHost]::FailPageFeedback()}
+        throw
+    }
 }
 
 function Recover-DpDesktop {

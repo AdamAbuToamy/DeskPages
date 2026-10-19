@@ -1,3 +1,19 @@
+﻿# DeskPages 0.8.8 — Navigation feedback preview
+
+A focused visual update to the 0.8.7 Alpha:
+
+- Immediate page-number acknowledgement before source layout verification and capture.
+- A subtle moving progress line on an independent, event-driven STA UI thread. Hidden feedback has no polling timer.
+- Feedback remains until the page transaction succeeds AND the native transition retires, then holds 300 ms and fades over 200 ms.
+- Rejected transitions show a short error cue. Stale completion signals cannot hide newer feedback.
+- A wider 18 logical-pixel white edge cue (previously 3 physical pixels), with a bright core and soft blue-white fill. Drag hit areas and dwell timing are unchanged.
+
+The capture/compositor, page transaction engine, file membership, visibility rules, drag IPC and drop placement algorithms are unchanged. Startup/install version metadata is 0.8.8.0.
+
+This is an unsigned preview. Portable regression tests and Mono/Xvfb UI rendering passed; actual Windows focus/capture/OLE and upgrade/reboot acceptance still require Windows. Do not interpret a simulated UI test as a physical touchpad, GPU or reboot certification.
+
+## Previous release context
+
 DeskPages 0.8.7-alpha.1 — first engineering preview
 
 DeskPages adds icon pages to the original Windows Explorer desktop. Files keep
