@@ -1,11 +1,22 @@
 # DeskPages
 
+<!-- deskpages-demo:start -->
+## Preview
+
+[Watch the DeskPages concept video](https://github.com/AdamAbuToamy/DeskPages/blob/main/media/DeskPages-demo.mp4)
+
+*A short concept visualization of DeskPages.*
+
+**[Download DeskPages for Windows 11 x64 - Alpha](https://github.com/AdamAbuToamy/DeskPages/releases/download/v0.8.7-alpha.1/DeskPages-Setup-0.8.7.exe)**
+<!-- deskpages-demo:end -->
+
+
 Small icon pages for the original Windows desktop. Created by Adam Abu Toamy.
 Version 0.8.7 preview.
 
 ## Download
 
-**[⬇ Download for Windows 11 x64 — Alpha](https://github.com/AdamAbuToamy/DeskPages/releases)**
+**[⬇ Download for Windows 11 x64 — Alpha]()**
 
 Open a published release and choose **DeskPages-Setup-0.8.7.exe** under **Assets**.
 You only need the EXE installer; the source ZIP is optional for developers.
