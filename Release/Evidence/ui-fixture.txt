@@ -1,0 +1,4 @@
+Gtk not found (missing LD_LIBRARY_PATH to libgtk-x11-2.0.so.0?), using built-in colorscheme
+PASS: en compact pages, separate settings, exactly 4 basic toggles, no writes while loading, one debounced auto-save, advanced collapsed, responsive resizes and no search/rules/history/preview requests; elapsed=2152 ms (fixture only).
+PASS: ar compact pages, separate settings, exactly 4 basic toggles, no writes while loading, one debounced auto-save, advanced collapsed, responsive resizes and no search/rules/history/preview requests; elapsed=2032 ms (fixture only).
+PASS: he compact pages, separate settings, exactly 4 basic toggles, no writes while loading, one debounced auto-save, advanced collapsed, responsive resizes and no search/rules/history/preview requests; elapsed=1980 ms (fixture only).

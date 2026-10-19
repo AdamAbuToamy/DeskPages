@@ -1,0 +1,30 @@
+# Apply in a NEW source-only repository, before adding files.
+Seed/
+Bin/
+bin/
+obj/
+Backups/
+SafetyBackups/
+HiddenPages/
+PageLayouts/
+Verification/
+*.log
+*.previous
+*.tmp
+*.user
+*.suo
+*.res
+*.obj
+*.o
+*.pdb
+*.exe
+*.dll
+*.zip
+.vs/
+# Source builds recreate binaries. Keep Native/Compositor and Packaging sources.
+dist/
+*.pfx
+*.p12
+*.key
+DragSessions/
+installed-account.txt

@@ -1,0 +1,372 @@
+﻿# Data-only workspace operations. Metadata snapshots never contain user file bytes.
+function Copy-DpData {param($Value) [Management.Automation.PSSerializer]::Deserialize([Management.Automation.PSSerializer]::Serialize($Value,100))}
+function Initialize-DpWorkspace {
+    if(-not $script:DpState.PSObject.Properties['Workspace']){
+        $script:DpState | Add-Member -NotePropertyName Workspace -NotePropertyValue ([PSCustomObject]@{Schema=1;Archived=@();Locked=@();Order=@($script:DpState.Pages);Inbox=0;Rules=@();Undo=@();Redo=@();Language='en';ReduceMotion=$false;WheelThreshold=40;PointerThreshold=350;EdgeWidth=48;EdgeDwell=320;MonitorKey='';Names=@()})
+    }
+    if(-not $script:DpState.Workspace.PSObject.Properties['SystemPinned']){$script:DpState.Workspace | Add-Member -NotePropertyName SystemPinned -NotePropertyValue @()}
+    if(-not $script:DpState.Workspace.PSObject.Properties['Input']){
+        $inputFlags=@($true,$false,$true,$true,$true,$true)
+        $path=Join-Path $script:DpStore 'input-settings.txt'
+        if(Test-Path -LiteralPath $path){$lines=@(Get-Content -LiteralPath $path);$indices=@(0,1,2,3,5,6);for($i=0;$i -lt 6;$i++){$value=$false;if($indices[$i] -lt $lines.Count -and [bool]::TryParse($lines[$indices[$i]],[ref]$value)){$inputFlags[$i]=$value}}}
+        $script:DpState.Workspace | Add-Member -NotePropertyName Input -NotePropertyValue $inputFlags
+    }
+    if(-not $script:DpState.Workspace.PSObject.Properties['PrimaryOnly']){$script:DpState.Workspace | Add-Member -NotePropertyName PrimaryOnly -NotePropertyValue $false}
+    if(-not $script:DpState.Workspace.PSObject.Properties['SecondaryIcons']){$script:DpState.Workspace | Add-Member -NotePropertyName SecondaryIcons -NotePropertyValue @()}
+    if(-not $script:DpState.PSObject.Properties['Revision']){$script:DpState | Add-Member -NotePropertyName Revision -NotePropertyValue ''}
+    $script:DpWorkspaceRoot=Join-Path $script:DpStore 'Workspace'
+    New-Item -ItemType Directory -Force $script:DpWorkspaceRoot,(Join-Path $script:DpWorkspaceRoot 'History'),(Join-Path $script:DpWorkspaceRoot 'HistoryIndex'),(Join-Path $script:DpWorkspaceRoot 'Profiles') | Out-Null
+}
+function Test-DpItemVisible {param($Entry,[int]$Page) ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned) -or (Test-DpSecondaryKey ([string]$Entry.Path)))}
+function Get-DpActivePages {
+    if(-not $script:DpState.PSObject.Properties['Workspace']){return @($script:DpState.Pages)}
+    $all=@($script:DpState.Pages);$archived=@($script:DpState.Workspace.Archived)
+    $order=@($script:DpState.Workspace.Order)+@($all | Where-Object {$_ -notin @($script:DpState.Workspace.Order)})
+    @($order | Where-Object {$_ -in $all -and $_ -notin $archived} | Select-Object -Unique)
+}
+function Get-DpIncomingPage {
+    if($script:DpState.PSObject.Properties['Workspace']){$page=[int]$script:DpState.Workspace.Inbox;if($page -gt 0 -and $page -in @(Get-DpActivePages)){return $page}}
+    return [int]$script:DpState.Current
+}
+function Get-DpWorkspaceName {param([int]$Page)
+    if($script:DpState.PSObject.Properties['Workspace']){
+        $entry=@($script:DpState.Workspace.Names | Where-Object {[int]$_.Page -eq $Page})
+        if($entry.Count){return [string]$entry[0].Name}
+    }
+    if('DeskPagesWorkspaceApi' -as [type]){return [DeskPagesWorkspaceApi]::FallbackName($Page)}
+    return "Page $Page"
+}
+function Assert-DpWorkspaceState {param($State)
+    if($null -eq $State -or $State.Desktop -ne $script:DpDesktop){throw 'Snapshot belongs to another Desktop.'}
+    $pages=@($State.Pages);if(1 -notin $pages -or $pages.Count -gt 99 -or @($pages | Select-Object -Unique).Count -ne $pages.Count){throw 'Invalid snapshot pages.'}
+    foreach($id in $pages){if([int]$id -lt 1 -or [int]$id -gt 99){throw 'Invalid page ID.'}}
+    if([int]$State.Current -notin $pages){throw 'Snapshot has no active page.'}
+    $systemIds=@('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}')
+    $seenSystems=@{};foreach($system in @($State.SystemIconBackup)){if($system.Id -notin $systemIds -or $seenSystems.ContainsKey([string]$system.Id)){throw 'Invalid system-icon snapshot.'};$seenSystems[[string]$system.Id]=$true}
+    $seen=@{};foreach($entry in $State.Items){
+        $path=[IO.Path]::GetFullPath([string]$entry.Path)
+        if([IO.Path]::GetDirectoryName($path) -notin @($script:DpDesktop,$script:DpPublic) -or [int]$entry.Page -notin $pages -or $seen.ContainsKey($path)){throw 'Invalid or duplicate snapshot item.'};$seen[$path]=$true
+        if($entry.PSObject.Properties['Pinned'] -and $entry.Pinned -isnot [bool]){throw 'Invalid shared-item flag.'}
+    }
+    $w=$State.Workspace
+    if($null -eq $w -or [int]$w.Schema -ne 1 -or 1 -in @($w.Archived) -or [int]$State.Current -in @($w.Archived)){throw 'Invalid workspace snapshot.'}
+    foreach($id in @($w.Archived)+@($w.Locked)+@($w.Order)){if([int]$id -notin $pages){throw 'Unknown workspace page.'}}
+    if(@($w.Order).Count -ne $pages.Count -or @($w.Order | Select-Object -Unique).Count -ne $pages.Count){throw 'Invalid page order.'}
+    if([int]$w.Inbox -ne 0 -and ([int]$w.Inbox -notin $pages -or [int]$w.Inbox -in @($w.Archived))){throw 'Inbox must be an active page.'}
+    foreach($name in @($w.Names)){if([int]$name.Page -notin $pages){throw 'Unknown named page.'};$null=[DeskPagesPageNames]::Validate([string]$name.Name)}
+    if($w.Language -notin @('en','ar','he') -or [int]$w.WheelThreshold -lt 10 -or [int]$w.WheelThreshold -gt 240 -or [int]$w.PointerThreshold -lt 100 -or [int]$w.PointerThreshold -gt 1500 -or [int]$w.EdgeWidth -lt 16 -or [int]$w.EdgeWidth -gt 120 -or [int]$w.EdgeDwell -lt 150 -or [int]$w.EdgeDwell -gt 1500){throw 'Invalid interaction settings.'}
+    if($w.PSObject.Properties['PrimaryOnly'] -and $w.PrimaryOnly -isnot [bool]){throw 'Invalid display scope.'}
+    if($w.PSObject.Properties['SecondaryIcons']){foreach($icon in @($w.SecondaryIcons | Where-Object {$null -ne $_})){if([string]::IsNullOrWhiteSpace([string]$icon.Key) -or [Math]::Abs([double]$icon.X) -gt 100000 -or [Math]::Abs([double]$icon.Y) -gt 100000){throw 'Invalid stationary screen icon.'}}}
+    foreach($id in @($w.SystemPinned)){if($id -notin @('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}')){throw 'Unknown pinned system icon.'}}
+    if(@($w.Input).Count -ne 6){throw 'Invalid input preferences.'}
+    foreach($value in $w.Input){if($value -isnot [bool]){throw 'Invalid input preference type.'}}
+    if(@($w.Rules).Count -gt 100){throw 'Too many rules.'}
+    foreach($rule in @($w.Rules)){
+        if($rule.Kind -notin @('Extension','Name') -or [int]$rule.Page -notin $pages -or [string]::IsNullOrWhiteSpace($rule.Pattern) -or $rule.Pattern.Length -gt 80 -or [string]$rule.Pattern -match '[\x00-\x1f]'){throw 'Invalid organization rule.'}
+        if($rule.Kind -eq 'Name'){$null=[Management.Automation.WildcardPattern]::new([string]$rule.Pattern,[Management.Automation.WildcardOptions]::IgnoreCase).IsMatch('validation')}
+        elseif([string]$rule.Pattern -notmatch '^\.[^\\/:*?"<>|\s]{1,30}$'){throw 'Use an extension such as .png or .pdf.'}
+    }
+    foreach($id in @($w.Undo)+@($w.Redo)){if([string]$id -notmatch '^[a-f0-9]{32}$'){throw 'Invalid history record.'}}
+}
+function Get-DpWorkspaceSnapshot {
+    $layouts=@(foreach($page in $script:DpState.Pages){$path=Join-Path $script:DpLayoutStore "page-$page.xml";if(Test-Path -LiteralPath $path){Import-Clixml -LiteralPath $path -ErrorAction Stop}})
+    $identities=@(foreach($entry in $script:DpState.Items){$id=Get-DpWorkspaceIdentity $entry.Path;if($id){[PSCustomObject]@{Path=$entry.Path;Identity=$id}}})
+    [PSCustomObject]@{State=Copy-DpData $script:DpState;Layouts=$layouts;Identities=$identities;At=[DateTime]::UtcNow}
+}
+function Get-DpWorkspaceIdentity {param([string]$Path)
+    if(-not(Test-Path -LiteralPath $Path)){return ''}
+    if($env:OS -eq 'Windows_NT'){return [DeskPagesLayout]::CreationIdentity($Path)}
+    # Non-Windows test fixture only; production always uses the Windows file ID.
+    return ([IO.File]::GetCreationTimeUtc($Path).Ticks.ToString())
+}
+function Assert-DpWorkspaceSnapshot {param($Snapshot)
+    Assert-DpWorkspaceState $Snapshot.State
+    $seen=@{};foreach($layout in @($Snapshot.Layouts)){
+        $page=[int]$layout.Page;if($page -notin @($Snapshot.State.Pages) -or $seen.ContainsKey($page)){throw 'Invalid snapshot layout.'};$seen[$page]=$true
+        if(@($layout.Icons).Count -gt 20000){throw 'Snapshot layout is too large.'}
+        foreach($icon in @($layout.Icons)){if([Math]::Abs([double]$icon.X) -gt 100000 -or [Math]::Abs([double]$icon.Y) -gt 100000){throw 'Invalid snapshot coordinates.'}}
+    }
+}
+function Set-DpSnapshotLayouts {param($Snapshot)
+    Assert-DpWorkspaceSnapshot $Snapshot
+    $keep=@($Snapshot.Layouts | ForEach-Object {'page-'+[int]$_.Page+'.xml'})
+    foreach($file in Get-ChildItem -LiteralPath $script:DpLayoutStore -File -Filter 'page-*.xml'){
+        if($file.Name -match '^page-[1-9][0-9]?\.xml$' -and $file.Name -notin $keep){[IO.File]::Delete($file.FullName)}
+    }
+    foreach($layout in @($Snapshot.Layouts)){Write-DpAtomicXml -Path (Join-Path $script:DpLayoutStore ("page-"+[int]$layout.Page+'.xml')) -Value $layout}
+    $script:DpLastLayoutSignature=@{}
+}
+function Repair-DpWorkspaceTransaction {
+    $path=Join-Path $script:DpWorkspaceRoot 'pending.xml';if(-not(Test-Path -LiteralPath $path)){return}
+    $pending=Import-Clixml -LiteralPath $path -ErrorAction Stop
+    Assert-DpWorkspaceSnapshot $pending.Before;Assert-DpWorkspaceSnapshot $pending.After
+    if([string]$script:DpState.Revision -eq [string]$pending.After.State.Revision){Set-DpSnapshotLayouts $pending.After}
+    else{Set-DpSnapshotLayouts $pending.Before}
+    [IO.File]::Delete($path)
+    Write-DpLog 'Recovered interrupted workspace metadata transaction; desktop visibility will follow the committed manifest.'
+}
+function Invoke-DpWorkspaceCommit {
+    param([string]$Operation,$After,[bool]$Record=$true,$Before=$null)
+    if($script:DpSuspended -or $script:DpEdgeDrag -or (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){throw 'Finish the current interaction before changing the workspace.'}
+    if($null -eq $Before){Save-DpVerifiedSourceLayout ([int]$script:DpState.Current);$Before=Get-DpWorkspaceSnapshot}
+    Assert-DpWorkspaceSnapshot $Before
+    $id=[guid]::NewGuid().ToString('N');$After.State.Revision=$id
+    if($Record){$After.State.Workspace.Undo=@(@($Before.State.Workspace.Undo)+@($id) | Select-Object -Last 100);$After.State.Workspace.Redo=@()}
+    $After.State.PageCount=@($After.State.Pages).Count
+    Assert-DpWorkspaceSnapshot $After
+    $journal=Join-Path $script:DpWorkspaceRoot 'pending.xml'
+    $pending=[PSCustomObject]@{Operation=$Operation;Before=$Before;After=$After;At=[DateTime]::UtcNow}
+    Write-DpAtomicXml -Path $journal -Value $pending
+    Invoke-DpFaultPoint 'WorkspaceJournal'
+    try{
+        if($Record){Write-DpHistoryRecord $id $pending}
+        Set-DpSnapshotLayouts $After
+        Invoke-DpFaultPoint 'WorkspaceLayouts'
+        $script:DpState=$After.State;Save-DpState
+        Invoke-DpFaultPoint 'WorkspaceManifest'
+        Resume-DpCommittedPage
+        Invoke-DpFaultPoint 'WorkspaceVisible'
+        [IO.File]::Delete($journal)
+        Publish-DpWorkspacePreferences
+        Limit-DpWorkspaceHistory
+        Write-DpLog ('Workspace operation committed: '+$Operation)
+    }catch{
+        $failure=$_
+        try{$script:DpState=Read-DpManifest $script:DpManifest;Repair-DpWorkspaceTransaction;Resume-DpCommittedPage}
+        catch{$script:DpSuspended=$true;Write-DpLog ('Workspace recovery pending; autosave suspended: '+[string]$_)}
+        throw $failure
+    }
+}
+function New-DpWorkspaceEdit {
+    if($script:DpEdgeDrag){throw 'Finish dragging first.'}
+    Save-DpVerifiedSourceLayout ([int]$script:DpState.Current)
+    $before=Get-DpWorkspaceSnapshot
+    [PSCustomObject]@{Before=$before;After=Copy-DpData $before}
+}
+function Restore-DpWorkspaceSnapshot {
+    param($Snapshot,[string]$Operation='Restore workspace',[bool]$Record=$true,[object[]]$Undo=$null,[object[]]$Redo=$null)
+    Assert-DpWorkspaceSnapshot $Snapshot
+    $edit=New-DpWorkspaceEdit;$after=Copy-DpData $Snapshot
+    # Files created since the checkpoint remain managed and visible on Main.
+    $known=@{};foreach($item in $after.State.Items){$known[[string]$item.Path]=$true}
+    foreach($item in $edit.Before.State.Items){if(-not $known.ContainsKey([string]$item.Path)){$copy=Copy-DpData $item;$copy.Page=1;$after.State.Items=@($after.State.Items)+@($copy)}}
+    if($Snapshot.PSObject.Properties['Identities']){
+        $ids=@{};foreach($identityRecord in $Snapshot.Identities){$ids[[string]$identityRecord.Path]=[string]$identityRecord.Identity}
+        foreach($entry in $after.State.Items){
+            if($ids.ContainsKey([string]$entry.Path)){$currentId=Get-DpWorkspaceIdentity $entry.Path;if($currentId -and $currentId -ne $ids[[string]$entry.Path]){$entry.Page=1;$entry | Add-Member -NotePropertyName Pinned -NotePropertyValue $false -Force}}
+        }
+    }
+    foreach($field in @('PrimaryOnly','SecondaryIcons')){if(-not $after.State.Workspace.PSObject.Properties[$field]){$after.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field)}}
+    if($null -ne $Undo){$after.State.Workspace.Undo=@($Undo)}
+    if($null -ne $Redo){$after.State.Workspace.Redo=@($Redo)}
+    foreach($field in @('Undo','Redo')){$after.State.Workspace.$field=@($after.State.Workspace.$field | Where-Object {Test-Path -LiteralPath (Join-Path $script:DpWorkspaceRoot ("History/"+$_+'.xml'))})}
+    Invoke-DpWorkspaceCommit -Operation $Operation -After $after -Before $edit.Before -Record $Record
+}
+function Invoke-DpWorkspaceUndo {param([bool]$Redo=$false)
+    $w=$script:DpState.Workspace;$ids=@($(if($Redo){$w.Redo}else{$w.Undo}))
+    if(-not $ids.Count){throw 'There is nothing to undo or redo.'}
+    $id=[string]$ids[-1];$record=Import-Clixml -LiteralPath (Join-Path $script:DpWorkspaceRoot "History/$id.xml") -ErrorAction Stop
+    $remaining=@($ids | Select-Object -SkipLast 1)
+    if($Redo){Restore-DpWorkspaceSnapshot -Snapshot $record.After -Operation 'Redo' -Record $false -Undo @(@($w.Undo)+@($id)) -Redo $remaining}
+    else{Restore-DpWorkspaceSnapshot -Snapshot $record.Before -Operation 'Undo' -Record $false -Undo $remaining -Redo @(@($w.Redo)+@($id))}
+}
+function Get-DpSearchResults {param([string]$Query)
+    $query=$Query.Trim();$names=@{};foreach($page in $script:DpState.Pages){$names[[int]$page]=Get-DpWorkspaceName $page}
+    foreach($entry in $script:DpState.Items){
+        $name=[IO.Path]::GetFileName([string]$entry.Path)
+        if($query.Length -and $name.IndexOf($query,[StringComparison]::CurrentCultureIgnoreCase) -lt 0 -and ([string]$names[[int]$entry.Page]).IndexOf($query,[StringComparison]::CurrentCultureIgnoreCase) -lt 0){continue}
+        [PSCustomObject]@{Path=$entry.Path;Name=$name;Page=[int]$entry.Page;PageName=$names[[int]$entry.Page];Pinned=[bool]($entry.PSObject.Properties['Pinned'] -and $entry.Pinned);Exists=Test-Path -LiteralPath $entry.Path;Archived=[int]$entry.Page -in @($script:DpState.Workspace.Archived)}
+    }
+}
+function Set-DpWorkspaceItems {param([string[]]$Paths,[int]$Page,[ValidateSet('Move','Pin','Unpin')][string]$Mode='Move')
+    if(-not $Paths.Count -or @($Paths | Select-Object -Unique).Count -ne $Paths.Count){throw 'Select one or more distinct managed files.'}
+    if($Page -notin @(Get-DpActivePages)){throw 'Choose an active destination page.'}
+    $edit=New-DpWorkspaceEdit;$entries=@($edit.After.State.Items | Where-Object {$_.Path -in $Paths})
+    if($entries.Count -ne $Paths.Count){throw 'Selection contains unmanaged files.'}
+    foreach($entry in $entries){
+        if(-not(Test-Path -LiteralPath $entry.Path)){throw 'A selected file no longer exists.'}
+        if(([int][IO.File]::GetAttributes($entry.Path) -band 1024) -ne 0){throw 'Cloud placeholders and links are not supported for page membership.'}
+        if($Mode -eq 'Move'){$entry.Page=$Page}
+        else{$entry | Add-Member -NotePropertyName Pinned -NotePropertyValue ($Mode -eq 'Pin') -Force}
+    }
+    Update-DpMembershipLayouts -Before $edit.Before -After $edit.After -Paths $Paths
+    Invoke-DpWorkspaceCommit -Operation ($Mode+' '+$entries.Count+' items') -After $edit.After -Before $edit.Before
+}
+function Update-DpMembershipLayouts {param($Before,$After,[string[]]$Paths,[bool]$PreserveGroup=$true)
+    $map=@{};foreach($layout in $Before.Layouts){foreach($icon in $layout.Icons){if($icon.Key -and -not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=$icon}}}
+    $members=@{};foreach($entry in $After.State.Items){$members[[string]$entry.Path]=$entry}
+    $sourcePages=@{};foreach($entry in $Before.State.Items){$sourcePages[[string]$entry.Path]=[int]$entry.Page}
+    $screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
+    $After.Layouts=@(foreach($page in $After.State.Pages){
+        $old=@($Before.Layouts | Where-Object {[int]$_.Page -eq $page})
+        $icons=@(if($old.Count){foreach($icon in @($old[0].Icons)){
+            if($members.ContainsKey([string]$icon.Key)){if(Test-DpItemVisible $members[[string]$icon.Key] $page){Copy-DpData $icon}}
+            elseif($page -eq 1 -or @($After.State.Workspace.SystemPinned | Where-Object {([string]$icon.Key).IndexOf([string]$_,[StringComparison]::OrdinalIgnoreCase) -ge 0}).Count){Copy-DpData $icon}
+        }})
+        $keys=@{};foreach($icon in $icons){$keys[[string]$icon.Key]=$true}
+        $new=@(foreach($path in $Paths){if($members.ContainsKey($path) -and (Test-DpItemVisible $members[$path] $page) -and -not $keys.ContainsKey($path) -and $map.ContainsKey($path)){Copy-DpData $map[$path]}})
+        $groups=@($new | Group-Object -Property {if($PreserveGroup){[string]$sourcePages[[string]$_.Key]}else{[string]$_.Key}})
+        foreach($group in $groups){
+            $batch=@($group.Group)
+            $source=[DeskPagesDragPlacement+Item[]]@(foreach($icon in $batch){[DeskPagesDragPlacement+Item]@{Key=$icon.Key;X=$icon.X;Y=$icon.Y}})
+            $obstacles=[DeskPagesDragPlacement+Item[]]@(foreach($icon in $icons){[DeskPagesDragPlacement+Item]@{Key=$icon.Key;X=$icon.X;Y=$icon.Y}})
+            $positions=$null
+            foreach($screen in $screens){
+                $g=[int[]]@($batch[0].X,$batch[0].Y,$screen.Left,$screen.Top,$screen.Right,$screen.Bottom)
+                $positions=[DeskPagesDragPlacement]::Plan($g,$spacing.X,$spacing.Y,$false,0,0,$batch[0].X,$batch[0].Y,$source,$obstacles)
+                if($null -ne $positions){break}
+            }
+            if($null -eq $positions){throw 'The destination has no free space for this group. No membership was changed.'}
+            foreach($position in $positions){foreach($icon in $batch){if($icon.Key -eq $position.Key){$icon.X=$position.X;$icon.Y=$position.Y}}}
+            $icons=@($icons)+@($batch)
+        }
+        [PSCustomObject]@{Page=[int]$page;SavedAt=[DateTime]::UtcNow;Icons=@($icons)}
+    })
+}
+function Update-DpSystemPinLayouts {param($Before,$After)
+    $templates=@{};foreach($layout in $Before.Layouts){foreach($icon in $layout.Icons){foreach($id in @($Before.State.SystemIconBackup | ForEach-Object {$_.Id})){if(([string]$icon.Key).IndexOf([string]$id,[StringComparison]::OrdinalIgnoreCase) -ge 0){$templates[[string]$id]=$icon}}}}
+    $screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
+    $After.Layouts=@(foreach($page in $After.State.Pages){
+        $prior=@($After.Layouts | Where-Object {[int]$_.Page -eq $page});$icons=@(if($prior.Count){foreach($icon in $prior[0].Icons){
+            $system=@($After.State.SystemIconBackup | Where-Object {([string]$icon.Key).IndexOf([string]$_.Id,[StringComparison]::OrdinalIgnoreCase) -ge 0})
+            if($page -eq 1 -or -not $system.Count -or $system[0].Id -in @($After.State.Workspace.SystemPinned)){Copy-DpData $icon}
+        }})
+        foreach($id in @($After.State.Workspace.SystemPinned)){
+            if(-not $templates.ContainsKey([string]$id) -or @($icons | Where-Object {([string]$_.Key).IndexOf([string]$id,[StringComparison]::OrdinalIgnoreCase) -ge 0}).Count){continue}
+            $icon=Copy-DpData $templates[[string]$id];$target=$null
+            foreach($screen in $screens){$g=[int[]]@(($icon.X+[int]($spacing.X/2)),($icon.Y+16),$screen.Left,$screen.Top,$screen.Right,$screen.Bottom);$target=Resolve-DpNewItemPosition $g $spacing.X $spacing.Y $icons;if($null -ne $target){break}}
+            if($null -eq $target){throw 'No free position for shared system icons. Settings were not changed.'}
+            $icon.X=$target.X;$icon.Y=$target.Y;$icons=@($icons)+@($icon)
+        }
+        [PSCustomObject]@{Page=[int]$page;SavedAt=[DateTime]::UtcNow;Icons=@($icons)}
+    })
+}
+function Save-DpDragUndo {
+    if($null -eq $script:DpDragUndoBefore){Save-DpState;return}
+    Save-DpAppliedWorkspaceOperation $script:DpDragUndoBefore 'Drag items across pages'
+    $script:DpDragUndoBefore=$null
+}
+function Save-DpAppliedWorkspaceOperation {param($Before,[string]$Operation)
+    $id=[guid]::NewGuid().ToString('N')
+    $script:DpState.Workspace.Undo=@(@($script:DpState.Workspace.Undo)+@($id) | Select-Object -Last 100)
+    $script:DpState.Workspace.Redo=@();$script:DpState.Revision=$id
+    $after=Get-DpWorkspaceSnapshot
+    Write-DpHistoryRecord $id ([PSCustomObject]@{Before=$Before;After=$after;Operation=$Operation;At=[DateTime]::UtcNow})
+    Save-DpState
+}
+function Write-DpHistoryRecord {param([string]$Id,$Record)
+    if($Id -notmatch '^[a-f0-9]{32}$'){throw 'Invalid history ID.'}
+    Write-DpAtomicXml -Path (Join-Path $script:DpWorkspaceRoot "History/$Id.xml") -Value $Record
+    Write-DpAtomicXml -Path (Join-Path $script:DpWorkspaceRoot "HistoryIndex/$Id.xml") -Value ([PSCustomObject]@{At=$Record.At;Operation=$Record.Operation;Count=@($Record.Before.State.Items).Count})
+}
+function Limit-DpWorkspaceHistory {
+    # Keep the last 200 recovery records and every currently reachable undo/redo record.
+    # Failed cleanup is diagnostic only and must never roll back a committed operation.
+    try{
+        $files=@(Get-ChildItem -LiteralPath (Join-Path $script:DpWorkspaceRoot 'HistoryIndex') -Filter '*.xml' | Where-Object {$_.BaseName -match '^[a-f0-9]{32}$'} | Sort-Object LastWriteTimeUtc -Descending)
+        $keep=@($script:DpState.Workspace.Undo)+@($script:DpState.Workspace.Redo)+@($files | Select-Object -First 200 | ForEach-Object {$_.BaseName})
+        foreach($file in $files){if($file.BaseName -notin $keep){foreach($relative in @('History','HistoryIndex')){foreach($suffix in @('.xml','.xml.previous')){$path=Join-Path $script:DpWorkspaceRoot ($relative+'/'+$file.BaseName+$suffix);if(Test-Path -LiteralPath $path){[IO.File]::Delete($path)}}}}}
+    }catch{Write-DpLog 'History cleanup deferred; committed workspace remains intact.'}
+}
+function Get-DpRulePreview {
+    $w=$script:DpState.Workspace
+    foreach($entry in $script:DpState.Items){
+        if(($entry.PSObject.Properties['Pinned'] -and $entry.Pinned) -or -not(Test-Path -LiteralPath $entry.Path)){continue}
+        $name=[IO.Path]::GetFileName([string]$entry.Path)
+        foreach($rule in $w.Rules){
+            if([int]$rule.Page -notin @(Get-DpActivePages)){continue}
+            $matches=if($rule.Kind -eq 'Extension'){[IO.Path]::GetExtension($name) -ieq $rule.Pattern}else{[Management.Automation.WildcardPattern]::new([string]$rule.Pattern,[Management.Automation.WildcardOptions]::IgnoreCase).IsMatch($name)}
+            if($matches){if([int]$entry.Page -ne [int]$rule.Page){[PSCustomObject]@{Path=$entry.Path;From=[int]$entry.Page;To=[int]$rule.Page}};break}
+        }
+    }
+}
+function Invoke-DpRules {
+    $preview=@(Get-DpRulePreview);if(-not $preview.Count){return}
+    $edit=New-DpWorkspaceEdit
+    foreach($move in $preview){foreach($entry in $edit.After.State.Items){if($entry.Path -eq $move.Path){$entry.Page=$move.To}}}
+    Update-DpMembershipLayouts -Before $edit.Before -After $edit.After -Paths @($preview | ForEach-Object {$_.Path}) -PreserveGroup $false
+    Invoke-DpWorkspaceCommit -Operation ('Apply '+$preview.Count+' reviewed suggestions') -After $edit.After -Before $edit.Before
+}
+function Publish-DpWorkspacePreferences {
+    if(-not('DeskPagesWorkspaceApi' -as [type])){return}
+    $w=$script:DpState.Workspace
+    [DeskPagesWorkspaceApi]::Configure([string]$w.Language,[int]$w.WheelThreshold,[int]$w.PointerThreshold,[int]$w.EdgeWidth,[int]$w.EdgeDwell,[bool]$w.ReduceMotion)
+    $names=@(foreach($page in $script:DpState.Pages){[string]$page+"`t"+(Get-DpWorkspaceName $page)})
+    [DeskPagesWorkspaceApi]::SetNames([string[]]$names)
+    [DeskPagesWorkspaceApi]::PrimaryOnly=[bool]$w.PrimaryOnly
+    [DeskPagesWorkspaceApi]::Input=[bool[]]@($w.Input)
+    [DeskPagesHost]::ApplyWorkspaceInput([bool[]]@($w.Input))
+    [DeskPagesDragProtocol]::AtomicText((Join-Path $script:DpStore 'interaction.txt'),("DeskPagesInteraction1`n"+$w.EdgeWidth+"`n"+$w.EdgeDwell+"`n"+[bool]$w.PrimaryOnly))
+}
+function Get-DpCompatibilityReport {
+    $rows=[Collections.Generic.List[string]]::new()
+    $rows.Add('DeskPages compatibility report — '+[DateTime]::UtcNow.ToString('o'))
+    $os=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $rows.Add('Windows: '+$os.DisplayVersion+'; build='+$os.CurrentBuildNumber+'.'+$os.UBR+'; 64-bit: '+[Environment]::Is64BitProcess)
+    $rows.Add('Desktop: '+$script:DpDesktop);$rows.Add('Public Desktop: '+$script:DpPublic)
+    $setting=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name Hidden -ErrorAction SilentlyContinue
+    $rows.Add('Hidden files shown: '+($setting.Hidden -eq 1))
+    $placeholders=@(Get-ChildItem -LiteralPath $script:DpDesktop,$script:DpPublic -Force | Where-Object {([int]$_.Attributes -band 1024) -ne 0})
+    $rows.Add('Reparse/cloud items excluded from management: '+$placeholders.Count)
+    $rows.Add('OneDrive Desktop: '+($script:DpDesktop -match '(?i)OneDrive'))
+    foreach($screen in [Windows.Forms.Screen]::AllScreens){$rows.Add('Screen: '+$screen.DeviceName+' '+$screen.Bounds+' work='+$screen.WorkingArea)}
+    try{$rows.Add([DeskPagesLayout]::DescribeView($script:originalDesktop))}catch{$rows.Add('Explorer unavailable: '+[string]$_)}
+    $rows.Add('Touchpad driver support, display animation and reboot reliability require Windows device testing.')
+    $rows.Add('OneDrive placeholders are unsupported. This report does not certify cloud synchronization.')
+    return $rows.ToArray()
+}
+
+# Display scope: secondary icons are temporary shared view metadata, never moved
+# on disk and never converted to permanent user pins.
+function Test-DpSecondaryKey {param([string]$Key)
+    if(-not $script:DpState.PSObject.Properties['Workspace']){return $false}
+    $w=$script:DpState.Workspace
+    if(-not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return $false}
+    $matches=@($w.SecondaryIcons | Where-Object {([string]$_.Key) -ieq $Key})
+    if(-not $matches.Count){return $false}
+    if($null -eq $script:DpScopeScreens){$script:DpScopeScreens=@(Get-DpMonitorGeometry)}
+    $icon=$matches[0]
+    return @($script:DpScopeScreens | Where-Object {-not $_.Primary -and $icon.X -ge $_.Left -and $icon.X -lt $_.Right -and $icon.Y -ge $_.Top -and $icon.Y -lt $_.Bottom}).Count -gt 0
+}
+function Test-DpSecondarySystem {param([string]$Id)
+    if(-not $script:DpState.PSObject.Properties['Workspace']){return $false}
+    $w=$script:DpState.Workspace
+    if(-not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return $false}
+    $aliases=@($Id);if($Id -eq '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'){$aliases+=@('{26EE0668-A00A-44D7-9371-BEB064C98683}')}
+    foreach($icon in @($w.SecondaryIcons | Where-Object {$null -ne $_})){foreach($alias in $aliases){if(([string]$icon.Key).IndexOf($alias,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and (Test-DpSecondaryKey ([string]$icon.Key))){return $true}}}
+    return $false
+}
+function Get-DpSecondaryIcons {param([object[]]$Icons,[object[]]$Screens)
+    @($Icons | Where-Object {$icon=$_;@($Screens | Where-Object {-not $_.Primary -and $icon.X -ge $_.Left -and $icon.X -lt $_.Right -and $icon.Y -ge $_.Top -and $icon.Y -lt $_.Bottom}).Count -gt 0} | ForEach-Object {[PSCustomObject]@{Key=[string]$_.Key;Name=[string]$_.Name;X=[int]$_.X;Y=[int]$_.Y}})
+}
+function Sync-DpSecondaryIcons {param([object[]]$Icons)
+    $w=$script:DpState.Workspace
+    if($null -eq $w -or -not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return}
+    $screens=@(Get-DpMonitorGeometry)
+    if(@($screens | Where-Object {-not $_.Primary}).Count -eq 0){return}
+    $next=@(Get-DpSecondaryIcons $Icons $screens)
+    if(([Management.Automation.PSSerializer]::Serialize($next)) -ne ([Management.Automation.PSSerializer]::Serialize(@($w.SecondaryIcons)))){
+        $before=@($w.SecondaryIcons);$w.SecondaryIcons=$next
+        try{Save-DpState}catch{$w.SecondaryIcons=$before;throw}
+    }
+}
+function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
+    $w=$script:DpState.Workspace
+    if($null -eq $w -or -not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return $Saved}
+    $screens=@(Get-DpMonitorGeometry);$primary=@($screens | Where-Object Primary | Select-Object -First 1)
+    if($primary.Count -ne 1){throw 'Primary screen geometry unavailable; saved layouts preserved.'}
+    $p=$primary[0];$map=@{};foreach($icon in $Saved){$map[[string]$icon.Key]=Copy-DpData $icon}
+    foreach($icon in @($w.SecondaryIcons | Where-Object {$null -ne $_})){$map[[string]$icon.Key]=Copy-DpData $icon}
+    foreach($icon in $Current){if(-not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=Copy-DpData $icon}}
+    # Reserve in-bounds primary positions first, then fit ONLY off-screen/nonshared
+    # page icons onto Primary. Secondary positions always use the shared snapshot.
+    $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop);$placed=[Collections.Generic.List[object]]::new();$outside=[Collections.Generic.List[object]]::new()
+    foreach($icon in @($map.Values | Sort-Object Key)){
+        if(Test-DpSecondaryKey ([string]$icon.Key)){continue}
+        if($icon.X -ge $p.Left -and $icon.Y -ge $p.Top -and $icon.X+$spacing.X -le $p.Right -and $icon.Y+$spacing.Y -le $p.Bottom){$placed.Add($icon)}else{$outside.Add($icon)}
+    }
+    foreach($icon in $outside){$g=@($p.Left,$p.Top,$p.Left,$p.Top,$p.Right,$p.Bottom);$target=Resolve-DpNewItemPosition -Geometry $g -SpacingX $spacing.X -SpacingY $spacing.Y -Occupied $placed.ToArray()
+        if($null -eq $target){throw 'Primary screen has insufficient space. Saved layouts were preserved.'};$icon.X=$target.X;$icon.Y=$target.Y;$placed.Add($icon)
+    }
+    return @($map.Values)
+}

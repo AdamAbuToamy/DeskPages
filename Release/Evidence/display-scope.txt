@@ -1,0 +1,2 @@
+PASS: 50 primary-only page/reload scenarios, left/right monitors, negative origins, 5 pixel scales, secondary coordinates, unplug/replug, unchanged real file bytes and membership. Explorer adapter simulated.
+PASS: production display-scope dispatcher and durable workspace commit, three pages, secondary layout/visibility, invalid command, injected precommit failure/recovery, disable, unchanged real file and permanent pin ownership. Explorer rendering mocked.

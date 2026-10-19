@@ -1,0 +1,6 @@
+Device log identified cancellation after creation recognition. Fixture models Explorer coordinate change without input drag; v0.6.7 fails, v0.6.8 passes. Windows device acceptance pending.
+Exception: <source>/Tests/Test-NewItemFlow.ps1:31
+Line |
+  31 |  … tion Assert($condition,$message){if(-not $condition){throw $message}}
+     |                                                         ~~~~~~~~~~~~~~
+     | Did not position renamed/deselected folder once

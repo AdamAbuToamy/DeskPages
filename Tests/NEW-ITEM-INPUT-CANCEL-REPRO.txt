@@ -1,0 +1,6 @@
+Fixture raises legacy drag generation during native menu/rename creation. 0.6.8 fails (expected), 0.6.9 completes after mouse release and stable native coordinates. Device log identified this exact cancellation branch. Windows acceptance still pending.
+Exception: <source>/Tests/Test-NewItemFlow.ps1:32
+Line |
+  32 |  … tion Assert($condition,$message){if(-not $condition){throw $message}}
+     |                                                         ~~~~~~~~~~~~~~
+     | Menu/rename input incorrectly cancelled new-item placement

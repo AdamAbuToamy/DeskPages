@@ -1,0 +1,67 @@
+name: Validate and build Windows preview
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the validated build as a public GitHub Pre-release
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: deskpages-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native compositor, runtime and installer; run isolated acceptance
+        shell: powershell
+        run: ./Release/Build-Windows.ps1
+      - name: Stress test durable workspace operations
+        shell: powershell
+        run: ./Tests/Run-Validation.ps1 -Stress
+      - name: Prepare source and checksums
+        shell: powershell
+        run: ./Release/Prepare-Assets.ps1
+      - name: Retain validation results even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-validation
+          path: ~/AppData/Local/DeskPages/Verification/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskpages-preview
+          path: dist/*
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deskpages-preview
+          path: dist
+      - name: Verify assets and publish immutable version tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS.txt
+          cd ..
+          tag="v$(sed 's/^DeskPages //' VERSION.txt | tr -d '\r\n')-alpha.1"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "$tag" -m "DeskPages engineering preview" "$GITHUB_SHA"
+          git push origin "$tag"
+          gh release create "$tag" dist/DeskPages-Setup-*.exe dist/DeskPages-Source-*.zip dist/SHA256SUMS.txt --verify-tag --prerelease --latest=false --title "DeskPages ${tag#v} · Alpha" --notes-file Release/NOTES.md

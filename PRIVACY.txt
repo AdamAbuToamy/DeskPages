@@ -1,0 +1,57 @@
+DeskPages Privacy Notice
+Version 0.8.7 | Effective 18 October 2026
+Developer: Adam Abu Toamy
+
+DeskPages works locally. It has no accounts, telemetry, analytics, advertising,
+automatic update checks, or code that uploads your desktop data to a server.
+
+To organize the original Explorer desktop, it reads item identifiers, paths,
+selection, icon positions, file attributes, sizes and modification times. It
+changes managed items' visibility and stores page membership and layout metadata.
+It does not need to read document contents to organize pages. System icons use
+Windows desktop settings. Public Desktop items can require administrator access.
+
+The app receives mouse/touchpad input and relevant shortcut key events to detect
+navigation and context-menu creation positions. It does not record typed text.
+Diagnostic logs can contain paths, item names, error messages, timing, counters
+and system/version information. Diagnostic reports are only shared if you share
+them yourself. Review/redact reports before attaching them to a public issue.
+
+Animations capture the Explorer desktop into transient graphics surfaces. They
+do not intentionally save screenshots or videos to disk or transmit captures.
+
+Local settings, logs, journals, layout snapshots and restart checks are stored
+under %LOCALAPPDATA%\DeskPages. Installation logs are also local. A user-requested
+settings export includes page membership, file paths, icon positions and input
+preferences, but not the files themselves. During edge dragging, a local helper
+process uses a short-lived session folder under DeskPages\DragSessions to exchange
+validated item paths, file identities and drop positions with the agent. It runs
+with the normal Explorer user token and does not copy, move or delete user files.
+Optional drag visual error logs may be retained locally for troubleshooting.
+Session request/state files are removed on normal shutdown; interrupted sessions may remain. Keep exports private. They are not
+content backups. Explorer/Windows/cloud sync services have their own behavior
+and policies, including OneDrive if your Desktop is redirected there.
+
+The installer creates startup tasks and uninstall entries and places program
+files in your chosen protected folder. The program starts at sign-in. Windows
+certificate or security checks can contact Microsoft or certificate authorities
+independently of DeskPages.
+
+Uninstallation attempts to restore file visibility and desktop layout. Local
+recovery data is intentionally retained. Remove it only after stopping DeskPages
+and verifying all files are visible and your layout is acceptable. Backups and
+exports you created must be deleted separately if you no longer want them.
+
+No cloud service, subscription, data sale or third-party analytics service is
+operated by DeskPages. Future versions that change this behavior must update
+this notice. No private support email address is configured for this preview.
+
+Local recovery history stores page membership, icon coordinates, file identities
+and preferences. Display profiles store display identifiers and geometry; the
+Main display only option also stores stationary secondary-icon positions. These
+are metadata, not screenshots or document contents. Older organization metadata
+is retained for compatibility even when its tools are absent from the daily UI.
+Rescue operates independently of the main agent/input hooks/animation renderer.
+For support, use Issues in the official AdamAbuToamy/DeskPages GitHub repository
+once published. Private vulnerability reporting is enabled by the publishing
+script; if unavailable, do not disclose private reports in public Issues.

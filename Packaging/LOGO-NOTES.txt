@@ -1,0 +1,6 @@
+Asset created using the built-in image generation tool, logo-brand mode.
+Brief: two overlapping desktop panels indicating horizontal page changes;
+Windows-style blue, transparent background, no text, strong small-size silhouette.
+Original PNG copied intact. ICO is a format conversion into eight Windows sizes.
+Full generation prompt:
+Use case: logo-brand. Asset type: the main application icon for DeskPages, a small Windows 11 utility that adds sliding pages to the original desktop. Generate ONE clean original icon, centered and large, on a genuinely transparent background. Subject: two offset, overlapping desktop panels, suggesting horizontal page switching, with a single clear visual silhouette and generous negative space. Refined native Windows application aesthetic, flat geometric construction, crisp edges, modest rounded corners. Use a restrained Windows-like blue front panel with a simple pale interior panel and a lighter blue rear panel; strong contrast, no tiny decorative details. Must remain recognizable at 16 and 24 pixels. No text, no letters, no arrows made of thin lines, no icon grids, no mockup, no drop shadow, no surrounding square background, no watermark. Square 1024x1024 composition.
