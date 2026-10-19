@@ -1,10 +1,8 @@
-name: Publish DeskPages website
+name: Publish DeskPages GitHub redirect
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'scripts/refresh-site-download.py', 'scripts/capture-website-ui.ps1', 'Tests/WebsiteUiCapture.cs', 'Native/**', '.github/workflows/pages.yml']
-  release:
-    types: [published, edited]
+    paths: ['docs/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,41 +12,17 @@ concurrency:
   group: deskpages-website
   cancel-in-progress: false
 jobs:
-  capture-ui:
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Capture actual production windows with sample data
-        shell: powershell
-        run: ./scripts/capture-website-ui.ps1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: native-ui-evidence
-          path: docs/assets/ui/*.png
-          if-no-files-found: error
   deploy:
-    needs: capture-ui
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-ui-evidence
-          path: docs/assets/ui
-      - name: Resolve the newest published installer
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/refresh-site-download.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-      - name: Deploy public website
+      - name: Publish redirect to the official repository
         id: deployment
         uses: actions/deploy-pages@v4

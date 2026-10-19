@@ -1,6 +1,20 @@
-# DeskPages
+# DeskPages — Windows 11 Desktop Icon Organizer
 
-[DeskPages website and download](https://adamabutoamy.github.io/DeskPages/) · [All releases](https://github.com/AdamAbuToamy/DeskPages/releases)
+DeskPages organizes icons on your original Windows 11 desktop into separate pages for work, study and personal projects. Your files keep their original paths; your wallpaper, taskbar and open application windows stay in place.
+
+Created by Adam Abu Toamy · Windows 11 x64 · Alpha preview
+
+## Download DeskPages
+
+**[Download DeskPages for Windows 11 from GitHub Releases](https://github.com/AdamAbuToamy/DeskPages/releases)**
+
+Choose the `DeskPages-Setup-*.exe` installer in the release's **Assets** section. Read its release notes and checksums before installing.
+
+## تحميل ديسك باجيس — DeskPages
+
+برنامج لتنظيم أيقونات سطح مكتب ويندوز 11 في صفحات للعمل والدراسة والمشاريع. تبقى الملفات في مساراتها الأصلية، وتبقى الخلفية وشريط المهام والنوافذ المفتوحة كما هي.
+
+**[تحميل DeskPages من إصدارات GitHub الرسمية](https://github.com/AdamAbuToamy/DeskPages/releases)** — افتح **Assets** واختر ملف `DeskPages-Setup-*.exe`.
 
 <!-- deskpages-demo:start -->
 ## Preview
