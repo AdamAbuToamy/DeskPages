@@ -3,7 +3,7 @@
 <!-- deskpages-demo:start -->
 ## Preview
 
-[Watch the DeskPages concept video](https://github.com/AdamAbuToamy/DeskPages/blob/main/media/DeskPages-demo.mp4)
+https://github.com/user-attachments/assets/1604baac-4e1b-4fa8-92d0-7a5c943df32d
 
 *A short concept visualization of DeskPages.*
 
