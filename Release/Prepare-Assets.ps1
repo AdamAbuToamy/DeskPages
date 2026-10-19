@@ -6,7 +6,7 @@ $version=([IO.File]::ReadAllText((Join-Path $root 'VERSION.txt')) -replace '^Des
 $installer=Join-Path $OutputDirectory "DeskPages-Setup-$version.exe"
 . (Join-Path $root 'PackageIntegrity.ps1')
 $null=Read-DpPortableExecutable -Path $installer -Machine 0x8664 -Managed
-Assert-DpManagedIdentity -Path $installer -Name DeskPagesSetup -Version ([Version]($version+'.0'))
+Assert-DpManagedIdentity -Path $installer -Name 'DeskPages-Setup' -Version ([Version]($version+'.0'))
 # Source archive contains the exact committed tree, not logs or user state.
 $source=Join-Path $OutputDirectory "DeskPages-Source-$version.zip"
 & git -C $root archive --format=zip --output=$source HEAD
