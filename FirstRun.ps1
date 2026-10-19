@@ -6,7 +6,7 @@
             [PSCustomObject]@{Path=$file.FullName;Page=1}
         }
     })
-    [PSCustomObject]@{Desktop=$Desktop;Current=1;PageCount=2;Pages=@(1,2);Items=$items;SystemIconBackup=@($SystemBackup)}
+    [PSCustomObject]@{Desktop=$Desktop;Current=1;PageCount=1;Pages=@(1);Items=$items;SystemIconBackup=@($SystemBackup)}
 }
 function Get-DpInitialSystemBackup {
     $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:DpIconKey)
