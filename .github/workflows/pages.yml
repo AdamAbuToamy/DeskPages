@@ -1,0 +1,36 @@
+name: Publish DeskPages website
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'scripts/refresh-site-download.py', '.github/workflows/pages.yml']
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: deskpages-website
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Resolve the newest published installer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/refresh-site-download.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy public website
+        id: deployment
+        uses: actions/deploy-pages@v4

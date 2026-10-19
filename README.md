@@ -1,5 +1,7 @@
 # DeskPages
 
+[DeskPages website and download](https://adamabutoamy.github.io/DeskPages/) · [All releases](https://github.com/AdamAbuToamy/DeskPages/releases)
+
 <!-- deskpages-demo:start -->
 ## Preview
 
