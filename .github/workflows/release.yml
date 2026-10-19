@@ -59,7 +59,7 @@ jobs:
           cd dist
           sha256sum -c SHA256SUMS.txt
           cd ..
-          tag="v$(sed 's/^DeskPages //' VERSION.txt | tr -d '\r\n')-alpha.1"
+                    tag="v$(sed '1s/^\xEF\xBB\xBF//; s/^DeskPages //' VERSION.txt | tr -d '\r\n')-alpha.1"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git tag -a "$tag" -m "DeskPages engineering preview" "$GITHUB_SHA"
