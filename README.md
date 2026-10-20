@@ -71,3 +71,7 @@ The app starts at sign-in on Main. Run `DeskPagesRescue.exe` if the agent is una
 The tour has isolated policy and real-control tests in English, Arabic and Hebrew, including replay, completion persistence and reduced motion. Local UI evidence uses Mono/Xvfb. Real Windows installation, reboot, touchpad, Explorer/OLE, monitor/DPI and frame pacing require Windows acceptance; passing isolated tests is not a guarantee for every device.
 
 Run `Validate.cmd` for automated checks and `Simulate-Monitors.cmd` for the interactive monitor-region simulator. See [Build instructions](Release/BUILD.md), [Acceptance checklist](Release/ACCEPTANCE.md) and [Release notes](Release/NOTES.md).
+
+## More projects by Adam Abu Toamy
+
+[**Where I Left Off — project and follow-up organizer**](https://where-i-left-off.web.app/about.html) helps you save where you stopped and what to do next across phone and PC. [Open the app](https://where-i-left-off.web.app/) · [Source on GitHub](https://github.com/AdamAbuToamy/where-i-left-off).
