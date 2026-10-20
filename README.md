@@ -23,7 +23,7 @@ You only need the EXE installer. Release notes, source and SHA-256 checksums are
 
 ### Actual settings preview
 
-![DeskPages settings in Arabic](media/DeskPages-settings-0.8.12.png)
+![DeskPages settings in English](media/DeskPages-settings-0.8.12-en.png)
 
 *Captured from the actual UI using fixture data under Mono/Xvfb. Windows fonts and borders may differ.*
 
@@ -45,7 +45,7 @@ Pages organize one physical Desktop folder. They share disk space and the same f
 
 ### Actual tour preview
 
-![DeskPages interactive tour](media/DeskPages-tour-0.8.9.gif)
+![DeskPages interactive tour in English](media/DeskPages-tour-0.8.9-en.gif)
 
 *Captured from the actual UI with test data under Mono/Xvfb. Windows fonts and window borders may differ.*
 
