@@ -15,7 +15,7 @@ public static class DeskPagesWorkspaceApi {
  }
 }
 public static class SettingsUiHarness {
- static void Require(bool value,string text){if(!value)throw new Exception(text);}
+ static string Context="";static void Require(bool value,string text){if(!value)throw new Exception(Context+": "+text);}
  static bool HasInk(Bitmap b,Rectangle r){r.Intersect(new Rectangle(Point.Empty,b.Size));int count=0;for(int y=r.Top;y<r.Bottom;y++)for(int x=r.Left;x<r.Right;x++){var c=b.GetPixel(x,y);if(c.R<205 && c.G<205 && c.B<205)count++;}return count>8;}
  static T Field<T>(object value,string name){return (T)value.GetType().GetField(name,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(value);}
  [STAThread]public static int Main(string[] args){
@@ -28,7 +28,7 @@ public static class SettingsUiHarness {
     Require(form.AutoScaleMode==AutoScaleMode.None && !form.RightToLeftLayout,"Native automatic/mirrored scaling must not own the layout");
     int writes=DeskPagesWorkspaceApi.Writes;
     for(int section=0;section<4;section++){
-     form.Surface.SelectSection(section);form.Refresh();Application.DoEvents();
+     Context=language+" scale="+scale+" width="+width+" section="+section;form.Surface.SelectSection(section);form.Refresh();Application.DoEvents();
      using(var bitmap=new Bitmap(form.Surface.Width,form.Surface.Height)){
       form.Surface.DrawToBitmap(bitmap,form.Surface.ClientRectangle);
       foreach(var row in form.Surface.Pages[section]){
