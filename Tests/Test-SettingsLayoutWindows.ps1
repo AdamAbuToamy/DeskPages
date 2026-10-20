@@ -9,12 +9,22 @@ try{
     $exe=Join-Path $temp 'SettingsUi.exe'
     & $compiler /nologo /target:exe /r:System.Windows.Forms.dll /r:System.Drawing.dll "/out:$exe" @sources
     if($LASTEXITCODE -ne 0){throw 'Settings layout harness did not compile.'}
-    $stdout=Join-Path $temp 'stdout.txt'
-    $stderr=Join-Path $temp 'stderr.txt'
-    $process=Start-Process -FilePath $exe -ArgumentList ('"'+$temp+'"') -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-    if(-not $process.WaitForExit(60000)){$process.Kill();throw 'Settings layout harness timed out.'}
-    $process.WaitForExit()
-    if(Test-Path $stdout){Get-Content $stdout | Write-Host}
-    if($process.ExitCode -ne 0){$details=if(Test-Path $stderr){Get-Content $stderr -Raw}else{'No stderr captured.'};throw ('Settings clipping regression failed: '+$details)}
+    $start=New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName=$exe
+    $start.Arguments='"'+$temp+'"'
+    $start.UseShellExecute=$false
+    $start.CreateNoWindow=$true
+    $start.RedirectStandardOutput=$true
+    $start.RedirectStandardError=$true
+    $process=New-Object System.Diagnostics.Process
+    $process.StartInfo=$start
+    try{
+        [void]$process.Start()
+        if(-not $process.WaitForExit(60000)){$process.Kill();throw 'Settings layout harness timed out.'}
+        $stdout=$process.StandardOutput.ReadToEnd()
+        $stderr=$process.StandardError.ReadToEnd()
+        if($stdout){Write-Host $stdout}
+        if($process.ExitCode -ne 0){throw ('Settings clipping regression failed (exit '+$process.ExitCode+'): '+$stderr)}
+    }finally{$process.Dispose()}
     Write-Host 'PASS: settings text paint and switch bounds; EN/AR/HE at four font sizes and normal/narrow widths. Physical Windows DPI/monitor acceptance remains separate.'
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}
