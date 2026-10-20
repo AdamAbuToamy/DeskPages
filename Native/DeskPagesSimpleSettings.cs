@@ -113,7 +113,7 @@ public sealed class DeskPagesSimpleSettings:Form {
     protected override void OnShown(EventArgs e){base.OnShown(e);if(!preview){using(var g=CreateGraphics())ApplyScale(g.DpiX/96F,760,560,true);}}
     public void SetPreviewLayout(float value,int width,int height){preview=true;ApplyScale(value,width,height,false);}
     private void ApplyScale(float value,float width,float height,bool fit){
-        scale=Math.Max(.75F,Math.Min(4,value));Surface.UiScale=scale;
+        scale=Math.Max(.75F,Math.Min(4,value));Surface.RequestedScale=scale;
         var area=Screen.FromControl(this).WorkingArea;
         MinimumSize=new Size(Math.Min((int)(640*scale),Math.Max(320,area.Width-40)),Math.Min((int)(480*scale),Math.Max(300,area.Height-40)));
         ClientSize=new Size(fit?Math.Min((int)(width*scale),area.Width-60):(int)(width*scale),fit?Math.Min((int)(height*scale),area.Height-80):(int)(height*scale));

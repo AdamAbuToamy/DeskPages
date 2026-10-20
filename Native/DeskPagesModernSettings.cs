@@ -60,7 +60,7 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
     public readonly List<DeskPagesModernSettingsItem>[] Pages={new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>()};
     private readonly DeskPagesModernButton[] tabs=new DeskPagesModernButton[4];
     public readonly DeskPagesModernButton Replay=new DeskPagesModernButton(),SaveLayout=new DeskPagesModernButton(),RestoreLayout=new DeskPagesModernButton();
-    public int Section {get;private set;}public float UiScale=1;public bool IsRtl;
+    public int Section {get;private set;}public float RequestedScale=1;public float UiScale=1;public bool IsRtl;
     public string Status="";private Rectangle card,extra;private bool arranging,initialized;private Font fieldFont;
     private static string L(string en,string ar,string he){return DeskPagesWorkspaceApi.L(en,ar,he);}
     public DeskPagesModernSettingsSurface(){
@@ -82,6 +82,9 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
     protected override void OnLayout(LayoutEventArgs e){
         base.OnLayout(e);if(arranging || !initialized)return;arranging=true;
         try{
+            // A monitor or a resized window can be smaller than the requested DPI canvas.
+            // Keep the complete settings page visible within that actual client area.
+            UiScale=Math.Max(.5F,Math.Min(RequestedScale,Math.Min(ClientSize.Width/640F,ClientSize.Height/480F)));
             float width=ClientSize.Width/UiScale,rail=width<700?132:156,outer=20,gap=24;
             if(fieldFont==null || Math.Abs(fieldFont.Size-14*UiScale)>.1F){var old=fieldFont;fieldFont=new Font("Segoe UI",14*UiScale,FontStyle.Regular,GraphicsUnit.Pixel);foreach(var page in Pages)foreach(var item in page)item.Action.Font=fieldFont;if(old!=null)old.Dispose();}
             float railX=IsRtl?width-outer-rail:outer,contentX=IsRtl?outer:outer+rail+gap,contentWidth=width-2*outer-rail-gap;
