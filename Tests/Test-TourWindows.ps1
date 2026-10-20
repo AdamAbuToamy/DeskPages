@@ -4,7 +4,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-tour-test-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
 try{
- $sources=@('Tests/TourUiHarness','Native/DeskPagesTour','Native/DeskPagesTourPolicy','Native/DeskPagesTheme','Native/DeskPagesWorkspaceControls','Native/DeskPagesWorkspace','Native/DeskPagesSimpleSettings','Native/DeskPagesSimplePreferences','Native/DeskPagesWorkspaceRequest','Native/DeskPagesPageNames') | ForEach-Object {Join-Path $root ($_+'.cs')}
+ $sources=@('Tests/TourUiHarness','Native/DeskPagesTour','Native/DeskPagesTourPolicy','Native/DeskPagesTheme','Native/DeskPagesWorkspaceControls','Native/DeskPagesWorkspace','Native/DeskPagesSimpleSettings','Native/DeskPagesModernSettings','Native/DeskPagesSimplePreferences','Native/DeskPagesWorkspaceRequest','Native/DeskPagesPageNames') | ForEach-Object {Join-Path $root ($_+'.cs')}
  $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
  if(-not(Test-Path $compiler)){throw '.NET Framework x64 compiler not found.'}
  $exe=Join-Path $temp 'TourUi.exe'

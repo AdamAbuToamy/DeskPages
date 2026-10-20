@@ -31,32 +31,65 @@
     Save-DpState
 
 }
+# Ownership is separate from pages.xml: uncommitted drag membership must never
+# be persisted merely to record an attribute change. Keep this journal with the
+# page manifest, including during upgrades, undo and rescue.
+function Get-DpSystemOwnership {
+    $path=Join-Path $script:DpStore 'system-ownership.xml'
+    if($script:DpSystemOwnershipPath -ne $path -or $null -eq $script:DpSystemOwnership){
+        $map=@{}
+        if(Test-Path -LiteralPath $path){
+            $map=Import-Clixml -LiteralPath $path -ErrorAction Stop
+            if($map -isnot [Collections.IDictionary]){throw 'Invalid attribute ownership journal. Preserve DeskPages data and request recovery.'}
+            foreach($key in $map.Keys){if($map[$key] -isnot [bool] -or -not $map[$key]){throw 'Invalid attribute ownership record.'}}
+        }
+        $script:DpSystemOwnership=$map
+        $script:DpSystemOwnershipPath=$path
+    }
+    return $script:DpSystemOwnership
+}
+function Get-DpVisibilityAttributes {
+    param([string]$Path,[int]$Attributes,[bool]$Hidden)
+    $owned=Get-DpSystemOwnership
+    if($Hidden){return (($Attributes -band (-bnot 128)) -bor 6)}
+    $result=$Attributes -band (-bnot 2)
+    # Never clear a System attribute that DeskPages did not add.
+    if($owned.Contains($Path)){$result=$result -band (-bnot 4)}
+    if($result -eq 0){$result=128}
+    return $result
+}
+function Register-DpSystemOwnership {
+    param([string[]]$Paths)
+    $owned=Get-DpSystemOwnership
+    $next=@{};foreach($key in $owned.Keys){$next[$key]=$true}
+    $changed=$false
+    foreach($path in $Paths){
+        if([IO.Path]::GetDirectoryName($path) -notin @($script:DpDesktop,$script:DpPublic)){throw 'Ownership path is outside desktop folders.'}
+        $attributes=[int][IO.File]::GetAttributes($path)
+        if(($attributes -band (4 -bor 1024)) -eq 0 -and -not $next.Contains($path)){$next[$path]=$true;$changed=$true}
+    }
+    if($changed){
+        # One durable write per page transition, never one full journal per icon.
+        Write-DpAtomicXml -Path $script:DpSystemOwnershipPath -Value $next
+        $script:DpSystemOwnership=$next
+    }
+}
 function Set-DpHidden {
-
     param([string]$Path, [bool]$Hidden)
-
     if (-not (Test-Path -LiteralPath $Path)) { return }
-
     $parent = [IO.Path]::GetDirectoryName($Path)
     if ($parent -notin @($script:DpDesktop, $script:DpPublic)) {
         throw "Refusing a path outside desktop folders: $Path"
     }
-
     $attributes = [int][IO.File]::GetAttributes($Path)
     if (($attributes -band 1024) -ne 0) { return }
-    # Do not require write permission just to leave an already-correct item alone.
-    if ((($attributes -band 2) -ne 0) -eq $Hidden) { return }
-
-    if ($Hidden) {
-        $attributes = ($attributes -band (-bnot 128)) -bor 2
+    $target=Get-DpVisibilityAttributes $Path $attributes $Hidden
+    if($target -eq $attributes){return}
+    if($Hidden -and ($attributes -band 4) -eq 0){
+        $owned=Get-DpSystemOwnership
+        if(-not $owned.Contains($Path)){Register-DpSystemOwnership -Paths @($Path)}
     }
-    else {
-        $attributes = $attributes -band (-bnot 2)
-        if ($attributes -eq 0) { $attributes = 128 }
-    }
-
-    [IO.File]::SetAttributes($Path, [IO.FileAttributes]$attributes)
-
+    [IO.File]::SetAttributes($Path, [IO.FileAttributes]$target)
 }
 function Set-DpFilePage {
 
@@ -71,10 +104,10 @@ function Set-DpFilePage {
 
     $setting = Get-ItemProperty `
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
-        -Name Hidden -ErrorAction SilentlyContinue
+        -ErrorAction SilentlyContinue
 
-    if ($setting.Hidden -eq 1) {
-        throw "Turn OFF Explorer > View > Show > Hidden items first."
+    if ($setting.ShowSuperHidden -eq 1) {
+        throw "Keep Explorer > Folder Options > View > Hide protected operating system files enabled. Ordinary Hidden items may stay ON."
     }
 
     if($script:DpState.PSObject.Properties['Workspace'] -and $script:DpState.Workspace.PSObject.Properties['PrimaryOnly'] -and $script:DpState.Workspace.PrimaryOnly){$script:DpScopeScreens=@(Get-DpMonitorGeometry)}
@@ -119,14 +152,13 @@ function Set-DpFilePage {
             $entries.Add($entry)
         }
 
-        $isHidden = ($attributes -band 2) -ne 0
         $shouldHide = -not (Test-DpFileVisible $entry $Page)
 
-        if ($isHidden -eq $shouldHide) { continue }
+        if ((Get-DpVisibilityAttributes $file.FullName $attributes $shouldHide) -eq $attributes) { continue }
 
         $changes.Add([PSCustomObject]@{
             Path = $file.FullName
-            HiddenBefore = $isHidden
+            AttributesBefore = $attributes
             HiddenAfter = $shouldHide
         })
     }
@@ -138,22 +170,11 @@ function Set-DpFilePage {
         $script:DpState.Items = $entries.ToArray()
         if($PersistMembership){Save-DpState}
 
+        Register-DpSystemOwnership -Paths @($changes | Where-Object {$_.HiddenAfter} | ForEach-Object {$_.Path})
         foreach ($change in $changes) {
-            # Read the latest attributes and change only Hidden.
-            $attributes = [int][IO.File]::GetAttributes($change.Path)
-            $change.HiddenBefore = ($attributes -band 2) -ne 0
-
-            if ($change.HiddenAfter) {
-                $attributes = ($attributes -band (-bnot 128)) -bor 2
-            }
-            else {
-                $attributes = $attributes -band (-bnot 2)
-                if ($attributes -eq 0) { $attributes = 128 }
-            }
-
-            [IO.File]::SetAttributes(
-                $change.Path, [IO.FileAttributes]$attributes
-            )
+            # Capture both controlled bits immediately before the write.
+            $change.AttributesBefore = [int][IO.File]::GetAttributes($change.Path)
+            Set-DpHidden -Path $change.Path -Hidden $change.HiddenAfter
             $applied.Add($change)
         }
 
@@ -173,8 +194,11 @@ function Set-DpFilePage {
 
         foreach ($change in $applied) {
             try {
-                Set-DpHidden -Path $change.Path `
-                    -Hidden $change.HiddenBefore
+                $attributes=[int][IO.File]::GetAttributes($change.Path)
+                if(($attributes -band 1024) -ne 0){throw 'Path became a reparse point during rollback.'}
+                $attributes=($attributes -band (-bnot (2 -bor 4 -bor 128))) -bor ($change.AttributesBefore -band 6)
+                if($attributes -eq 0){$attributes=128}
+                [IO.File]::SetAttributes($change.Path,[IO.FileAttributes]$attributes)
             }
             catch {
                 Write-Warning "Could not restore: $($change.Path)"

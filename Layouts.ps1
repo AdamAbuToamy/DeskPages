@@ -136,7 +136,8 @@ function Assert-DpPhysicalPage {
         $attrs=[int][IO.File]::GetAttributes($entry.Path)
         if(($attrs -band 1024) -ne 0){continue}
         $hidden=($attrs -band 2) -ne 0
-        if($hidden -ne (-not (Test-DpFileVisible $entry $Page))){
+        $shouldHide=-not (Test-DpFileVisible $entry $Page)
+        if($hidden -ne $shouldHide -or ($shouldHide -and ($attrs -band 6) -ne 6)){
             throw 'Physical file visibility does not match the target page; transition blocked.'
         }
     }

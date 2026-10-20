@@ -71,18 +71,37 @@ public sealed class DeskPagesBrand:Control {
 
 public sealed class DeskPagesSwitch:CheckBox {
     public DeskPagesSwitch(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);Cursor=Cursors.Hand;}
-    public override Size GetPreferredSize(Size proposedSize){Size text=TextRenderer.MeasureText(Text,Font);return new Size(text.Width+DeskPagesTheme.Unit(this,55),Math.Max(text.Height,DeskPagesTheme.Unit(this,24)));}
+    public override Size GetPreferredSize(Size proposedSize){
+        int width=DeskPagesTheme.Unit(this,48),height=DeskPagesTheme.Unit(this,32);
+        if(!String.IsNullOrEmpty(Text)){Size text=TextRenderer.MeasureText(Text,Font);width+=text.Width+DeskPagesTheme.Unit(this,12);height=Math.Max(height,text.Height);}
+        return new Size(width,height);
+    }
+    public Rectangle TrackBounds {
+        get{
+            int w=Math.Min(DeskPagesTheme.Unit(this,34),Math.Max(1,ClientSize.Width-2));
+            int h=Math.Min(DeskPagesTheme.Unit(this,20),Math.Max(1,ClientSize.Height-2));
+            bool rtl=RightToLeft==RightToLeft.Yes;
+            int x=String.IsNullOrEmpty(Text)?(ClientSize.Width-w)/2:(rtl?ClientSize.Width-w-1:1);
+            return new Rectangle(Math.Max(0,x),Math.Max(0,(ClientSize.Height-h)/2),w,h);
+        }
+    }
     protected override void OnPaint(PaintEventArgs e){
         e.Graphics.Clear(BackColor);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
-        int w=DeskPagesTheme.Unit(this,34),h=DeskPagesTheme.Unit(this,20),gap=DeskPagesTheme.Unit(this,12);bool rtl=RightToLeft==RightToLeft.Yes;
-        var track=new Rectangle(rtl?Width-w-1:1,(Height-h)/2,w,h);Color color=Enabled?(Checked?DeskPagesTheme.Accent:Color.FromArgb(96,96,96)):DeskPagesTheme.Line;
-        using(var path=DeskPagesTheme.Round(track,h/2))using(var fill=new SolidBrush(Checked?color:Color.White))using(var border=new Pen(color)){e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(border,path);}
-        int dot=h-6;int cx=(Checked!=rtl)?track.Right-dot-3:track.Left+3;using(var knob=new SolidBrush(Checked?Color.White:DeskPagesTheme.Muted))e.Graphics.FillEllipse(knob,cx,track.Top+3,dot,dot);
-        var text=new Rectangle(rtl?0:w+gap,0,Math.Max(1,Width-w-gap),Height);
-        var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|(rtl?TextFormatFlags.Right|TextFormatFlags.RightToLeft:TextFormatFlags.Left);
-        if(!ShowKeyboardCues)flags|=TextFormatFlags.HidePrefix;
-        TextRenderer.DrawText(e.Graphics,Text,Font,text,Enabled?DeskPagesTheme.Ink:DeskPagesTheme.Muted,flags);
-        if(Focused && ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,text);
+        bool rtl=RightToLeft==RightToLeft.Yes;var track=TrackBounds;
+        Color color=Enabled?(Checked?DeskPagesTheme.Accent:Color.FromArgb(96,96,96)):DeskPagesTheme.Line;
+        using(var path=DeskPagesTheme.Round(track,track.Height/2))using(var fill=new SolidBrush(Checked?color:Color.White))using(var border=new Pen(color)){e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(border,path);}
+        int inset=Math.Min(DeskPagesTheme.Unit(this,3),Math.Max(1,track.Height/3));
+        int dot=Math.Max(1,Math.Min(track.Height,track.Width)-2*inset);
+        int cx=(Checked!=rtl)?track.Right-dot-inset:track.Left+inset;
+        using(var knob=new SolidBrush(Checked?Color.White:DeskPagesTheme.Muted))e.Graphics.FillEllipse(knob,cx,track.Top+(track.Height-dot)/2,dot,dot);
+        if(!String.IsNullOrEmpty(Text)){
+            int gap=DeskPagesTheme.Unit(this,12);
+            var text=new Rectangle(rtl?0:track.Right+gap,0,Math.Max(1,Width-track.Width-gap),Height);
+            var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|(rtl?TextFormatFlags.Right|TextFormatFlags.RightToLeft:TextFormatFlags.Left);
+            if(!ShowKeyboardCues)flags|=TextFormatFlags.HidePrefix;
+            TextRenderer.DrawText(e.Graphics,Text,Font,text,Enabled?DeskPagesTheme.Ink:DeskPagesTheme.Muted,flags);
+        }
+        if(Focused && ShowFocusCues){var focus=Rectangle.Inflate(track,2,2);focus.Intersect(ClientRectangle);ControlPaint.DrawFocusRectangle(e.Graphics,focus);}
     }
     protected override void OnCheckedChanged(EventArgs e){base.OnCheckedChanged(e);Invalidate();}
 }

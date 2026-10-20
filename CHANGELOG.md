@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.12 Alpha
+
+- Rebuild settings with a sidebar, four sections and one explicit pixel-layout owner, replacing automatic/mirrored nested layout in that window.
+- Preserve preference saving, quick-tour replay, arrangement actions and rejected display-scope rollback; cover their behavior with EN/AR/HE UI fixtures.
+- Include the ordinary hidden-items fix, durable System-bit ownership and recovery from the 0.8.10 preview.
+- Update README with the actual settings preview and storage/visibility behavior.
+
+## 0.8.10 Alpha
+
+- Allow ordinary Explorer Hidden items while isolating off-page icons with Hidden + System.
+- Journal System-bit ownership before mutation; preserve recovery and pending membership separately.
+- Preserve unrelated hidden files and original System/ReadOnly attributes; strengthen the physical transition guard.
+- Document shared storage/filename rules and protected-system-files display limitation.
+
 ## 0.8.9 — Interactive quick start
 
 - New installations begin with Main only; existing organization is preserved on upgrade.

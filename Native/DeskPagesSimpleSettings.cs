@@ -14,51 +14,123 @@ public static class DeskPagesFluent {
     public static Control Heading(string title,string note){var panel=new Panel{Dock=DockStyle.Fill};var heading=new Label{Text=title,Dock=DockStyle.Top,AutoSize=false,Height=32,Font=new Font("Segoe UI",18,FontStyle.Regular),ForeColor=DeskPagesTheme.Ink};var subtitle=new Label{Text=note,Dock=DockStyle.Bottom,Height=24,ForeColor=DeskPagesTheme.Muted,AutoEllipsis=true};bool rtl=DeskPagesWorkspaceApi.Language=="ar" || DeskPagesWorkspaceApi.Language=="he";heading.TextAlign=subtitle.TextAlign=rtl?ContentAlignment.MiddleRight:ContentAlignment.MiddleLeft;panel.Controls.Add(heading);panel.Controls.Add(subtitle);return panel;}
     public static DeskPagesActionButton Button(string title,Action action,bool primary){var button=new DeskPagesActionButton{Text=title,AccessibleName=title,Primary=primary,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=new Padding(0,3,8,3),MinimumSize=new Size(84,34),Padding=new Padding(10,5,10,5)};button.Click+=delegate{action();};return button;}
     public static Control Row(string title,string description,Control action,int actionWidth){
-        var card=new DeskPagesSettingsCard{AutoSize=false,Height=76,Padding=new Padding(12,6,12,6),Margin=new Padding(0,0,0,5)};
-        card.RowCount=1;card.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        bool rtl=DeskPagesWorkspaceApi.Language=="ar" || DeskPagesWorkspaceApi.Language=="he";
-        var grid=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,RightToLeft=RightToLeft.No};grid.RowStyles.Add(new RowStyle(SizeType.Percent,100));grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,actionWidth));card.Controls.Add(grid);
-        var labels=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Padding=new Padding(0,6,8,4)};labels.RowStyles.Add(new RowStyle(SizeType.Percent,50));labels.RowStyles.Add(new RowStyle(SizeType.Percent,50));labels.Controls.Add(new Label{Text=title,Dock=DockStyle.Fill,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleLeft},0,0);labels.Controls.Add(new Label{Text=description,Dock=DockStyle.Fill,ForeColor=DeskPagesTheme.Muted,AutoEllipsis=true,Font=new Font("Segoe UI",9),TextAlign=ContentAlignment.MiddleLeft},0,1);if(rtl){grid.ColumnStyles.Clear();grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,actionWidth));grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));foreach(Control label in labels.Controls){((Label)label).TextAlign=ContentAlignment.MiddleRight;label.RightToLeft=RightToLeft.Yes;}}grid.Controls.Add(labels,rtl?1:0,0);
-        var slot=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3};slot.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));slot.RowStyles.Add(new RowStyle(SizeType.Percent,50));slot.RowStyles.Add(new RowStyle(SizeType.Absolute,48));slot.RowStyles.Add(new RowStyle(SizeType.Percent,50));action.Dock=DockStyle.Fill;if(String.IsNullOrEmpty(action.AccessibleName))action.AccessibleName=title;action.AccessibleDescription=description;slot.Controls.Add(action,0,1);slot.RightToLeft=rtl?RightToLeft.Yes:RightToLeft.No;grid.Controls.Add(slot,rtl?0:1,0);return card;
+        return new DeskPagesSettingsRow(title,description,action,actionWidth);
+    }
+
+}
+
+// One layout owner for text and action: fixed nested table cells previously
+// clipped both text rows and the RTL switch after Windows DPI/font scaling.
+public sealed class DeskPagesSettingsRow:Panel {
+    private readonly string title,description;
+    private readonly Control action;
+    private readonly int actionWidth;
+    private readonly bool rtl;
+    private bool arranging;
+    public Rectangle TitleBounds {get;private set;}
+    public Rectangle DescriptionBounds {get;private set;}
+    public Control ActionControl {get{return action;}}
+    public DeskPagesSettingsRow(string title,string description,Control action,int actionWidth){
+        this.title=title;this.description=description;this.action=action;this.actionWidth=actionWidth;
+        rtl=DeskPagesWorkspaceApi.Language=="ar" || DeskPagesWorkspaceApi.Language=="he";
+        DoubleBuffered=true;BackColor=Color.White;Dock=DockStyle.Top;AutoSize=false;
+        RightToLeft=RightToLeft.No;AccessibleRole=AccessibleRole.Grouping;AccessibleName=title;AccessibleDescription=description;
+        action.Dock=DockStyle.None;action.Margin=Padding.Empty;action.RightToLeft=rtl?RightToLeft.Yes:RightToLeft.No;
+        if(String.IsNullOrEmpty(action.AccessibleName))action.AccessibleName=title;
+        action.AccessibleDescription=description;Controls.Add(action);
+        Margin=new Padding(0,0,0,6);Height=84;
+    }
+    protected override void OnFontChanged(EventArgs e){base.OnFontChanged(e);if(action!=null){PerformLayout();Invalidate();}}
+    protected override void OnLayout(LayoutEventArgs e){
+        base.OnLayout(e);if(arranging || action==null)return;arranging=true;
+        try{
+            int pad=DeskPagesTheme.Unit(this,14),gap=DeskPagesTheme.Unit(this,16);
+            int titleHeight=Font.Height+DeskPagesTheme.Unit(this,5),noteHeight=Font.Height+DeskPagesTheme.Unit(this,3);
+            int wantedHeight=Math.Max(DeskPagesTheme.Unit(this,84),titleHeight+noteHeight+2*pad);
+            if(Height!=wantedHeight)Height=wantedHeight;
+            int inner=Math.Max(1,ClientSize.Width-2*pad);
+            int preferred=Math.Max(DeskPagesTheme.Unit(this,actionWidth),action.GetPreferredSize(Size.Empty).Width);
+            int width=Math.Min(preferred,Math.Max(1,inner/2));
+            int height=Math.Min(DeskPagesTheme.Unit(this,48),Math.Max(1,ClientSize.Height-2*pad));
+            action.Bounds=new Rectangle(rtl?pad:ClientSize.Width-pad-width,(ClientSize.Height-height)/2,width,height);
+            int textLeft=rtl?action.Right+gap:pad;
+            int textRight=rtl?ClientSize.Width-pad:action.Left-gap;
+            int y=(ClientSize.Height-titleHeight-noteHeight)/2;
+            TitleBounds=new Rectangle(textLeft,y,Math.Max(1,textRight-textLeft),titleHeight);
+            DescriptionBounds=new Rectangle(textLeft,y+titleHeight,TitleBounds.Width,noteHeight);
+        }finally{arranging=false;}
+    }
+    protected override void OnPaint(PaintEventArgs e){
+        base.OnPaint(e);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using(var path=DeskPagesTheme.Round(new Rectangle(0,0,Math.Max(1,Width-1),Math.Max(1,Height-1)),DeskPagesTheme.Unit(this,6)))
+        using(var pen=new Pen(DeskPagesTheme.Line))e.Graphics.DrawPath(pen,path);
+        var flags=TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix|
+            (rtl?TextFormatFlags.Right|TextFormatFlags.RightToLeft:TextFormatFlags.Left);
+        TextRenderer.DrawText(e.Graphics,title,Font,TitleBounds,DeskPagesTheme.Ink,flags);
+        using(var noteFont=new Font(Font.FontFamily,Font.SizeInPoints*.9F,FontStyle.Regular))
+            TextRenderer.DrawText(e.Graphics,description,noteFont,DescriptionBounds,DeskPagesTheme.Muted,flags);
     }
 }
 
 public sealed class DeskPagesSimpleSettings:Form {
-    private readonly ComboBox language=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList};
-    private readonly ComboBox inbox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList};
-    private readonly DeskPagesSwitch[] basic=new DeskPagesSwitch[4];
-    private readonly DeskPagesSwitch reverse=new DeskPagesSwitch(),keyboard=new DeskPagesSwitch(),reduced=new DeskPagesSwitch();
-    private readonly TableLayoutPanel advanced=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=1,Visible=false};
+    private readonly ComboBox language=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat};
+    private readonly ComboBox inbox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat};
+    private readonly DeskPagesModernToggle[] basic=new DeskPagesModernToggle[4];
+    private readonly DeskPagesModernToggle reverse=new DeskPagesModernToggle(),keyboard=new DeskPagesModernToggle(),reduced=new DeskPagesModernToggle(),primaryOnly=new DeskPagesModernToggle();
     private readonly Timer load=new Timer{Interval=80},save=new Timer{Interval=180};
-    private readonly Label status=new Label{Dock=DockStyle.Fill,AutoSize=true,ForeColor=DeskPagesTheme.Muted};
-    private bool loading=true,ready;private readonly string locale;
-    private readonly DeskPagesSwitch primaryOnly=new DeskPagesSwitch();
+    public readonly DeskPagesModernSettingsSurface Surface=new DeskPagesModernSettingsSurface();
+    private bool loading=true,ready,preview;private readonly string locale;private float scale=1;
     private sealed class Destination {public int Id;public string Name;public override string ToString(){return Name;}}
     private static string L(string en,string ar,string he){return DeskPagesWorkspaceApi.L(en,ar,he);}
     public DeskPagesSimpleSettings(){
-        locale=DeskPagesWorkspaceApi.Language;DeskPagesFluent.Configure(this,L("DeskPages settings","إعدادات DeskPages","הגדרות DeskPages"),new Size(480,590));
-        var grid=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3};grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));grid.RowStyles.Add(new RowStyle(SizeType.Absolute,68));grid.RowStyles.Add(new RowStyle(SizeType.Percent,100));grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));Controls.Add(grid);grid.Controls.Add(DeskPagesFluent.Heading(L("Settings","الإعدادات","הגדרות"),L("DeskPages · changes save automatically","DeskPages · تُحفظ التغييرات تلقائيًا","DeskPages · השינויים נשמרים אוטומטית")),0,0);
-        var viewport=new Panel{Dock=DockStyle.Fill,AutoScroll=true};var stack=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=1};stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));viewport.Controls.Add(stack);grid.Controls.Add(viewport,0,1);
-        language.Items.AddRange(new object[]{"English","العربية","עברית"});stack.Controls.Add(DeskPagesFluent.Row(L("Language","اللغة","שפה"),L("Application language","لغة التطبيق","שפת היישום"),new DeskPagesField(language),142));
-        string[] titles={L("Touchpad swipe","السحب بلوحة اللمس","החלקה במשטח המגע"),L("Drag between pages","السحب بين الصفحات","גרירה בין דפים"),L("Page animation","حركة الانتقال","הנפשת מעבר"),L("Page number","رقم الصفحة","מספר דף")};
-        string[] notes={L("Switch pages with a supported gesture","التنقل بإيماءة يدعمها التعريف","מעבר במחווה נתמכת"),L("Hold files at the screen edge","أمسك الملفات عند حافة الشاشة","החזיקו קבצים בקצה המסך"),L("Slide when changing pages","حركة سحب عند تغيير الصفحة","החלקה במעבר בין דפים"),L("Briefly show the current page","إظهار الصفحة الحالية لوقت قصير","הצגה קצרה של הדף הנוכחי")};
-        for(int i=0;i<4;i++){basic[i]=new DeskPagesSwitch{AccessibleName=titles[i]};stack.Controls.Add(DeskPagesFluent.Row(titles[i],notes[i],basic[i],48));basic[i].CheckedChanged+=Changed;}
-        var more=DeskPagesFluent.Button(L("More options  ⌄","خيارات إضافية  ⌄","אפשרויות נוספות  ⌄"),delegate{advanced.Visible=!advanced.Visible;},false);more.Dock=DockStyle.Top;stack.Controls.Add(more);stack.Controls.Add(advanced);advanced.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        advanced.Controls.Add(DeskPagesFluent.Row(L("Win + arrows","Win + الأسهم","Win + חצים"),L("Only while on the desktop","على سطح المكتب فقط","רק בשולחן העבודה"),keyboard,48));advanced.Controls.Add(DeskPagesFluent.Row(L("Reverse swipe","عكس اتجاه السحب","היפוך החלקה"),L("Invert the touchpad gesture","عكس اتجاه إيماءة لوحة اللمس","היפוך כיוון המחווה"),reverse,48));advanced.Controls.Add(DeskPagesFluent.Row(L("Reduce motion","تقليل الحركة","הפחתת תנועה"),L("Skip page animations","التنقل دون حركة انتقال","מעבר ללא הנפשה"),reduced,48));advanced.Controls.Add(DeskPagesFluent.Row(L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose their page","اختر صفحتها","בחרו את הדף שלהם"),new DeskPagesField(inbox),142));
-        advanced.Controls.Add(DeskPagesFluent.Row(L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other displays' icons in place","إبقاء أيقونات الشاشات الأخرى ثابتة","השארת סמלי המסכים האחרים במקומם"),primaryOnly,48));
-        primaryOnly.CheckedChanged+=delegate{if(loading || !ready)return;bool requested=primaryOnly.Checked;try{DeskPagesWorkspaceApi.Execute("display-scope",requested.ToString());DeskPagesWorkspaceApi.PrimaryOnly=requested;status.Text=L("Saved","تم الحفظ","נשמר");}catch(Exception ex){loading=true;try{var committed=DeskPagesWorkspaceApi.Execute("display-settings");primaryOnly.Checked=bool.Parse(committed[0]);DeskPagesWorkspaceApi.PrimaryOnly=primaryOnly.Checked;}catch{primaryOnly.Checked=!requested;}finally{loading=false;}status.Text=ex.Message;}};
+        SuspendLayout();locale=DeskPagesWorkspaceApi.Language;
+        Text=L("DeskPages settings","إعدادات DeskPages","הגדרות DeskPages");
+        AutoScaleMode=AutoScaleMode.None;RightToLeft=RightToLeft.No;RightToLeftLayout=false;
+        ClientSize=new Size(760,560);MinimumSize=new Size(660,500);BackColor=DeskPagesModernStyle.Background;
+        ShowInTaskbar=false;ShowIcon=false;MaximizeBox=false;MinimizeBox=false;StartPosition=FormStartPosition.CenterScreen;
+        KeyPreview=true;KeyDown+=delegate(object sender,KeyEventArgs e){if(e.KeyCode==Keys.Escape)Close();};Controls.Add(Surface);
+        language.Items.AddRange(new object[]{"English","العربية","עברית"});
+        Surface.Add(0,L("Language","اللغة","שפה"),L("Choose the app language","اختر لغة التطبيق","בחרו את שפת היישום"),language);
+        for(int i=0;i<4;i++){basic[i]=new DeskPagesModernToggle();basic[i].CheckedChanged+=Changed;}
+        Surface.Add(1,L("Touchpad swipe","السحب بلوحة اللمس","החלקה במשטח המגע"),L("Use a supported horizontal gesture","تنقل بإيماءة أفقية يدعمها جهازك","מעבר במחווה אופקית נתמכת"),basic[0]);
+        Surface.Add(1,L("Windows + arrows","Windows + الأسهم","Windows + חצים"),L("Switch while you are on the desktop","بدّل الصفحات وأنت على سطح المكتب","מעבר כאשר אתם בשולחן העבודה"),keyboard);
+        Surface.Add(1,L("Reverse swipe","عكس اتجاه السحب","היפוך החלקה"),L("Flip the direction of the touchpad gesture","اعكس اتجاه إيماءة لوحة اللمس","הפכו את כיוון המחווה"),reverse);
+        Surface.Add(1,L("Drag between pages","السحب بين الصفحات","גרירה בין דפים"),L("Hold files at the outside screen edge","أمسك الملفات عند الحافة الخارجية للشاشة","החזיקו קבצים בקצה החיצוני של המסך"),basic[1]);
+        Surface.Add(2,L("Page animation","حركة الانتقال","הנפשת מעבר"),L("Slide smoothly between pages","انتقال سلس عند تغيير الصفحة","מעבר חלק בין דפים"),basic[2]);
+        Surface.Add(2,L("Page indicator","رقم الصفحة","מספר הדף"),L("A brief cue when the page changes","إشارة قصيرة عند تغيير الصفحة","חיווי קצר בעת מעבר דף"),basic[3]);
+        Surface.Add(2,L("Reduce motion","تقليل الحركة","הפחתת תנועה"),L("Use pages without transition animations","تنقل دون حركات انتقال","מעבר ללא הנפשה"),reduced);
+        Surface.Add(3,L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose the page for incoming files","اختر الصفحة التي تستقبل الملفات","בחרו דף לקבלת קבצים חדשים"),inbox);
+        Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other screens' icons in place","أبقِ أيقونات الشاشات الأخرى ثابتة","השאירו סמלים במסכים אחרים במקומם"),primaryOnly);
+        Surface.Replay.Click+=delegate{DeskPagesWorkspaceApi.StartTour();};
+        Surface.SaveLayout.Click+=delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("save-layout");Surface.SetStatus(L("Layout saved","تم حفظ الترتيب","הסידור נשמר"));});};
+        Surface.RestoreLayout.Click+=delegate{Restore();};
+        primaryOnly.CheckedChanged+=delegate{if(loading || !ready)return;bool requested=primaryOnly.Checked;try{DeskPagesWorkspaceApi.Execute("display-scope",requested.ToString());DeskPagesWorkspaceApi.PrimaryOnly=requested;Surface.SetStatus(L("Saved","تم الحفظ","נשמר"));}catch(Exception ex){loading=true;try{var committed=DeskPagesWorkspaceApi.Execute("display-settings");primaryOnly.Checked=bool.Parse(committed[0]);DeskPagesWorkspaceApi.PrimaryOnly=primaryOnly.Checked;}catch{primaryOnly.Checked=!requested;}finally{loading=false;}Surface.SetStatus(ex.Message);}};
         keyboard.CheckedChanged+=Changed;reverse.CheckedChanged+=Changed;reduced.CheckedChanged+=Changed;inbox.SelectedIndexChanged+=Changed;language.SelectedIndexChanged+=Changed;
-        var safety=new DeskPagesSettingsCard();var heading=new Label{Text=L("Icon arrangement","ترتيب الأيقونات","סידור סמלים"),AutoSize=true,Margin=new Padding(0,0,0,6)};safety.Controls.Add(heading);var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true};buttons.Controls.Add(DeskPagesFluent.Button(L("Save layout","حفظ الترتيب","שמירת סידור"),delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("save-layout");status.Text=L("Layout saved","تم حفظ الترتيب","הסידור נשמר");});},false));buttons.Controls.Add(DeskPagesFluent.Button(L("Restore layout","استعادة الترتيب","שחזור סידור"),Restore,false));safety.Controls.Add(buttons);stack.Controls.Add(safety);
-        stack.Controls.Add(DeskPagesFluent.Row(L("Quick tour","الجولة التفاعلية","סיור קצר"),L("See how to add and switch pages","تعلّم إضافة الصفحات والتنقل بينها","הוספה ומעבר בין דפים"),DeskPagesFluent.Button(L("Replay","إعادة","שוב"),DeskPagesWorkspaceApi.StartTour,false),100));
-        grid.Controls.Add(status,0,2);status.Text=L("Loading…","جارٍ التحميل…","בטעינה…");load.Tick+=delegate{load.Stop();RefreshData();};save.Tick+=delegate{save.Stop();Persist();};FormClosing+=delegate(object sender,FormClosingEventArgs e){if(save.Enabled){save.Stop();if(!Persist())e.Cancel=true;}};
+        Surface.SetStatus(L("Loading…","جارٍ التحميل…","בטעינה…"));load.Tick+=delegate{load.Stop();RefreshData();};save.Tick+=delegate{save.Stop();Persist();};
+        FormClosing+=delegate(object sender,FormClosingEventArgs e){if(save.Enabled){save.Stop();if(!Persist())e.Cancel=true;}};
+        Surface.SelectSection(0);ResumeLayout(true);
     }
-    private void Run(Action action){try{action();}catch(Exception ex){status.Text=L("Couldn't complete the action: ","تعذر إتمام العملية: ","לא ניתן להשלים: ")+ex.Message;DeskPagesStartupGate.Log("settings: "+ex.ToString());}}
-    private void Restore(){Run(delegate{var details=DeskPagesWorkspaceApi.Execute("saved-layout-info");if(MessageBox.Show(this,L("Restore your saved pages and icon positions? Newer files will be kept.","استعادة الصفحات ومواضع الأيقونات المحفوظة؟ ستبقى الملفات الأحدث.","לשחזר דפים ומיקומי סמלים שמורים? קבצים חדשים יישמרו.")+Environment.NewLine+String.Join(Environment.NewLine,details),"DeskPages",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes){DeskPagesWorkspaceApi.Execute("restore-layout");status.Text=L("Layout restored","تمت استعادة الترتيب","הסידור שוחזר");}});}
-    private void Changed(object sender,EventArgs e){if(loading || !ready)return;save.Stop();save.Start();status.Text=L("Saving…","جارٍ الحفظ…","בשמירה…");}
+    protected override void OnShown(EventArgs e){base.OnShown(e);if(!preview){using(var g=CreateGraphics())ApplyScale(g.DpiX/96F,760,560,true);}}
+    public void SetPreviewLayout(float value,int width,int height){preview=true;ApplyScale(value,width,height,false);}
+    private void ApplyScale(float value,float width,float height,bool fit){
+        scale=Math.Max(.75F,Math.Min(4,value));Surface.UiScale=scale;
+        var area=Screen.FromControl(this).WorkingArea;
+        MinimumSize=new Size(Math.Min((int)(640*scale),Math.Max(320,area.Width-40)),Math.Min((int)(480*scale),Math.Max(300,area.Height-40)));
+        ClientSize=new Size(fit?Math.Min((int)(width*scale),area.Width-60):(int)(width*scale),fit?Math.Min((int)(height*scale),area.Height-80):(int)(height*scale));
+        if(fit)Location=new Point(Math.Max(area.Left+12,Math.Min(Left,area.Right-Width-12)),Math.Max(area.Top+12,Math.Min(Top,area.Bottom-Height-12)));
+        Surface.PerformLayout();Surface.Invalidate();
+    }
+    protected override void WndProc(ref Message m){
+        if(m.Msg==0x02E0){float width=ClientSize.Width/scale,height=ClientSize.Height/scale;int dpi=(int)((long)m.WParam & 0xffff);base.WndProc(ref m);ApplyScale(dpi/96F,width,height,true);return;}
+        base.WndProc(ref m);
+    }
+    private void Run(Action action){try{action();}catch(Exception ex){Surface.SetStatus(L("Couldn't complete the action: ","تعذر إتمام العملية: ","לא ניתן להשלים: ")+ex.Message);DeskPagesStartupGate.Log("settings: "+ex.ToString());}}
+    private void Restore(){Run(delegate{var details=DeskPagesWorkspaceApi.Execute("saved-layout-info");if(MessageBox.Show(this,L("Restore your saved pages and icon positions? Newer files will be kept.","استعادة الصفحات ومواضع الأيقونات المحفوظة؟ ستبقى الملفات الأحدث.","לשחזר דפים ומיקומי סמלים שמורים? קבצים חדשים יישמרו.")+Environment.NewLine+String.Join(Environment.NewLine,details),"DeskPages",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes){DeskPagesWorkspaceApi.Execute("restore-layout");Surface.SetStatus(L("Layout restored","تمت استعادة الترتيب","הסידור שוחזר"));}});}
+    private void Changed(object sender,EventArgs e){if(loading || !ready)return;save.Stop();save.Start();Surface.SetStatus(L("Saving…","جارٍ الحفظ…","בשמירה…"));}
     private bool Persist(){
-        if(!ready)return true;try{var destination=inbox.SelectedItem as Destination;if(destination==null)throw new InvalidOperationException("Select a destination.");string next=language.SelectedIndex==1?"ar":language.SelectedIndex==2?"he":"en";var values=DeskPagesSimplePreferences.Build(next,new[]{basic[0].Checked,basic[1].Checked,basic[2].Checked,basic[3].Checked},reverse.Checked,keyboard.Checked,reduced.Checked,destination.Id);DeskPagesWorkspaceApi.Execute("preferences-save",values);status.Text=L("Saved","تم الحفظ","נשמר");if(next!=locale){DeskPagesWorkspaceApi.Language=next;DeskPagesWorkspaceApi.RefreshSettingsLanguage();}return true;}catch(Exception ex){status.Text=L("Not saved. Try again.","لم تُحفظ التغييرات. أعد المحاولة.","לא נשמר. נסו שוב.");DeskPagesStartupGate.Log("preferences: "+ex.ToString());return false;}
+        if(!ready)return true;try{var destination=inbox.SelectedItem as Destination;if(destination==null)throw new InvalidOperationException("Select a destination.");string next=language.SelectedIndex==1?"ar":language.SelectedIndex==2?"he":"en";var values=DeskPagesSimplePreferences.Build(next,new[]{basic[0].Checked,basic[1].Checked,basic[2].Checked,basic[3].Checked},reverse.Checked,keyboard.Checked,reduced.Checked,destination.Id);DeskPagesWorkspaceApi.Execute("preferences-save",values);Surface.SetStatus(L("Saved automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));if(next!=locale){DeskPagesWorkspaceApi.Language=next;DeskPagesWorkspaceApi.RefreshSettingsLanguage();}return true;}catch(Exception ex){Surface.SetStatus(L("Not saved. Try again.","لم تُحفظ التغييرات. أعد المحاولة.","לא נשמר. נסו שוב."));DeskPagesStartupGate.Log("preferences: "+ex.ToString());return false;}
     }
     public void QueueRefresh(){load.Stop();load.Start();}
-    public void RefreshData(){Run(delegate{loading=true;try{var values=DeskPagesWorkspaceApi.Execute("settings");if(values.Length!=16)throw new InvalidOperationException("Invalid settings response.");var scope=DeskPagesWorkspaceApi.Execute("display-settings");if(scope.Length!=1)throw new InvalidOperationException("Invalid display settings.");primaryOnly.Checked=bool.Parse(scope[0]);language.SelectedIndex=values[1]=="ar"?1:values[1]=="he"?2:0;int[] indices={7,12,10,11};for(int i=0;i<4;i++)basic[i].Checked=bool.Parse(values[indices[i]]);reverse.Checked=bool.Parse(values[8]);keyboard.Checked=bool.Parse(values[9]);reduced.Checked=bool.Parse(values[2]);inbox.Items.Clear();inbox.Items.Add(new Destination{Id=0,Name=L("Current page","الصفحة الحالية","הדף הנוכחי")});foreach(var row in DeskPagesWorkspaceApi.Execute("pages")){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")inbox.Items.Add(new Destination{Id=int.Parse(f[0]),Name=f[1]});}for(int i=0;i<inbox.Items.Count;i++)if(((Destination)inbox.Items[i]).Id==int.Parse(values[0]))inbox.SelectedIndex=i;ready=true;status.Text=L("Saved automatically","تُحفظ تلقائيًا","נשמר אוטומטית");}finally{loading=false;}});}
+    public void RefreshData(){Run(delegate{loading=true;try{var values=DeskPagesWorkspaceApi.Execute("settings");if(values.Length!=16)throw new InvalidOperationException("Invalid settings response.");var scope=DeskPagesWorkspaceApi.Execute("display-settings");if(scope.Length!=1)throw new InvalidOperationException("Invalid display settings.");primaryOnly.Checked=bool.Parse(scope[0]);language.SelectedIndex=values[1]=="ar"?1:values[1]=="he"?2:0;int[] indices={7,12,10,11};for(int i=0;i<4;i++)basic[i].Checked=bool.Parse(values[indices[i]]);reverse.Checked=bool.Parse(values[8]);keyboard.Checked=bool.Parse(values[9]);reduced.Checked=bool.Parse(values[2]);inbox.Items.Clear();inbox.Items.Add(new Destination{Id=0,Name=L("Current page","الصفحة الحالية","הדף הנוכחי")});foreach(var row in DeskPagesWorkspaceApi.Execute("pages")){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")inbox.Items.Add(new Destination{Id=int.Parse(f[0]),Name=f[1]});}for(int i=0;i<inbox.Items.Count;i++)if(((Destination)inbox.Items[i]).Id==int.Parse(values[0]))inbox.SelectedIndex=i;ready=true;Surface.SetStatus(L("Changes save automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));}finally{loading=false;}});}
     protected override void Dispose(bool disposing){if(disposing){load.Dispose();save.Dispose();}base.Dispose(disposing);}
 }

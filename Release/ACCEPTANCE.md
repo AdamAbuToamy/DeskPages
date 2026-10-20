@@ -88,3 +88,11 @@ writable, with networking/clipboard disabled. It requires Sandbox already enable
 Power loss/reboot/hardware acceptance still need a persistent disposable Windows VM.
 GitHub Windows CI automates builds, parser, file-attribute and isolated UI/logic
 suites; hosted runners do not certify physical touchpads, real logon or GPU pacing.
+
+
+## 0.8.10 hidden-items acceptance
+
+- Enable Explorer Show > Hidden items; keep Hide protected operating system files enabled. Ordinary user-hidden files should appear, while other pages' managed files/folders do not. Switch repeatedly using keys, touchpad and edge drag, including pinned and secondary-monitor icons.
+- Upgrade with hidden 0.8.9 files, restart Explorer and reboot. Verify current membership and icon positions, then Show all, Rescue and uninstall. Confirm app-added System bits are removed and original System/ReadOnly bits remain.
+- Enable protected operating system files temporarily: verify the actionable switching error and that Explorer preferences are not rewritten. Restore the protected-files setting afterward.
+- Inject a second-file attribute failure and a process termination after ownership persistence but before page commit. Verify exact Hidden/System rollback and fresh-process recovery, including uncommitted drag membership.

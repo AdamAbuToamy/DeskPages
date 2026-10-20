@@ -14,11 +14,32 @@ Published installer and source: **0.8.9 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.12
+
+- Redesigned settings with a sidebar, four sections, grouped cards and consistent controls.
+- English, Arabic and Hebrew layouts, with one explicit layout owner for text, controls and DPI scaling.
+- Automatic saving, quick-tour replay, icon arrangement save/restore and display-scope rollback.
+- Ordinary Explorer **Show > Hidden items** may stay enabled while other pages' managed icons remain hidden.
+
+### Actual settings preview
+
+![DeskPages settings in Arabic](media/DeskPages-settings-0.8.12.png)
+
+*Captured from the actual UI using fixture data under Mono/Xvfb. Windows fonts and borders may differ.*
+
+### Hidden items and shared storage
+
+Off-page managed files use Hidden + System attributes. A durable ownership journal records which System bits DeskPages added before any file attribute changes. Opening the page, Show all, Rescue and uninstall remove app-owned bits; existing hidden/system items are not automatically adopted. No file contents or paths are changed.
+
+Keep **Folder Options > View > Hide protected operating system files** enabled. Enabling protected-files display can expose off-page items; page switching reports the requirement without rewriting your Explorer preferences.
+
+Pages organize one physical Desktop folder. They share disk space and the same filename namespace; they do not create separate drives or extra disk capacity. Keep `system-ownership.xml` with the saved page metadata. Use the updated Show all / Rescue before downgrading to 0.8.9, which does not understand the added System bits.
+
 ## What's new in 0.8.9
 
 - A first-run guide points to the real **+ Page** button and advances after you add a page.
 - Two animated cards demonstrate a two-finger touchpad swipe and **Win + Left / Right**.
-- Replay from **Settings → Quick tour → Replay**.
+- Replay from **Settings → General → Start the tour**.
 - New installations start with **Main** only. Upgrades preserve existing pages; replay skips the add-page step when multiple pages already exist.
 - English, Arabic and Hebrew, with reduced-motion support.
 
@@ -52,7 +73,7 @@ Internal monitor boundaries remain available for ordinary dragging. Use an exter
 
 ## ديسك باجيس — تنظيم سطح مكتب ويندوز
 
-ينظّم DeskPages أيقونات سطح مكتب ويندوز 11 في صفحات للعمل والدراسة والمشاريع، مع إبقاء الملفات في مساراتها الأصلية. الإصدار 0.8.9 يضيف جولة تفاعلية قصيرة ورسومًا متحركة لتوضيح التنقل. لإعادتها: **الإعدادات ← الجولة التفاعلية ← إعادة**. استخدم زر التحميل أعلى الصفحة.
+ينظّم DeskPages أيقونات سطح مكتب ويندوز 11 في صفحات للعمل والدراسة والمشاريع، مع إبقاء الملفات في مساراتها الأصلية. الإصدار 0.8.12 يضيف إعدادات بتصميم جديد، ويسمح بإظهار الملفات المخفية العادية مع إبقاء أيقونات الصفحات الأخرى مخفية. لإعادة الجولة: **الإعدادات ← عام ← ابدأ الجولة**. استخدم زر التحميل أعلى الصفحة.
 
 ## Concept video
 
@@ -68,7 +89,7 @@ The app starts at sign-in on Main. Run `DeskPagesRescue.exe` if the agent is una
 
 ## Validation and known limitations
 
-The tour has isolated policy and real-control tests in English, Arabic and Hebrew, including replay, completion persistence and reduced motion. Local UI evidence uses Mono/Xvfb. Real Windows installation, reboot, touchpad, Explorer/OLE, monitor/DPI and frame pacing require Windows acceptance; passing isolated tests is not a guarantee for every device.
+Settings and the tour have isolated policy and real-control tests in English, Arabic and Hebrew, including four UI scales, preference saving, rejected display-scope rollback, replay, completion persistence and reduced motion. Local UI evidence uses Mono/Xvfb. Real Windows installation, reboot, touchpad, Explorer/OLE, monitor/DPI and frame pacing require Windows acceptance; passing isolated tests is not a guarantee for every device.
 
 Run `Validate.cmd` for automated checks and `Simulate-Monitors.cmd` for the interactive monitor-region simulator. See [Build instructions](Release/BUILD.md), [Acceptance checklist](Release/ACCEPTANCE.md) and [Release notes](Release/NOTES.md).
 

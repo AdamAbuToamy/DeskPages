@@ -1,66 +1,9 @@
-# DeskPages 0.8.9 Alpha
+# DeskPages 0.8.12 Alpha — redesigned settings and hidden-items support
 
-## Interactive quick start
+A new settings window with a web-app-inspired sidebar, four sections (General, Navigation, Appearance, Pages), grouped cards, blue switches and clearer typography. Native RTL parent mirroring, nested tables and automatic layout scaling are absent from the new settings form. One owner places every element in physical pixels from a single UI scale. Native combo boxes remain keyboard-accessible, and real buttons/toggles retain accessible names and descriptions.
 
-The first-run guide points to the real + Page button, then shows animated touchpad and Win + arrow examples. Replay it from Settings > Quick tour > Replay. New installations start with Main only; upgrades preserve existing pages. When multiple pages exist, replay skips adding another page.
+Settings requests, debounced preference saving, the quick tour, layout save/restore and display-scope rollback are retained. The successful 0.8.10 Hidden/System visibility code, page transactions and saved layouts remain unchanged.
 
-The guide supports English, Arabic, Hebrew and reduced motion. It does not enable disabled input settings; touchpad support depends on the device/driver.
+Local isolated evidence: 96 real form/section renderings, 240 rows, EN/AR/HE, explicit 100/125/150/200% geometry and normal/narrow windows; text rendering, control bounds, preference payload, replay/save actions and rejected scope rollback. The existing separate pages/settings auto-save fixture is also run. Rendering uses Mono/Xvfb; screenshots show actual controls with fixture data. Physical Windows monitor/DPI transitions and actual installer execution remain acceptance checks.
 
-The UI was compiled and checked with isolated policy/real-control fixtures under Mono/Xvfb. Physical Windows installation, reboot, touchpad, Explorer/OLE and DPI/GPU behavior remain acceptance items. Windows CI results are available in Actions.
-
-## Existing Alpha guidance
-
-﻿# DeskPages 0.8.9 — Navigation feedback preview
-
-A focused visual update to the 0.8.7 Alpha:
-
-- Immediate page-number acknowledgement before source layout verification and capture.
-- A subtle moving progress line on an independent, event-driven STA UI thread. Hidden feedback has no polling timer.
-- Feedback remains until the page transaction succeeds AND the native transition retires, then holds 300 ms and fades over 200 ms.
-- Rejected transitions show a short error cue. Stale completion signals cannot hide newer feedback.
-- A wider 18 logical-pixel white edge cue (previously 3 physical pixels), with a bright core and soft blue-white fill. Drag hit areas and dwell timing are unchanged.
-
-The capture/compositor, page transaction engine, file membership, visibility rules, drag IPC and drop placement algorithms are unchanged. Startup/install version metadata is 0.8.9.0.
-
-This is an unsigned preview. Portable regression tests and Mono/Xvfb UI rendering passed; actual Windows focus/capture/OLE and upgrade/reboot acceptance still require Windows. Do not interpret a simulated UI test as a physical touchpad, GPU or reboot certification.
-
-## Previous release context
-
-DeskPages 0.8.7-alpha.1 — first engineering preview
-
-DeskPages adds icon pages to the original Windows Explorer desktop. Files keep
-their original paths. Created by Adam Abu Toamy; independent of Microsoft.
-
-Included:
-- Compact page switcher and a separate Windows 11-inspired settings window.
-- Per-monitor clipped DirectComposition transitions, including extended displays.
-- Optional Settings > More options > Main display only: switch the primary
-  display while secondary icons stay visible at their saved positions.
-- Edge dragging, page-number feedback, selected-icon pinning and manual layout
-  save/restore. Internal monitor boundaries are left free for normal dragging.
-- Main page at sign-in, nonempty-page deletion guard and independent Rescue.
-
-Download the EXE installer. The source ZIP is optional for developers. Verify
-SHA256SUMS.txt after download. The installer is unsigned: the author metadata
-is not a trusted code-signing identity and Windows may show publisher/reputation
-warnings. Do not disable Windows protections to install it.
-
-Target: Windows 11 x64, .NET Framework 4.8, Explorer desktop with hidden items not
-shown. Windows 10, native ARM64, cloud placeholders/reparse points and third-party
-shell replacements are not supported. Physical multi-monitor/mixed-GPU/driver
-compatibility remains experimental. Extremely large desktop atlases (over 40M
-pixels or 16,384 pixels on either axis), GPU resets and unavailable isolated
-capture safely fall back to nonanimated switching. Touchpad support depends on
-the driver. Windows virtual desktops still share the same physical Desktop.
-
-Evidence: monitor math/pixel simulator, display-scope fixtures, real temporary
-file stress/crash recovery tests, and isolated UI checks. These do not certify
-all hardware, native compositor frame pacing, physical unplug/replug or reboots.
-A prior native UI access-violation report requires retesting on affected devices;
-it is not represented as universally fixed. See VERIFICATION.txt and
-Release/ACCEPTANCE.md for precise evidence and limitations.
-
-Organization recovery restores metadata, not deleted file contents. Uninstall
-through Windows Settings; use DeskPagesRescue.exe if the agent fails to open.
-Review/redact local logs before reporting issues. See LICENSE.txt, PRIVACY.txt,
-THIRD-PARTY-NOTICES.md and SECURITY.md. This is an Alpha, not a stable release.
+This Alpha is unsigned. Download the EXE from Releases after successful Windows validation and publication. Ordinary Hidden items may stay enabled; keep protected operating system files hidden. Use the updated Show all/Rescue before downgrading to versions before the hidden-items fix.
