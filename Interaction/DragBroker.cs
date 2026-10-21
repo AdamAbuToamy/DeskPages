@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
 [assembly:AssemblyCopyright("Copyright 2026 Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.17.0")]
-[assembly:AssemblyFileVersion("0.8.17.0")]
+[assembly:AssemblyVersion("0.8.18.0")]
+[assembly:AssemblyFileVersion("0.8.18.0")]
 
 // Runs with Explorer's normal user token. An elevated process cannot accept
 // Explorer OLE drops across UIPI; this process never changes files or attributes.
@@ -58,7 +58,7 @@ internal sealed class DragBroker:ApplicationContext {
         mouseHook=OnMouse;keyHook=OnKey;
         mouseHandle=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
         if(mouseHandle==IntPtr.Zero || keyHandle==IntPtr.Zero)throw new InvalidOperationException("Drag input unavailable");
-        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.17");
+        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.18");
     }
     private long preferenceRead;
     private void Tick(){

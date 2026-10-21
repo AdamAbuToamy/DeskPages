@@ -14,6 +14,11 @@ Published installer and source: **0.8.17 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.18
+
+- Pinned icons show names and their own icons, without full paths.
+- General settings show current RAM use as a percentage of physical memory and in MB, replacing the benchmark action. Sampling stops when the indicator is hidden.
+
 ## What's new in 0.8.17
 
 - Original app branding in settings, and a Pinned icons manager under Settings → Pages.
@@ -27,7 +32,7 @@ You only need the EXE installer. Release notes, source and SHA-256 checksums are
 - Layout changes request a new snapshot after pointer release, without waiting for the next page switch.
 - Touchpad gestures can queue during transitions; updated contact tracking and wheel fallback reduce missed input.
 - A 240 ms eased animation in cached mode, with the page number dismissed when motion ends.
-- Built-in direct/cached resource comparison under **Settings → General → Measure resources**.
+- The original experimental resource-comparison tool was replaced with a live memory indicator in 0.8.18.
 
 Snapshots are saved locally in `%LOCALAPPDATA%\DeskPages\HiddenPages\Snapshots`. See [privacy information](PRIVACY.txt) and [experiment details](Release/SNAPSHOT-CACHE-EXPERIMENT.md). Physical Windows 11/touchpad acceptance and measured CPU, RAM and response-time results remain pending; no performance claim is established.
 

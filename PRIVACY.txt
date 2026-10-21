@@ -1,5 +1,5 @@
 DeskPages Privacy Notice
-Version 0.8.17 alpha | Effective 21 October 2026
+Version 0.8.18 alpha | Effective 21 October 2026
 Developer: Adam Abu Toamy
 
 DeskPages has no accounts, telemetry, analytics, advertising, or
@@ -36,6 +36,10 @@ attributes resist ordinary opening and accidental deletion. The account owner
 or administrator can deliberately bypass these controls; same-user DPAPI
 secrecy and absolute deletion prevention are not promised. After stopping
 DeskPages, you can clear the local snapshot folder; the app will rebuild it.
+
+The settings memory indicator reads resident RAM counters for the agent and
+matching helper programs in the current Windows session, plus total physical RAM.
+It updates only while visible. These readings are not sent to a server.
 
 Local settings, logs, journals, layout snapshots and restart checks are stored
 under %LOCALAPPDATA%\DeskPages. Installation logs are also local. A user-requested

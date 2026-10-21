@@ -161,7 +161,6 @@ function Invoke-DpWorkspaceRequest {
             }
             'capture-settings' {[string][bool][DeskPagesHost]::SnapshotCacheEnabled}
             'capture-mode' {if($Arguments.Count -ne 1){throw 'Invalid capture mode.'};[DeskPagesHost]::SetSnapshotMode([bool]::Parse($Arguments[0]))}
-            'measure-resources' {Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $script:base 'Measure-Resources.ps1')+'"'))}
             'display-settings' {[string][bool]$script:DpState.Workspace.PrimaryOnly}
             'display-scope' {
                 if($Arguments.Count -ne 1){throw 'Invalid display scope.'}

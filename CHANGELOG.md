@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.18 Alpha
+
+- Show file/program names and Shell icons in the pin manager, without paths or shortcut suffixes.
+- Replace the benchmark action with a live RAM percentage and MB indicator; sample only while visible.
+- Remove the benchmark scripts and launcher; retain update notifications and pin persistence.
+
+
 ## 0.8.17 Alpha
 
 - Restore the original settings logo and a visible file/system pin manager.

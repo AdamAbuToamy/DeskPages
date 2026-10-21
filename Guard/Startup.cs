@@ -7,8 +7,8 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly:System.Reflection.AssemblyVersion("0.8.17.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.8.17.0")]
+[assembly:System.Reflection.AssemblyVersion("0.8.18.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.8.18.0")]
 [assembly:System.Reflection.AssemblyProduct("DeskPages")]
 [assembly:System.Reflection.AssemblyTitle("DeskPages startup guardian")]
 

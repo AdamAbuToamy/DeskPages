@@ -103,7 +103,6 @@ public sealed class DeskPagesSimpleSettings:Form {
         captureMode.Items.AddRange(new object[]{L("Direct capture","التقاط مباشر","לכידה ישירה"),L("Cached · experimental","صور محفوظة · تجريبي","מטמון · ניסיוני")});
         Surface.Add(2,L("Page capture","صور التنقل","לכידת דפים"),L("Reuse recent page images","اختر الصور المحفوظة أو الالتقاط المباشر","בחרו מטמון או לכידה חדשה"),captureMode);
         captureMode.SelectedIndexChanged+=delegate{if(loading || !ready)return;try{DeskPagesWorkspaceApi.Execute("capture-mode",(captureMode.SelectedIndex==1).ToString());Surface.SetStatus(L("Saved","تم الحفظ","נשמר"));}catch(Exception ex){loading=true;try{captureMode.SelectedIndex=bool.Parse(DeskPagesWorkspaceApi.Execute("capture-settings")[0])?1:0;}finally{loading=false;}Surface.SetStatus(ex.Message);}};
-        Surface.Performance.Click+=delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("measure-resources");});};
         Surface.Add(3,L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose the page for incoming files","اختر الصفحة التي تستقبل الملفات","בחרו דף לקבלת קבצים חדשים"),inbox);
         Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other screens' icons in place","أبقِ أيقونات الشاشات الأخرى ثابتة","השאירו סמלים במסכים אחרים במקומם"),primaryOnly);
         Surface.Pins.Click+=delegate{using(var dialog=new DeskPagesPinnedIcons())dialog.ShowDialog(this);};
@@ -144,12 +143,17 @@ public sealed class DeskPagesSimpleSettings:Form {
 
 // Explicit file list keeps pinning available after the desktop loses focus.
 public sealed class DeskPagesPinnedIcons:Form {
-    private readonly CheckedListBox list=new CheckedListBox{Dock=DockStyle.Fill,CheckOnClick=true,IntegralHeight=false,HorizontalScrollbar=true};
+    private readonly ListView list=new ListView{Dock=DockStyle.Fill,View=View.Details,HeaderStyle=ColumnHeaderStyle.None,CheckBoxes=true,FullRowSelect=true,HideSelection=false,MultiSelect=false};
+    private readonly ImageList icons=new ImageList{ColorDepth=ColorDepth.Depth32Bit};
+    private readonly System.Collections.Generic.List<Image> images=new System.Collections.Generic.List<Image>();
     private readonly Label status=new Label{Dock=DockStyle.Bottom,Height=42,AutoEllipsis=true};
     private readonly System.Collections.Generic.List<string[]> entries=new System.Collections.Generic.List<string[]>();
     private static string L(string en,string ar,string he){return DeskPagesWorkspaceApi.L(en,ar,he);}
     public DeskPagesPinnedIcons(){
         DeskPagesFluent.Configure(this,L("Pinned icons","الأيقونات الثابتة","סמלים קבועים"),new Size(570,440));
+        icons.ImageSize=new Size(DeskPagesTheme.Unit(this,24),DeskPagesTheme.Unit(this,24));list.SmallImageList=icons;list.Columns.Add("");
+        list.AccessibleName=L("Pinned icons","الأيقونات الثابتة","סמלים קבועים");
+        list.SizeChanged+=delegate{list.Columns[0].Width=Math.Max(80,list.ClientSize.Width-SystemInformation.VerticalScrollBarWidth-4);};
         var heading=DeskPagesFluent.Heading(L("Show on every page","إظهار في كل الصفحات","הצגה בכל הדפים"),L("Check icons to keep them visible on all pages.","حدد الأيقونات التي تريد إبقاءها ظاهرة في كل الصفحات.","בחרו סמלים שיוצגו בכל הדפים."));heading.Dock=DockStyle.Top;heading.Height=76;
         var footer=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=48};
         footer.Controls.Add(DeskPagesFluent.Button(L("Save","حفظ","שמירה"),Save,true));
@@ -157,10 +161,86 @@ public sealed class DeskPagesPinnedIcons:Form {
         Controls.Add(list);Controls.Add(status);Controls.Add(footer);Controls.Add(heading);
         Shown+=delegate{LoadIcons();};
     }
-    public void LoadIcons(){try{list.Items.Clear();entries.Clear();foreach(string row in DeskPagesWorkspaceApi.Execute("pinned-icons")){
+    public void LoadIcons(){list.BeginUpdate();try{list.Items.Clear();icons.Images.Clear();foreach(var image in images)image.Dispose();images.Clear();entries.Clear();foreach(string row in DeskPagesWorkspaceApi.Execute("pinned-icons")){
         var f=row.Split('\t');if(f.Length!=4)throw new InvalidOperationException("Invalid pin list.");
         entries.Add(f);string name=f[0]=="file"?System.IO.Path.GetFileName(f[3]):f[2]=="{20D04FE0-3AEA-1069-A2D8-08002B30309D}"?L("This PC","هذا الكمبيوتر","מחשב זה"):f[2]=="{645FF040-5081-101B-9F08-00AA002F954E}"?L("Recycle Bin","سلة المحذوفات","סל המיחזור"):L("Control Panel","لوحة التحكم","לוח הבקרה");
-        list.Items.Add(name+" — "+(f[0]=="file"?f[3]:L("Windows icon","أيقونة ويندوز","סמל Windows")),bool.Parse(f[1]));
-    }status.Text=L("Uncheck to show an icon only on its own page.","أزل التحديد لإظهار الأيقونة في صفحتها الأصلية فقط.","בטלו סימון להצגה בדף המקורי בלבד.");}catch(Exception ex){status.Text=ex.Message;}}
-    private void Save(){try{var changes=new System.Collections.Generic.List<string>();for(int i=0;i<entries.Count;i++){var f=entries[i];bool value=list.GetItemChecked(i);if(value!=bool.Parse(f[1]))changes.Add(f[0]+"\t"+value+"\t"+(f[0]=="file"?f[3]:f[2]));}if(changes.Count>0)DeskPagesWorkspaceApi.Execute("pins-save",changes.ToArray());LoadIcons();status.Text=L("Saved","تم الحفظ","נשמר");}catch(Exception ex){status.Text=ex.Message;}}
+        var item=DeskPagesShellItem.Read(f[0]=="file"?f[3]:"::"+f[2],name,f[0]=="file");
+        images.Add(item.Image);icons.Images.Add(item.Image);
+        list.Items.Add(new ListViewItem(item.Name,icons.Images.Count-1){Checked=bool.Parse(f[1]),Tag=f});
+    }status.Text=L("Uncheck to show an icon only on its own page.","أزل التحديد لإظهار الأيقونة في صفحتها الأصلية فقط.","בטלו סימון להצגה בדף המקורי בלבד.");}catch(Exception ex){status.Text=ex.Message;}finally{list.EndUpdate();}}
+    protected override void Dispose(bool disposing){if(disposing){list.SmallImageList=null;icons.Dispose();foreach(var image in images)image.Dispose();images.Clear();}base.Dispose(disposing);}
+    private void Save(){try{var changes=new System.Collections.Generic.List<string>();for(int i=0;i<entries.Count;i++){var f=entries[i];bool value=list.Items[i].Checked;if(value!=bool.Parse(f[1]))changes.Add(f[0]+"\t"+value+"\t"+(f[0]=="file"?f[3]:f[2]));}if(changes.Count>0)DeskPagesWorkspaceApi.Execute("pins-save",changes.ToArray());LoadIcons();status.Text=L("Saved","تم الحفظ","נשמר");}catch(Exception ex){status.Text=ex.Message;}}
+}
+
+// Resolve the display name and actual Shell icon without opening a file or shortcut.
+public sealed class DeskPagesShellItem {
+    public string Name;public Image Image;
+    [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]private struct Info {
+        public IntPtr Icon;public int Index;public uint Attributes;
+        [MarshalAs(UnmanagedType.ByValTStr,SizeConst=260)]public string DisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr,SizeConst=80)]public string TypeName;
+    }
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode,EntryPoint="SHGetFileInfoW")]private static extern IntPtr FileInfo(string path,uint attributes,out Info info,uint size,uint flags);
+    [DllImport("shell32.dll",EntryPoint="SHGetFileInfoW")]private static extern IntPtr ItemInfo(IntPtr item,uint attributes,out Info info,uint size,uint flags);
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)]private static extern int SHParseDisplayName(string name,IntPtr context,out IntPtr item,uint flags,out uint attributes);
+    [DllImport("user32.dll")]private static extern bool DestroyIcon(IntPtr icon);
+    public static string ShortName(string path,string fallback){
+        string name=System.IO.Path.GetFileName(path.Replace('\\','/')),extension=System.IO.Path.GetExtension(name);
+        if(String.IsNullOrEmpty(name))return fallback;
+        return extension.Equals(".lnk",StringComparison.OrdinalIgnoreCase)||extension.Equals(".url",StringComparison.OrdinalIgnoreCase)?System.IO.Path.GetFileNameWithoutExtension(name):name;
+    }
+    public static DeskPagesShellItem Read(string path,string fallback,bool file){
+        var result=new DeskPagesShellItem{Name=file?ShortName(path,fallback):fallback};Info info=new Info();IntPtr item=IntPtr.Zero;
+        try{
+            if(Environment.OSVersion.Platform==PlatformID.Win32NT){
+                uint size=(uint)Marshal.SizeOf(typeof(Info));
+                if(file)FileInfo(path,0,out info,size,0x100|0x1|0x200);
+                else{uint attributes;if(SHParseDisplayName(path,IntPtr.Zero,out item,0,out attributes)==0)ItemInfo(item,0,out info,size,0x100|0x1|0x8);}
+                if(info.Icon!=IntPtr.Zero){using(var icon=Icon.FromHandle(info.Icon))result.Image=icon.ToBitmap();}
+                // Preserve file extensions; shortcut names omit their implementation suffix.
+                if(file && !String.IsNullOrEmpty(info.DisplayName) && System.IO.Path.GetExtension(path).Length==0)result.Name=ShortName(info.DisplayName,result.Name);
+            }
+        }catch{}finally{if(info.Icon!=IntPtr.Zero)DestroyIcon(info.Icon);if(item!=IntPtr.Zero)Marshal.FreeCoTaskMem(item);}
+        if(result.Image==null)result.Image=SystemIcons.Application.ToBitmap();return result;
+    }
+}
+
+// Sum resident working sets of this agent and same-installation helper EXEs.
+// Sampling runs only while the visible settings section displays the meter.
+public sealed class DeskPagesMemoryMeter:Control {
+    public sealed class Sample {public long Bytes;public ulong Total;public int Processes;public double Percent {get{return Total==0?0:Math.Min(100,Math.Max(0,100.0*Bytes/Total));}}}
+    [StructLayout(LayoutKind.Sequential)]private struct MemoryStatus {public uint Length,Load;public ulong TotalPhysical,AvailablePhysical,TotalPageFile,AvailablePageFile,TotalVirtual,AvailableVirtual,AvailableExtended;}
+    [DllImport("kernel32.dll",SetLastError=true)][return:MarshalAs(UnmanagedType.Bool)]private static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);
+    private readonly Timer timer=new Timer{Interval=3000};private readonly ToolTip tip=new ToolTip();
+    private int busy;private volatile bool disposed;public float UiScale=1;public bool IsRtl;public Sample Current {get;private set;}
+    private static string L(string en,string ar,string he){return DeskPagesWorkspaceApi.L(en,ar,he);}
+    public DeskPagesMemoryMeter(){DoubleBuffered=true;TabStop=false;AccessibleRole=AccessibleRole.StaticText;AccessibleName=L("DeskPages memory","ذاكرة DeskPages","זיכרון DeskPages");timer.Tick+=delegate{RefreshSample();};}
+    public static Sample Read(){
+        var sample=new Sample();var memory=new MemoryStatus{Length=(uint)Marshal.SizeOf(typeof(MemoryStatus))};if(GlobalMemoryStatusEx(ref memory))sample.Total=memory.TotalPhysical;
+        using(var current=System.Diagnostics.Process.GetCurrentProcess()){
+            sample.Bytes=current.WorkingSet64;sample.Processes=1;
+            string location=typeof(DeskPagesTheme).Assembly.Location;if(String.IsNullOrEmpty(location))return sample;
+            string root=System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(location),".."));
+            foreach(string name in new[]{"DeskPagesStartup","DeskPagesDrag","DeskPagesRescue"})foreach(var helper in System.Diagnostics.Process.GetProcessesByName(name))using(helper){try{
+                if(helper.Id!=current.Id && helper.SessionId==current.SessionId && String.Equals(helper.MainModule.FileName,System.IO.Path.Combine(root,name+".exe"),StringComparison.OrdinalIgnoreCase)){sample.Bytes+=helper.WorkingSet64;sample.Processes++;}
+            }catch(System.ComponentModel.Win32Exception){}catch(InvalidOperationException){}}
+        }return sample;
+    }
+    protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);if(Visible)RefreshSample();}
+    protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);if(disposed)return;timer.Enabled=Visible;if(Visible && IsHandleCreated)RefreshSample();}
+    public void RefreshSample(){
+        if(disposed || !Visible || !IsHandleCreated || System.Threading.Interlocked.CompareExchange(ref busy,1,0)!=0)return;
+        System.Threading.ThreadPool.QueueUserWorkItem(delegate{Sample sample=null;try{sample=Read();}catch{}System.Threading.Interlocked.Exchange(ref busy,0);if(disposed)return;
+            try{BeginInvoke((Action)delegate{if(disposed)return;Current=sample;Text=sample==null||sample.Total==0?L("Memory unavailable","الذاكرة غير متاحة","נתוני זיכרון לא זמינים"):sample.Percent.ToString("N2")+"% · "+(sample.Bytes/1048576.0).ToString("N0")+" MB";
+                AccessibleDescription=Text;tip.SetToolTip(this,L("Resident RAM of DeskPages and its helpers / total physical RAM. Shared pages may be counted more than once.","ذاكرة DeskPages ومساعديه المقيمة ÷ إجمالي RAM. قد تُحتسب الصفحات المشتركة أكثر من مرة.","זיכרון פעיל של DeskPages ותהליכי העזר מתוך הזיכרון הפיזי. דפים משותפים עשויים להיספר יותר מפעם אחת."));Invalidate();});}catch(InvalidOperationException){}
+        });
+    }
+    protected override void OnPaint(PaintEventArgs e){
+        base.OnPaint(e);float s=UiScale;var g=e.Graphics;
+        DeskPagesModernStyle.Text(g,L("Memory usage","استهلاك الذاكرة","שימוש בזיכרון"),new Rectangle(0,0,Width,(int)(22*s)),12*s,DeskPagesModernStyle.Muted,IsRtl,false,false);
+        DeskPagesModernStyle.Text(g,String.IsNullOrEmpty(Text)?"—":Text,new Rectangle(0,(int)(25*s),Width,(int)(24*s)),14*s,DeskPagesModernStyle.Ink,IsRtl,true,false);
+        var track=new Rectangle(0,(int)(58*s),Math.Max(1,Width-1),(int)(5*s));DeskPagesModernStyle.Round(g,track,(int)(2*s),Color.FromArgb(210,221,244),Color.Empty);
+        if(Current!=null && Current.Total>0){int width=(int)Math.Round(track.Width*Current.Percent/100);if(width>0)DeskPagesModernStyle.Round(g,new Rectangle(IsRtl?track.Right-width:0,track.Y,width,track.Height),2,DeskPagesModernStyle.Blue,Color.Empty);}
+    }
+    protected override void Dispose(bool disposing){if(disposing){disposed=true;timer.Stop();timer.Dispose();tip.Dispose();}base.Dispose(disposing);}
 }

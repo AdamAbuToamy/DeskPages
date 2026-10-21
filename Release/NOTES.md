@@ -1,10 +1,8 @@
-# DeskPages 0.8.17 Alpha
+# DeskPages 0.8.18 Alpha
 
-- Use the original DeskPages artwork in settings and utility branding.
-- Hide the Install button while setup runs. Cancel stops preparation cooperatively; once replacement starts, Close when finished waits for a safe completion.
-- Restore a clear Pinned icons manager in Settings > Pages, with file and Windows system icon choices saved together. Existing pin metadata is preserved.
-- Check the official GitHub release feed after startup and every six hours. Notifications and an update menu entry lead to the official download page; installation remains the user's choice. Automatic checks can be disabled. No desktop content is sent.
+- Pinned icons now show only the file or program name and its actual Windows Shell icon. Shortcut titles omit .lnk/.url; full paths remain internal for correct pin/unpin persistence.
+- Replace Measure resources with a live read-only RAM indicator: percent of total physical RAM and MB used by the DeskPages agent plus same-installation helpers in the current Windows session.
+- Refresh the indicator every three seconds only while General settings is visible, on a background worker. Working sets can count shared pages more than once; the tooltip explains this estimate. GPU memory and disk snapshot sizes are separate from this RAM value.
+- Remove the interactive benchmark launcher and scripts. Preserve page membership, pin state, cache settings and update notifications.
 
-Users of 0.8.16 or older must install this release once manually: those versions have no update checker and cannot receive retroactive notifications. The app must be running and online to check; Windows notification settings can suppress balloons. Updates remain accessible through Settings > General > Check for updates and the tray menu.
-
-Cached capture remains optional and experimental. Hardware touchpad/Explorer acceptance and measured CPU/RAM/latency comparisons remain separate from CI fixtures.
+Automated Windows fixtures cover multilingual settings geometry, live memory reads and visibility-driven sampling, name-only shortcut labels, icons and pin persistence. Hardware touchpad/Explorer acceptance remains separate.
