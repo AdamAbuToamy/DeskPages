@@ -4,6 +4,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-setup-ui-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
 try{
+ Add-Type -AssemblyName System.IO.Compression
  Add-Type -AssemblyName System.IO.Compression.FileSystem
  $payload=Join-Path $temp 'brand.zip';$zip=[IO.Compression.ZipFile]::Open($payload,[IO.Compression.ZipArchiveMode]::Create)
  try{[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $root 'Assets/DeskPages.ico'),'Assets/DeskPages.ico') | Out-Null}finally{$zip.Dispose()}
