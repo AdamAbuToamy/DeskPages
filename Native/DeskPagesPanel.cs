@@ -46,7 +46,7 @@ public sealed class DeskPagesPanel:Form {
         Button more=Button("Advanced…",null);more.Click+=delegate{advanced.Show(more,new Point(0,more.Height));};flow.Controls.Add(more);Disposed+=delegate{advanced.Dispose();};
         flow.Controls.Add(Button("Exit and show all files",delegate{command(9002);}));
         var info=Flow(about);info.Controls.Add(new Label{Text="DeskPages",Font=new Font("Segoe UI",22,FontStyle.Bold),AutoSize=true});
-        info.Controls.Add(new Label{Text="Version 0.8.12\r\nCreated by Adam Abu Toamy\r\n© 2026 Adam Abu Toamy",AutoSize=true,Margin=new Padding(0,8,0,20)});
+        info.Controls.Add(new Label{Text="Version 0.8.16\r\nCreated by Adam Abu Toamy\r\n© 2026 Adam Abu Toamy",AutoSize=true,Margin=new Padding(0,8,0,20)});
         info.Controls.Add(Button("Privacy",delegate{document("PRIVACY.txt");}));info.Controls.Add(Button("License",delegate{document("LICENSE.txt");}));
         info.Controls.Add(new Label{Text="No account. No telemetry.\r\nYour pages are stored on this PC.",AutoSize=true,ForeColor=Color.DimGray,Margin=new Padding(0,20,0,0)});
         DeskPagesTheme.Apply(this);

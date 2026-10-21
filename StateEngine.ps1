@@ -40,17 +40,20 @@ function Invoke-DpPageTransaction {
     if ($source -eq $Page) {return}
     if ($Page -notin @($script:DpState.Pages)) {throw 'Unknown page.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Archived)){throw 'Restore this archived page before opening it.'}
-    Save-DpVerifiedSourceLayout $source
-    # Discover new files while the source page is still intact.
-    Set-DpFilePage -Page $source -Commit:$false
-    $journal=Join-Path $script:DpStore 'transition.xml'
-    Write-DpAtomicXml -Path $journal -Value ([PSCustomObject]@{From=$source;To=$Page;At=[DateTime]::UtcNow})
-    Invoke-DpFaultPoint 'JournalWritten'
+    if($script:hostReady -and (Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue)){Start-DpNavigationSample}
+    $motion=[Math]::Sign($Page-$source)
+    if($Direction -ne 0){$motion=$Direction}
+    elseif(Get-Command Get-DpActivePages -ErrorAction SilentlyContinue){$order=[int[]]@(Get-DpActivePages);$motion=[Math]::Sign([Array]::IndexOf($order,$Page)-[Array]::IndexOf($order,$source))}
+    $earlyPreview=$false
     try {
-        $motion=[Math]::Sign($Page-$source)
-        if($Direction -ne 0){$motion=$Direction}
-        elseif(Get-Command Get-DpActivePages -ErrorAction SilentlyContinue){$order=[int[]]@(Get-DpActivePages);$motion=[Math]::Sign([Array]::IndexOf($order,$Page)-[Array]::IndexOf($order,$source))}
-        if ($Animate -and $script:hostReady) {[DeskPagesHost]::BeginAnimation($motion)}
+        if($Animate -and $script:hostReady -and (Get-Command Try-DpCachedPreview -ErrorAction SilentlyContinue)){$earlyPreview=Try-DpCachedPreview -Source $source -Target $Page -Direction $motion}
+        Save-DpVerifiedSourceLayout $source
+        # Discover new files while the source page is still intact.
+        Set-DpFilePage -Page $source -Commit:$false
+        $journal=Join-Path $script:DpStore 'transition.xml'
+        Write-DpAtomicXml -Path $journal -Value ([PSCustomObject]@{From=$source;To=$Page;At=[DateTime]::UtcNow})
+        Invoke-DpFaultPoint 'JournalWritten'
+        if ($Animate -and $script:hostReady -and -not $earlyPreview) {if(Get-Command Set-DpSnapshotSource -ErrorAction SilentlyContinue){Set-DpSnapshotSource $source};[DeskPagesHost]::BeginAnimation($motion)}
         Set-DpFilePage -Page $Page -Commit:$false -RegisterNew:$false
         Invoke-DpFaultPoint 'VisibilityApplied'
         $systemChanged=Set-DpSystemIcons $Page
@@ -63,6 +66,7 @@ function Invoke-DpPageTransaction {
         Invoke-DpFaultPoint 'LayoutApplied'
         if ($Animate -and $script:hostReady -and [DeskPagesAnimation]::IsVisible) {
             $targetIcons=@(Confirm-DpAnimationView -Page $Page)
+            if(Get-Command Set-DpSnapshotTarget -ErrorAction SilentlyContinue){Set-DpSnapshotTarget -Page $Page -Icons $targetIcons}
             [DeskPagesHost]::ConfirmAnimationTarget($targetIcons.Count)
         }
         # Commit only after visibility, system icons AND verified layout succeed.
@@ -71,11 +75,11 @@ function Invoke-DpPageTransaction {
         Invoke-DpFaultPoint 'ManifestCommitted'
         [IO.File]::Delete($journal)
         Invoke-DpFaultPoint 'JournalRemoved'
-        if ($script:hostReady) {[DeskPagesHost]::FinishAnimation()}
+        if ($script:hostReady) {[DeskPagesHost]::FinishAnimation();if(Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue){[DeskPagesHost]::EndNavigationSample($true)}}
     }
     catch {
         $failure=$_
-        if ($script:hostReady) {[DeskPagesHost]::AbortAnimation()}
+        if ($script:hostReady) {[DeskPagesHost]::AbortAnimation();if(Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue){[DeskPagesHost]::EndNavigationSample($false)}}
         # If commit already reached disk, restore that committed page, not an old guess.
         try {
             $disk=Read-DpManifest $script:DpManifest

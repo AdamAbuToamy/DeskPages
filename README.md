@@ -14,6 +14,17 @@ Published installer and source: **0.8.12 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.16 (experimental)
+
+- Optional cached page capture under **Settings → Appearance → Page capture**; direct capture remains the default.
+- Persistent, compressed and current-user encrypted page snapshots, with no timed expiry. Valid local images can be restored after a RAM eviction or restart.
+- Layout changes request a new snapshot after pointer release, without waiting for the next page switch.
+- Touchpad gestures can queue during transitions; updated contact tracking and wheel fallback reduce missed input.
+- A 240 ms eased animation in cached mode, with the page number dismissed when motion ends.
+- Built-in direct/cached resource comparison under **Settings → General → Measure resources**.
+
+Snapshots are saved locally in `%LOCALAPPDATA%\DeskPages\HiddenPages\Snapshots`. See [privacy information](PRIVACY.txt) and [experiment details](Release/SNAPSHOT-CACHE-EXPERIMENT.md). Physical Windows 11/touchpad acceptance and measured CPU, RAM and response-time results remain pending; no performance claim is established.
+
 ## What's new in 0.8.12
 
 - Redesigned settings with a sidebar, four sections, grouped cards and consistent controls.

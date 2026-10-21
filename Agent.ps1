@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.12.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.16.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $references=@(
@@ -204,6 +204,7 @@ try {
     }
     . (Join-Path $script:base 'Visibility.ps1')
     . (Join-Path $script:base 'Layouts.ps1')
+    . (Join-Path $script:base 'SnapshotCache.ps1')
     . (Join-Path $script:base 'NewItemPlacement.ps1')
     . (Join-Path $script:base 'DesktopMerge.ps1')
     . (Join-Path $script:base 'PageSafety.ps1')
@@ -387,6 +388,7 @@ try {
                 Save-DpVerifiedSourceLayout $current; Save-DpState
                 [DeskPagesHost]::RequestExit()
             }
+            elseif ($Code -eq 9750) {Warm-DpCurrentSnapshot}
             elseif ($Code -eq 9500) {Start-DpNewItemPlacement}
             elseif ($Code -eq 9501) {Update-DpNewItemPlacement}
             elseif ($Code -eq 9102) {
@@ -398,9 +400,9 @@ try {
         } catch {
             Write-DpLog ([string]$_)
             if($Code -in @(9500,9501)){Stop-DpNewItemPlacement}
-            elseif ($Code -ne 9100 -and $Code -ne 9300) {[DeskPagesHost]::ShowError([string]$_)}
+            elseif ($Code -ne 9100 -and $Code -ne 9300 -and $Code -ne 9750) {[DeskPagesHost]::ShowError([string]$_)}
         } finally {
-            if($Code -notin @(9500,9501)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
+            if($Code -notin @(9500,9501,9750)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
         }
     }
     $script:hostReady=$true

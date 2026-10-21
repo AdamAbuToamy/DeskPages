@@ -35,3 +35,11 @@ Assert-Gesture ($events.Count -eq 1 -and $events[0] -eq 1) '507 high-resolution 
 $events=@()
 for($i=0;$i -lt 507;$i++){$result=$g.Wheel(-1,1600+$i*2,1);if($result){$events+=@($result)}}
 Assert-Gesture ($events.Count -eq 1 -and $events[0] -eq -1) 'next raw gesture recognizes one left swipe'
+
+Assert-Gesture (-not [DeskPagesGesture]::HidOwnsWheel(10,1,500)) 'one-finger HID traffic does not black out wheel fallback'
+Assert-Gesture ([DeskPagesGesture]::HidOwnsWheel(10,2,500)) 'active two-finger HID owns duplicate wheel route'
+Assert-Gesture ([DeskPagesGesture]::HidOwnsWheel(40,0,40)) 'recognized HID movement suppresses immediate wheel duplicate'
+Assert-Gesture (-not [DeskPagesGesture]::HidOwnsWheel(200,0,200)) 'no one-second wheel blackout after HID'
+$g=[DeskPagesGesture]::new();$events=@()
+for($i=0;$i -lt 1000;$i++){$t=$i*220;if($g.Wheel(60,$t,1) -ne 1){throw 'A distinct repeated wheel gesture was lost'};if($g.Wheel(60,$t+20,1)){throw 'Wheel inertia paged twice'}}
+Write-Host 'PASS: 1000 successive short wheel gestures and their inertia tails.'

@@ -84,3 +84,17 @@ Assert-Hid ([Runtime.InteropServices.Marshal]::OffsetOf($type,'LogicalMin').ToIn
 $type=[DeskPagesTouchpad].GetNestedType('Caps',[Reflection.BindingFlags]::NonPublic)
 Assert-Hid ([Runtime.InteropServices.Marshal]::SizeOf([Activator]::CreateInstance($type)) -eq 64) 'HIDP_CAPS SDK ABI size'
 Write-Host ('PASS: '+$script:hidCases+' touchpad HID framing/recognition/ABI checks. Native Windows HID parser and physical hardware NOT executed.')
+
+$g=[DeskPagesTouchpad+SwipeRecognizer]::new()
+for($i=0;$i -lt 1000;$i++){
+ $t=$i*160;$a=2*$i+1;$b=$a+1
+ $frame=[DeskPagesTouchpad+Contact[]]@((Contact $a 0.2 0.3),(Contact $b 0.4 0.3))
+ if($g.Update($frame,$t,$true)){throw 'New fingers emitted without movement'}
+ $frame=[DeskPagesTouchpad+Contact[]]@((Contact $a 0.32 0.3),(Contact $b 0.52 0.3))
+ if($g.Update($frame,($t+30),$true) -ne 1){throw 'Rapid new-contact swipe was lost when no lift report arrived'}
+ if($g.Update($frame,($t+60),$true)){throw 'Same contact sequence repeated'}
+}
+Write-Host 'PASS: 1000 rapid HID swipes without explicit lift reports; one page per contact sequence.'
+
+$g=[DeskPagesTouchpad+SwipeRecognizer]::new();$g.DistanceThreshold=0.05;$null=$g.Update((Frame),0,$true)
+Assert-Hid ($g.Update((Frame 0.055),32,$true) -eq 1) 'runtime two-finger distance recognizes without waiting for full old threshold'

@@ -5,6 +5,8 @@ public static class DeskPagesStartupGate {public static void Log(string text){Co
 public static class SimpleUiHarness {
  private static string[] settings;private static int reads,writes,displayWrites;private static bool scoped,failScope;private static bool forbidden;
  private static string[] Request(string command,string[] args){
+  if(command=="capture-settings")return new[]{"False"};
+  if(command=="capture-mode" || command=="measure-resources")return new string[0];
   if(command=="display-settings")return new[]{scoped.ToString()};
   if(command=="display-scope"){if(failScope)throw new Exception("Injected display write failure.");displayWrites++;scoped=bool.Parse(args[0]);return new string[0];}
   if(command=="pages")return new[]{"1\tMain\t71\tFalse\tFalse\tTrue","2\tProject\t2\tFalse\tTrue\tFalse","3\tArchive\t0\tTrue\tFalse\tFalse"};

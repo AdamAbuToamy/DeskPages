@@ -71,6 +71,10 @@ public sealed class DeskPagesTouchpad : IDisposable
             }
             if(active.Count==0) {baseline=false;latched=false;blocked=false;return 0;}
             if(!allowed || active.Count>2) {Cancel();return 0;}
+            if(latched && active.Count==2){
+                active.Sort(delegate(Contact a,Contact b){return a.Id.CompareTo(b.Id);});
+                if(id0!=active[0].Id || id1!=active[1].Id){latched=false;baseline=false;}
+            }
             if(latched || blocked) return 0;
             if(active.Count!=2) {baseline=false;return 0;}
             active.Sort(delegate(Contact a,Contact b) {return a.Id.CompareTo(b.Id);});
@@ -87,7 +91,7 @@ public sealed class DeskPagesTouchpad : IDisposable
             if(Math.Abs(nowSpan-span)>Math.Max(0.035,span*0.25)) {Cancel();return 0;}
             // Both fingers must translate together. Opposite motion is pinch/rotation.
             if(Math.Abs(dx)<DistanceThreshold || Math.Abs(dx)<Math.Abs(dy)*1.8 ||
-                Math.Abs(dx0)<0.04 || Math.Abs(dx1)<0.04 || Math.Sign(dx0)!=Math.Sign(dx1) ||
+                Math.Abs(dx0)<0.025 || Math.Abs(dx1)<0.025 || Math.Sign(dx0)!=Math.Sign(dx1) ||
                 Math.Abs(dx0)<Math.Abs(dy0)*1.3 || Math.Abs(dx1)<Math.Abs(dy1)*1.3) return 0;
             latched=true;return Math.Sign(dx);
         }
@@ -179,10 +183,11 @@ public sealed class DeskPagesTouchpad : IDisposable
     public long Errors {get;private set;}
     public long Recognized {get;private set;}
     public long LastFrameMs {get;private set;}
+    public long LastGestureMs {get;private set;}
     public int Contacts {get;private set;}
     public int MaximumContacts {get;private set;}
     public string Status {get;private set;}
-    public DeskPagesTouchpad() {Status="not registered";LastFrameMs=-10000;}
+    public DeskPagesTouchpad() {Status="not registered";LastFrameMs=-10000;LastGestureMs=-10000;}
     public bool Register(IntPtr window)
     {
         var device=new RawDevice {Page=0x0D,Usage=5,Flags=0x2100,Target=window}; // INPUTSINK | DEVNOTIFY
@@ -237,7 +242,7 @@ public sealed class DeskPagesTouchpad : IDisposable
                 MaximumContacts=Math.Max(MaximumContacts,Contacts);
                 state.Gesture.DistanceThreshold=DistanceThreshold;
                 int direction=state.Gesture.Update(frame,ms,allowed);
-                if(direction!=0){Recognized++;emitted=direction;}
+                if(direction!=0){Recognized++;LastGestureMs=ms;emitted=direction;}
             }
             return emitted;
         } catch(Exception ex) {

@@ -13,7 +13,7 @@ public sealed class DeskPagesIndicator:Form {
     private readonly System.Windows.Forms.Timer timer;
     private readonly DeskPagesIndicatorPolicy timing=new DeskPagesIndicatorPolicy();
     private int page,direction;
-    private bool failed;
+    private bool failed;private Func<bool> motionFinished;
     private const int ExtendedStyles=0x08000000|0x00000020|0x00000080|0x00080000;
     public DeskPagesIndicator(){
         FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;
@@ -22,7 +22,7 @@ public sealed class DeskPagesIndicator:Form {
         StartPosition=FormStartPosition.Manual;Opacity=0;
         SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
         timer=new System.Windows.Forms.Timer{Interval=16};
-        timer.Tick+=delegate{double value=timing.Opacity(Now());if(value<=0){timer.Stop();Hide();return;}Opacity=value;if(timing.Pending)Invalidate();};
+        timer.Tick+=delegate{if(timing.Pending && motionFinished!=null){try{if(motionFinished()){Complete();return;}}catch{motionFinished=null;}}double value=timing.Opacity(Now());if(value<=0){timer.Stop();Hide();return;}Opacity=value;if(timing.Pending)Invalidate();};
         UpdateShape();
     }
     public bool Pending{get{return timing.Pending;}}
@@ -38,17 +38,18 @@ public sealed class DeskPagesIndicator:Form {
         if(Width<2 || Height<2)return;
         using(var path=Round(new Rectangle(0,0,Width,Height),Math.Max(8,Height/5))){var old=Region;Region=new Region(path);if(old!=null)old.Dispose();}
     }
-    public void Begin(int id,int motion,Rectangle area){page=id;direction=Math.Sign(motion);failed=false;timing.Begin(Now());Place(area,true);}
-    public void Complete(){timing.Complete(Now());Invalidate();}
+    public void Begin(int id,int motion,Rectangle area){motionFinished=null;page=id;direction=Math.Sign(motion);failed=false;timing.Begin(Now());Place(area,true);}
+    public void TrackMotion(Func<bool> finished){motionFinished=finished;}
+    public void Complete(){motionFinished=null;timing.Complete(Now());timer.Stop();Opacity=0;Hide();}
     public void Fail(){if(!timing.Pending)return;failed=true;page=0;direction=0;timing.Fail(Now());Invalidate();}
-    public void Present(int id){page=id;direction=0;failed=false;timing.Start(Now());Place(Screen.FromPoint(Cursor.Position).WorkingArea,false);}
+    public void Present(int id){motionFinished=null;page=id;direction=0;failed=false;timing.Start(Now());Place(Screen.FromPoint(Cursor.Position).WorkingArea,false);}
     private void Place(Rectangle area,bool immediate){
         Location=new Point(area.Left+(area.Width-Width)/2,area.Bottom-Height-Math.Max(16,Height/3));
         Opacity=immediate?DeskPagesIndicatorPolicy.MaximumOpacity:0.01;Show();
-        SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x0001|0x0002|0x0010|0x0040);
+        if(Environment.OSVersion.Platform==PlatformID.Win32NT)SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x0001|0x0002|0x0010|0x0040);
         Invalidate();Update();timer.Start();
     }
-    public void Dismiss(){timer.Stop();timing.Cancel();Hide();}
+    public void Dismiss(){motionFinished=null;timer.Stop();timing.Cancel();Hide();}
     protected override void OnPaint(PaintEventArgs e){
         base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
         float sx=Width/128f,sy=Height/78f;g.ScaleTransform(sx,sy);
@@ -97,6 +98,7 @@ public sealed class DeskPagesIndicatorController:IDisposable {
         try{hud.BeginInvoke(new Action(delegate{Drain(hud);}));}catch(InvalidOperationException){}
     }
     public long Begin(int page,int direction,Rectangle area){long token=Interlocked.Increment(ref generation);Post(delegate(DeskPagesIndicator hud){current=token;hud.Begin(page,direction,area);});return token;}
+    public void TrackMotion(long token,Func<bool> finished){Post(delegate(DeskPagesIndicator hud){if(current==token)hud.TrackMotion(finished);});}
     public void Complete(long token){Post(delegate(DeskPagesIndicator hud){if(current==token)hud.Complete();});}
     public void Fail(long token){Post(delegate(DeskPagesIndicator hud){if(current==token)hud.Fail();});}
     public void Present(int page){long token=Interlocked.Increment(ref generation);Post(delegate(DeskPagesIndicator hud){current=token;hud.Present(page);});}

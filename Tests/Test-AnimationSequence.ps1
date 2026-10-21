@@ -25,7 +25,7 @@ $root=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-sequence-'+[Guid]::NewGui
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
     function Write-DpLog {param($Message)}
-    function Save-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('source-layout')}
+    function Save-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('source-layout');if($script:rejectSource){throw 'Injected source checkpoint failure'}}
     function Set-DpFilePage {param($Page,$Commit,$RegisterNew) [DeskPagesHost]::Events.Add('visibility:'+ $Page)}
     function Set-DpSystemIcons {param($Page) return $false}
     function Refresh-DpDesktop {}
@@ -35,19 +35,23 @@ try {
         if($script:rejectTarget){throw 'Target includes a source icon or lacks an expected target icon.'}
         for($i=0;$i -lt $script:targetCount;$i++){[PSCustomObject]@{Key=('target-'+$i)}}
     }
-    foreach($case in @('Populated','Empty','MixedRejected')){
+    function Try-DpCachedPreview {param($Source,$Target,$Direction)
+        if($script:previewHit){[DeskPagesHost]::Events.Add('cached-preview');[DeskPagesAnimation]::IsVisible=$true;return $true};return $false
+    }
+    foreach($case in @('Populated','Empty','MixedRejected','CachedReady','CachedMiss','CachedRejected','CachedCheckpointRejected')){
         $script:DpStore=$root;$script:DpManifest=Join-Path $root 'pages.xml'
         $script:DpSuspended=$false;$script:hostReady=$true
         $script:DpState=[PSCustomObject]@{Current=1;Pages=@(1,2);Items=@()}
         $script:targetCount=3;if($case -eq 'Empty'){$script:targetCount=0}
-        $script:rejectTarget=$case -eq 'MixedRejected'
+        $script:rejectSource=$case -eq 'CachedCheckpointRejected';$script:previewHit=$case -in @('CachedReady','CachedRejected','CachedCheckpointRejected');$script:rejectTarget=$case -in @('MixedRejected','CachedRejected')
         [DeskPagesHost]::Events.Clear();Save-DpState
         $failed=$false;try {Invoke-DpPageTransaction -Page 2} catch {$failed=$true}
         $events=@([DeskPagesHost]::Events)
-        if($case -eq 'MixedRejected'){
+        if($script:rejectTarget -or $script:rejectSource){
             if(-not $failed -or 'play' -in $events -or $script:DpState.Current -ne 1 -or 'abort' -notin $events){throw 'Invalid target was displayed or committed.'}
         }else{
             $expected=@('source-layout','visibility:1','source-picture','visibility:2','layout:2','verify-target',('confirmed:'+$script:targetCount),'play')
+            if($script:previewHit){$expected=@('cached-preview','source-layout','visibility:1','visibility:2','layout:2','verify-target',('confirmed:'+$script:targetCount),'play')}
             if($failed -or ($events -join '|') -ne ($expected -join '|') -or $script:DpState.Current -ne 2){throw ('Wrong sequence: '+($events -join '|'))}
         }
         Write-Host ('PASS: animated transaction '+$case)

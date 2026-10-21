@@ -24,8 +24,9 @@ public static class FeedbackUiHarness {
      using(var b=Capture(c,args[0]+"-pending-b.png")){int changed=0;for(int y=0;y<a.Height;y++)for(int x=0;x<a.Width;x++)if(a.GetPixel(x,y)!=b.GetPixel(x,y))changed++;Assert(changed>5,"Progress line froze while caller slept");}
     }
     Thread.Sleep(1600);Inspect(c,delegate(DeskPagesIndicator h){Assert(h.Visible && h.Pending,"Pending HUD auto-expired");});
-    c.Complete(token);Thread.Sleep(80);Inspect(c,delegate(DeskPagesIndicator h){Assert(h.Visible && !h.Pending,"Success hold missing");});
+    c.Complete(token);Thread.Sleep(80);Inspect(c,delegate(DeskPagesIndicator h){Assert(!h.Visible && !h.Pending,"Completed HUD remained visible");});
     Thread.Sleep(650);Inspect(c,delegate(DeskPagesIndicator h){Assert(!h.Visible,"Completed HUD stayed visible");});
+    long tracked=c.Begin(7,1,area);int rendererDone=0;c.TrackMotion(tracked,delegate{return Volatile.Read(ref rendererDone)!=0;});Thread.Sleep(100);Inspect(c,delegate(DeskPagesIndicator h){Assert(h.Visible && h.Pending,"Motion watcher hid HUD before motion ended");});Volatile.Write(ref rendererDone,1);Thread.Sleep(100);Inspect(c,delegate(DeskPagesIndicator h){Assert(!h.Visible,"HUD waited for blocked agent after visual motion ended");});
     long old=c.Begin(3,-1,area);long next=c.Begin(99,1,area);c.Complete(old);Thread.Sleep(80);
     Inspect(c,delegate(DeskPagesIndicator h){Assert(h.Pending,"Stale completion retired newer request");});
     using(var ignored=Capture(c,args[0]+"-page99.png")){}
@@ -49,7 +50,7 @@ public static class FeedbackUiHarness {
      using(var b=new Bitmap(cue.Width,cue.Height)){cue.DrawToBitmap(b,cue.ClientRectangle);b.Save(args[0]+"-edge-"+direction+".png");Assert(b.GetPixel(direction<0?0:17,300).R==255,"White edge core missing");}
     }
    }
-   Console.WriteLine("PASS: actual HUD stayed visible and animated during caller sleeps; commit hold/fade, stale completion, failure, dismissal, 99-page and 100/150/200 percent drawing, left/right edge core verified on the current UI host. Windows checks foreground and noactivate/click-through styles; physical capture/OLE remains device acceptance.");return 0;
+   Console.WriteLine("PASS: actual HUD stayed visible and animated during caller sleeps; completion dismissal, independent motion-end watcher, stale completion, failure, dismissal, 99-page and 100/150/200 percent drawing, left/right edge core verified on the current UI host. Windows checks foreground and noactivate/click-through styles; physical capture/OLE remains device acceptance.");return 0;
   }catch(Exception ex){Console.WriteLine(ex);return 1;}
  }
 }

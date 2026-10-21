@@ -9,7 +9,7 @@ public sealed class DeskPagesIndicatorPolicy {
     public bool Pending {get{return phase==2;}}
     public void Start(long now){started=now;phase=1;}
     public void Begin(long now){started=now;phase=2;}
-    public void Complete(long now){if(phase==2){started=now;phase=3;}}
+    public void Complete(long now){if(phase==2)Cancel();}
     public void Fail(long now){if(phase==2){started=now;phase=4;}}
     public void Cancel(){started=-1;phase=0;}
     public double Progress(long now){return started<0?0:((Math.Max(0,now-started)%1100)/1100.0);}

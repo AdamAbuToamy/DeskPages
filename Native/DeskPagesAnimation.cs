@@ -24,6 +24,26 @@ public static class DeskPagesAnimation
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern int DPGetState();
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern uint DPGetCaptureSample();
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)] private static extern int DPGetReport(StringBuilder text,int length);
+    public static bool SnapshotCacheEnabled;public static string SnapshotSourceKey="",SnapshotTargetKey="";
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern void DPInvalidateSnapshots();
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPClearSnapshots();
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern ulong DPGetSnapshotValue(int index);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPWarmSnapshot(string key,int left,int top,int width,int height);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPConfirmCachedTarget(int count,string key);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPBeginDesktopCachedRegions(int left,int top,int width,int height,int[] regions,int count,string source);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern void DPInvalidateSnapshotPage(int page);
+    public static void InvalidateSnapshotPage(int page){if(library!=IntPtr.Zero)DPInvalidateSnapshotPage(page);}
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPConfigureSnapshotStore(string folder,string scope);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPGetSavedSnapshotKey(int page,StringBuilder key,int count);
+    public static void ConfigureSnapshotStore(string folder,string scope){Initialize();if(DPConfigureSnapshotStore(folder,scope)==0)throw new IOException("Cannot configure the protected snapshot store.");}
+    public static string SavedSnapshotKey(int page){Initialize();var key=new StringBuilder(512);return DPGetSavedSnapshotKey(page,key,key.Capacity)>0?key.ToString():"";}
+    public static void InvalidateSnapshots(){if(library!=IntPtr.Zero)DPInvalidateSnapshots();}
+    public static void ClearSnapshots(){if(library!=IntPtr.Zero)DPClearSnapshots();}
+    public static ulong SnapshotCacheBytes {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(0);}}
+    public static string DiskValuesCsv(){return library==IntPtr.Zero?"0,0,0":DPGetSnapshotValue(8)+","+DPGetSnapshotValue(9)+","+DPGetSnapshotValue(10);}
+    public static ulong CaptureCalls {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(4);}}
+    public static string SnapshotValuesCsv(){if(library==IntPtr.Zero)return "0,0,0,0,0,0,0";return DPGetSnapshotValue(5)+","+DPGetSnapshotValue(6)+","+DPGetSnapshotValue(0)+","+DPGetSnapshotValue(1)+","+DPGetSnapshotValue(2)+","+DPGetSnapshotValue(3)+","+DPGetSnapshotValue(4);}
+    public static bool WarmSnapshot(string key,Rectangle bounds){if(!SnapshotCacheEnabled || string.IsNullOrEmpty(key))return false;Initialize();bool ok=DPWarmSnapshot(key,bounds.Left,bounds.Top,bounds.Width,bounds.Height)!=0;if(!ok)Trace("idle snapshot skipped: "+Metrics);return ok;}
     public static void Configure(string baseDirectory) {
         libraryPath=Path.Combine(baseDirectory,"Native","DeskPagesCompositor.dll");
         tracePath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","agent.log");
@@ -33,7 +53,7 @@ public static class DeskPagesAnimation
         catch(IOException){}catch(UnauthorizedAccessException){}
     }
     public static void ConfirmDesktopTarget(int iconCount) {
-        Initialize();if(DPConfirmTarget(iconCount)==0)throw new InvalidOperationException(Metrics);
+        Initialize();if((SnapshotCacheEnabled?DPConfirmCachedTarget(iconCount,SnapshotTargetKey):DPConfirmTarget(iconCount))==0)throw new InvalidOperationException(Metrics);
     }
     public static void Initialize()
     {
@@ -51,15 +71,26 @@ public static class DeskPagesAnimation
         }
     }
     public static bool IsVisible {get{return library!=IntPtr.Zero && (DPGetState()&1)!=0;}}
+[DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPIsTransitionWindow(IntPtr window);
+    public static bool IsTransitionWindow(IntPtr window){return library!=IntPtr.Zero && DPIsTransitionWindow(window)!=0;}
+    public static bool MotionComplete {get{return library!=IntPtr.Zero && (DPGetState()&4)!=0;}}
     public static bool IsPlaying {get{return library!=IntPtr.Zero && (DPGetState()&2)!=0;}}
     public static uint CaptureSample {get{return DPGetCaptureSample();}}
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern int DPBeginDesktop(int left,int top,int width,int height);
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern int DPProbeWindowCapture(IntPtr source,int left,int top,int width,int height,out uint center);
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern int DPBeginDesktopRegions(int left,int top,int width,int height,int[] regions,int count);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPBeginCachedPreview(int left,int top,int width,int height,int[] regions,int count,string source,string target,int direction);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPCompleteCachedPreview();
+    public static bool BeginCachedPreview(Rectangle bounds,string source,string target,int direction){
+        Initialize();var data=new System.Collections.Generic.List<int>();
+        foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
+        return DPBeginCachedPreview(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,source,target,direction)!=0;
+    }
+    public static void CompleteCachedPreview(){if(DPCompleteCachedPreview()==0)throw new InvalidOperationException(Metrics);}
     public static bool BeginDesktop(Rectangle bounds){
         Initialize();var data=new System.Collections.Generic.List<int>();
         foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
-        return DPBeginDesktopRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5)!=0;
+        return (SnapshotCacheEnabled?DPBeginDesktopCachedRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,SnapshotSourceKey):DPBeginDesktopRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5))!=0;
     }
     public static uint ProbeWindow(IntPtr source,Rectangle bounds){Initialize();uint sample;if(DPProbeWindowCapture(source,bounds.Left,bounds.Top,bounds.Width,bounds.Height,out sample)==0)throw new InvalidOperationException(Metrics);return sample;}
     public static bool Begin(Bitmap before,Rectangle bounds)

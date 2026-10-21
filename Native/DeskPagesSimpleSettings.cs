@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -74,6 +74,7 @@ public sealed class DeskPagesSettingsRow:Panel {
 
 public sealed class DeskPagesSimpleSettings:Form {
     private readonly ComboBox language=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat};
+    private readonly ComboBox captureMode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat};
     private readonly ComboBox inbox=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat};
     private readonly DeskPagesModernToggle[] basic=new DeskPagesModernToggle[4];
     private readonly DeskPagesModernToggle reverse=new DeskPagesModernToggle(),keyboard=new DeskPagesModernToggle(),reduced=new DeskPagesModernToggle(),primaryOnly=new DeskPagesModernToggle();
@@ -99,6 +100,10 @@ public sealed class DeskPagesSimpleSettings:Form {
         Surface.Add(2,L("Page animation","حركة الانتقال","הנפשת מעבר"),L("Slide smoothly between pages","انتقال سلس عند تغيير الصفحة","מעבר חלק בין דפים"),basic[2]);
         Surface.Add(2,L("Page indicator","رقم الصفحة","מספר הדף"),L("A brief cue when the page changes","إشارة قصيرة عند تغيير الصفحة","חיווי קצר בעת מעבר דף"),basic[3]);
         Surface.Add(2,L("Reduce motion","تقليل الحركة","הפחתת תנועה"),L("Use pages without transition animations","تنقل دون حركات انتقال","מעבר ללא הנפשה"),reduced);
+        captureMode.Items.AddRange(new object[]{L("Direct capture","التقاط مباشر","לכידה ישירה"),L("Cached · experimental","صور محفوظة · تجريبي","מטמון · ניסיוני")});
+        Surface.Add(2,L("Page capture","صور التنقل","לכידת דפים"),L("Reuse recent page images","اختر الصور المحفوظة أو الالتقاط المباشر","בחרו מטמון או לכידה חדשה"),captureMode);
+        captureMode.SelectedIndexChanged+=delegate{if(loading || !ready)return;try{DeskPagesWorkspaceApi.Execute("capture-mode",(captureMode.SelectedIndex==1).ToString());Surface.SetStatus(L("Saved","تم الحفظ","נשמר"));}catch(Exception ex){loading=true;try{captureMode.SelectedIndex=bool.Parse(DeskPagesWorkspaceApi.Execute("capture-settings")[0])?1:0;}finally{loading=false;}Surface.SetStatus(ex.Message);}};
+        Surface.Performance.Click+=delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("measure-resources");});};
         Surface.Add(3,L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose the page for incoming files","اختر الصفحة التي تستقبل الملفات","בחרו דף לקבלת קבצים חדשים"),inbox);
         Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other screens' icons in place","أبقِ أيقونات الشاشات الأخرى ثابتة","השאירו סמלים במסכים אחרים במקומם"),primaryOnly);
         Surface.Replay.Click+=delegate{DeskPagesWorkspaceApi.StartTour();};
@@ -131,6 +136,6 @@ public sealed class DeskPagesSimpleSettings:Form {
         if(!ready)return true;try{var destination=inbox.SelectedItem as Destination;if(destination==null)throw new InvalidOperationException("Select a destination.");string next=language.SelectedIndex==1?"ar":language.SelectedIndex==2?"he":"en";var values=DeskPagesSimplePreferences.Build(next,new[]{basic[0].Checked,basic[1].Checked,basic[2].Checked,basic[3].Checked},reverse.Checked,keyboard.Checked,reduced.Checked,destination.Id);DeskPagesWorkspaceApi.Execute("preferences-save",values);Surface.SetStatus(L("Saved automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));if(next!=locale){DeskPagesWorkspaceApi.Language=next;DeskPagesWorkspaceApi.RefreshSettingsLanguage();}return true;}catch(Exception ex){Surface.SetStatus(L("Not saved. Try again.","لم تُحفظ التغييرات. أعد المحاولة.","לא נשמר. נסו שוב."));DeskPagesStartupGate.Log("preferences: "+ex.ToString());return false;}
     }
     public void QueueRefresh(){load.Stop();load.Start();}
-    public void RefreshData(){Run(delegate{loading=true;try{var values=DeskPagesWorkspaceApi.Execute("settings");if(values.Length!=16)throw new InvalidOperationException("Invalid settings response.");var scope=DeskPagesWorkspaceApi.Execute("display-settings");if(scope.Length!=1)throw new InvalidOperationException("Invalid display settings.");primaryOnly.Checked=bool.Parse(scope[0]);language.SelectedIndex=values[1]=="ar"?1:values[1]=="he"?2:0;int[] indices={7,12,10,11};for(int i=0;i<4;i++)basic[i].Checked=bool.Parse(values[indices[i]]);reverse.Checked=bool.Parse(values[8]);keyboard.Checked=bool.Parse(values[9]);reduced.Checked=bool.Parse(values[2]);inbox.Items.Clear();inbox.Items.Add(new Destination{Id=0,Name=L("Current page","الصفحة الحالية","הדף הנוכחי")});foreach(var row in DeskPagesWorkspaceApi.Execute("pages")){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")inbox.Items.Add(new Destination{Id=int.Parse(f[0]),Name=f[1]});}for(int i=0;i<inbox.Items.Count;i++)if(((Destination)inbox.Items[i]).Id==int.Parse(values[0]))inbox.SelectedIndex=i;ready=true;Surface.SetStatus(L("Changes save automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));}finally{loading=false;}});}
+    public void RefreshData(){Run(delegate{loading=true;try{var values=DeskPagesWorkspaceApi.Execute("settings");if(values.Length!=16)throw new InvalidOperationException("Invalid settings response.");var scope=DeskPagesWorkspaceApi.Execute("display-settings");if(scope.Length!=1)throw new InvalidOperationException("Invalid display settings.");primaryOnly.Checked=bool.Parse(scope[0]);captureMode.SelectedIndex=bool.Parse(DeskPagesWorkspaceApi.Execute("capture-settings")[0])?1:0;language.SelectedIndex=values[1]=="ar"?1:values[1]=="he"?2:0;int[] indices={7,12,10,11};for(int i=0;i<4;i++)basic[i].Checked=bool.Parse(values[indices[i]]);reverse.Checked=bool.Parse(values[8]);keyboard.Checked=bool.Parse(values[9]);reduced.Checked=bool.Parse(values[2]);inbox.Items.Clear();inbox.Items.Add(new Destination{Id=0,Name=L("Current page","الصفحة الحالية","הדף הנוכחי")});foreach(var row in DeskPagesWorkspaceApi.Execute("pages")){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")inbox.Items.Add(new Destination{Id=int.Parse(f[0]),Name=f[1]});}for(int i=0;i<inbox.Items.Count;i++)if(((Destination)inbox.Items[i]).Id==int.Parse(values[0]))inbox.SelectedIndex=i;ready=true;Surface.SetStatus(L("Changes save automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));}finally{loading=false;}});}
     protected override void Dispose(bool disposing){if(disposing){load.Dispose();save.Dispose();}base.Dispose(disposing);}
 }

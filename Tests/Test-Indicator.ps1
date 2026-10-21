@@ -22,7 +22,7 @@ foreach($now in @(10000,10001,12000,70000,3610000)){
  if(-not $policy.Pending -or $policy.Opacity($now) -ne 0.72){throw 'Pending feedback expired before completion.'}
 }
 $policy.Complete(4000000)
-if($policy.Pending -or $policy.Opacity(4000299) -ne 0.72 -or $policy.Opacity(4000500) -ne 0){throw 'Completion hold/fade failed.'}
+if($policy.Pending -or $policy.Opacity(4000000) -ne 0 -or $policy.Opacity(4000500) -ne 0){throw 'Completed indicator remained visible.'}
 $policy.Begin(5000000);$policy.Fail(5001000)
 if($policy.Pending -or $policy.Opacity(5001799) -le 0 -or $policy.Opacity(5002000) -ne 0){throw 'Failure feedback did not retire.'}
 $policy.Begin(6000000);$policy.Cancel();$policy.Complete(6001000)
@@ -37,7 +37,7 @@ foreach($i in 1..10000){
  $lifecycle.Begin($i);$lifecycle.Cancel();$lifecycle.Commit()
  if($lifecycle.TakeCompletion($false) -ne 0){throw 'Cancelled lifecycle completed.'}
 }
-Write-Host 'PASS: indefinite immediate acknowledgement, completion-driven 300 ms hold/200 ms fade, error/dismissal retirement, 10000 commit+renderer races and cancellation checks.'
+Write-Host 'PASS: indefinite immediate acknowledgement, completion-driven immediate dismissal, error/dismissal retirement, 10000 commit+renderer races and cancellation checks.'
 
 if($env:OS -ne 'Windows_NT'){Write-Host 'SKIP: native click-through, foreground preservation and real display rendering need Windows.';return}
 Add-Type -AssemblyName System.Windows.Forms

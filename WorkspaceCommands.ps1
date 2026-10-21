@@ -159,6 +159,9 @@ function Invoke-DpWorkspaceRequest {
                 $w=$script:DpState.Workspace
                 @([string]$w.Inbox,[string]$w.Language,[string]$w.ReduceMotion,[string]$w.WheelThreshold,[string]$w.PointerThreshold,[string]$w.EdgeWidth,[string]$w.EdgeDwell)+@($w.Input | ForEach-Object {[string]$_})+@('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}' | ForEach-Object {[string]($_ -in @($w.SystemPinned))})
             }
+            'capture-settings' {[string][bool][DeskPagesHost]::SnapshotCacheEnabled}
+            'capture-mode' {if($Arguments.Count -ne 1){throw 'Invalid capture mode.'};[DeskPagesHost]::SetSnapshotMode([bool]::Parse($Arguments[0]))}
+            'measure-resources' {Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $script:base 'Measure-Resources.ps1')+'"'))}
             'display-settings' {[string][bool]$script:DpState.Workspace.PrimaryOnly}
             'display-scope' {
                 if($Arguments.Count -ne 1){throw 'Invalid display scope.'}

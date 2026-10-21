@@ -11,11 +11,11 @@ public sealed class DeskPagesGesture
     private double x0,y0;
     public int Wheel(int delta,long milliseconds,int source)
     {
-        if(milliseconds-last>450) {used=false;total=0;}
+        if(milliseconds-last>180) {used=false;total=0;}
         // The same physical wheel packet can arrive from hook, raw and window routes.
         bool duplicate=source!=lastSource && delta==lastDelta && milliseconds-last<12;
         lastDelta=delta;lastSource=source;last=milliseconds;
-        if(used || duplicate || milliseconds-emitted<300) return 0;
+        if(used || duplicate || milliseconds-emitted<120) return 0;
         total+=delta;
         if(Math.Abs(total)<WheelThreshold) return 0;
         used=true;emitted=milliseconds;return Math.Sign(total);
@@ -25,9 +25,11 @@ public sealed class DeskPagesGesture
         if(contacts!=2) {tracking=false;pointerUsed=false;return 0;}
         if(!tracking) {tracking=true;pointerUsed=false;x0=x;y0=y;return 0;}
         double dx=x-x0,dy=y-y0;
-        if(pointerUsed || milliseconds-emitted<300 || Math.Abs(dx)<PointerThreshold || Math.Abs(dx)<Math.Abs(dy)*1.5) return 0;
+        if(pointerUsed || milliseconds-emitted<120 || Math.Abs(dx)<PointerThreshold || Math.Abs(dx)<Math.Abs(dy)*1.5) return 0;
         pointerUsed=true;used=true;total=0;last=milliseconds;emitted=milliseconds;
         return Math.Sign(dx);
     }
+    public static bool HidOwnsWheel(long frameAge,int contacts,long gestureAge){return (contacts>=2 && frameAge<120) || gestureAge<120;}
+    public void Suppress(long ms){used=true;total=0;last=ms;}
     public void Cancel() {tracking=false;pointerUsed=false;total=0;used=false;}
 }

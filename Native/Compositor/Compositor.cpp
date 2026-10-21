@@ -19,6 +19,9 @@
 #include "MonitorPlan.h"
 #include "TransitionMath.h"
 #include "FrameGate.h"
+#include "SnapshotCache.h"
+#include "SnapshotDisk.h"
+#include "PreviewGate.h"
 #include "DragCapturePolicy.h"
 
 // Original implementation. Uses only documented Windows graphics APIs.
@@ -38,14 +41,15 @@ void Check(HRESULT hr,const char* step){if(FAILED(hr))throw std::runtime_error(s
 void WinCheck(bool ok,const char* step){if(!ok)throw std::runtime_error(std::string(step)+" Win32="+std::to_string(GetLastError()));}
 #include "WindowCapture.h"
 #include "DragCaptureWindow.h"
-enum class Op {Prepare,Begin,BeginDesktop,ConfirmTarget,Play,Abort,Shutdown};
+enum class Op {Prepare,Begin,BeginDesktop,ConfirmTarget,Play,BeginPreview,CompletePreview,WarmSnapshot,ClearSnapshots,InvalidatePage,Abort,Shutdown};
 struct Job {
     std::atomic<long> refs{2};std::atomic<bool> cancelled{false};
     HANDLE done=CreateEventW(nullptr,TRUE,FALSE,nullptr);
     Op op=Op::Prepare;int left=0,top=0,width=0,height=0,direction=1;
     int iconCount=-1;
+    std::wstring sourceKey,targetKey;
     std::vector<deskpages::Region> regions;
-    std::vector<unsigned char> pixels;bool ok=false;
+    std::vector<unsigned char> pixels,targetPixels;bool accepted=true,ok=false;
     ~Job(){if(done)CloseHandle(done);}
     void release(){if(refs.fetch_sub(1)==1)delete this;}
 };
@@ -54,13 +58,28 @@ HANDLE worker=nullptr,started=nullptr;
 DWORD workerId=0;
 SRWLOCK lifecycle=SRWLOCK_INIT,reportLock=SRWLOCK_INIT;
 std::wstring report=L"DirectComposition not initialized";
-std::atomic<int> visible{0},playing{0};
+std::atomic<HWND> coverWindow{nullptr};
+std::atomic<int> visible{0},playing{0},motionEnded{0};
 std::atomic<unsigned int> captureSample{0};
+std::atomic<uint64_t> snapshotEpoch{1},snapshotRevision{1},snapshotBytes{0},sourceHits{0},targetHits{0},snapshotMisses{0},captureCalls{0},sourceMs{0},targetMs{0},warmMs{0};
+deskpages::SnapshotDisk diskSnapshots;
 void Report(const std::string& value){AcquireSRWLockExclusive(&reportLock);report.assign(value.begin(),value.end());ReleaseSRWLockExclusive(&reportLock);}
 
 class Renderer {
     HWND hwnd=nullptr,desktopWindow=nullptr;
     bool desktopMode=false;
+    deskpages::SnapshotCache snapshots;
+    std::wstring incomingKey;
+    std::wstring FrameKey(const std::wstring& key)const {DWORD pid=0;GetWindowThreadProcessId(desktopWindow,&pid);return key.empty()?L"":key+L"|"+std::to_wstring(pid)+L"|"+std::to_wstring(left)+L","+std::to_wstring(top)+L","+std::to_wstring(width)+L","+std::to_wstring(height);}
+    bool GetFrame(const std::wstring& key,std::vector<unsigned char>& pixels){bool hit=!key.empty() && snapshots.Get(FrameKey(key),snapshotEpoch.load(),GetTickCount64(),pixels);if(!hit && !key.empty()){auto epoch=snapshotEpoch.load();hit=diskSnapshots.Get(key,left,top,width,height,pixels);if(hit && epoch==snapshotEpoch.load())snapshots.Put(FrameKey(key),pixels,epoch,GetTickCount64());else if(hit)hit=false;}snapshotBytes=snapshots.Bytes();return hit;}
+    void KeepFrame(const std::wstring& key,const std::vector<unsigned char>& pixels,uint64_t generation){if(!key.empty() && generation==snapshotEpoch.load()){auto frame=FrameKey(key);auto separator=key.find(L':');if(separator!=std::wstring::npos)snapshots.RemovePrefix(key.substr(0,separator+1),frame);snapshots.Put(frame,pixels,generation,GetTickCount64());diskSnapshots.Save(key,left,top,width,height,pixels);}snapshotBytes=snapshots.Bytes();}
+    void LocateDesktop(){
+        iconWindow=nullptr;FindIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&iconWindow));
+        if(!iconWindow)EnumWindows(FindIcons,reinterpret_cast<LPARAM>(&iconWindow));
+        WinCheck(IsWindow(iconWindow),"Find Explorer desktop icon view");desktopWindow=GetAncestor(iconWindow,GA_ROOT);
+        wchar_t cls[64]{};GetClassNameW(desktopWindow,cls,64);
+        WinCheck(std::wcscmp(cls,L"Progman")==0 || std::wcscmp(cls,L"WorkerW")==0,"Capture only Explorer desktop owner");
+    }
     Ptr<ID3D11Device> d3d;
     Ptr<ID3D11DeviceContext> d3dContext;
     Ptr<IDXGIDevice> dxgi;
@@ -75,8 +94,9 @@ class Renderer {
     struct MonitorVisual {deskpages::Region region;Ptr<IDCompositionVisual> group,oldPage,newPage;Ptr<IDCompositionAnimation> oldMotion,newMotion;};
     std::vector<std::unique_ptr<MonitorVisual>> monitors;
     deskpages::TransitionState state;
+    deskpages::PreviewGate preview;double duration=deskpages::Duration;
     int left=0,top=0,width=0,height=0;
-    ULONGLONG expiry=0,hideAt=0;
+    ULONGLONG expiry=0,hideAt=0,motionEnds=0;
     DWORD sourceExplorer=0;
     LONGLONG playStart=0;
     bool capturedTarget=false;
@@ -107,8 +127,8 @@ class Renderer {
         Renderer* self=reinterpret_cast<Renderer*>(GetWindowLongPtrW(window,GWLP_USERDATA));
         if(message==WM_NCCREATE){self=reinterpret_cast<Renderer*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));}
         if(self){
-            if(message==WM_NCHITTEST)return HTTRANSPARENT;
-            if(message==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
+            if(message==WM_NCHITTEST)return self->preview.active?HTCLIENT:HTTRANSPARENT;
+            if(message==WM_MOUSEACTIVATE)return self->preview.active?MA_NOACTIVATEANDEAT:MA_NOACTIVATE;
             if(message==WM_ERASEBKGND)return 1;
             if(message==WM_CLOSE){self->Abort();return 0;}
             if(message==WM_TIMER){
@@ -116,7 +136,8 @@ class Renderer {
                 catch(...){self->Abort();Report("Native timer callback failed");}
                 return 0;
             }
-            if(message==WM_DISPLAYCHANGE || message==WM_DPICHANGED || message==WM_QUERYENDSESSION){
+            if(message==WM_DISPLAYCHANGE || message==WM_DPICHANGED || message==WM_QUERYENDSESSION || (message==WM_SETTINGCHANGE && wp==SPI_SETDESKWALLPAPER) || message==WM_THEMECHANGED || message==WM_DWMCOLORIZATIONCOLORCHANGED || message==WM_POWERBROADCAST){
+                ++snapshotEpoch;++snapshotRevision;self->ClearSnapshots();
                 self->Abort();Report("Transition cancelled: display/session configuration changed");return message==WM_QUERYENDSESSION?TRUE:0;
             }
         }
@@ -151,11 +172,11 @@ class Renderer {
     std::vector<unsigned char> Capture() {
         WinCheck(desktopMode && IsWindow(desktopWindow),"Desktop-only capture source required");
         Check(DwmFlush(),"DwmFlush before isolated desktop render");
-        auto pixels=CaptureWindowPixels(desktopWindow,left,top,width,height);
+        ++captureCalls;auto pixels=CaptureWindowPixels(desktopWindow,left,top,width,height);
         unsigned int sample=0;std::memcpy(&sample,pixels.data()+(static_cast<size_t>(height/2)*width+width/2)*4,4);captureSample=sample;
         return pixels;
     }
-    void ValidateSourceRender(const std::vector<unsigned char>& pixels) {
+    void ValidateSourceRender(const std::vector<unsigned char>& pixels,bool allowOccluded=false) {
         // Compare sparse exposed DESKTOP pixels only. This does not copy a
         // screen image or sample any application content. It detects a shell
         // PrintWindow implementation that returns blank/wrong background.
@@ -177,6 +198,7 @@ class Renderer {
                std::abs(int(GetBValue(color))-int(pixels[i]))<=16)matches++;
         }
         ReleaseDC(nullptr,screen);
+        if(allowOccluded && samples<4)return;
         WinCheck(samples>=4 && matches>=4 && matches*4>=samples*3,"Isolated desktop render must match exposed desktop pixels");
     }
     void PlaceCover(UINT flags) {
@@ -194,9 +216,10 @@ class Renderer {
         Check(composition->CreateAnimation(animation.put()),"CreateAnimation");
         for(int i=0;i<deskpages::Segments;i++){
             auto c=deskpages::SmoothSegment(from,to,i);
-            Check(animation->AddCubic(i*deskpages::Duration/deskpages::Segments,c.constant,c.linear,c.quadratic,c.cubic),"Add easing segment");
+            double speed=deskpages::Duration/duration;
+            Check(animation->AddCubic(i*duration/deskpages::Segments,c.constant,float(c.linear*speed),float(c.quadratic*speed*speed),float(c.cubic*speed*speed*speed)),"Add easing segment");
         }
-        Check(animation->End(deskpages::Duration,to),"Animation.End");
+        Check(animation->End(duration,to),"Animation.End");
     }
     std::vector<unsigned char> CaptureTarget(Job* job=nullptr) {
         const ULONGLONG start=GetTickCount64();
@@ -222,6 +245,7 @@ public:
         BOOL valid=FALSE;
         if(composition.p && target.p && root.p && hwnd &&
             SUCCEEDED(composition->CheckDeviceState(&valid)) && valid)return;
+        ClearSnapshots();++snapshotEpoch;++snapshotRevision;
         if(hwnd){DestroyWindow(hwnd);hwnd=nullptr;}
         target.reset();root.reset();composition.reset();dc.reset();d2d.reset();d2dFactory.reset();dxgi.reset();d3dContext.reset();d3d.reset();
         D3D_FEATURE_LEVEL level;
@@ -236,7 +260,7 @@ public:
         if(!RegisterClassExW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)WinCheck(false,"RegisterClassExW");
         hwnd=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT|WS_EX_NOREDIRECTIONBITMAP,
             wc.lpszClassName,L"DeskPages transition",WS_POPUP,0,0,1,1,nullptr,nullptr,wc.hInstance,this);
-        WinCheck(hwnd!=nullptr,"Create compositor window");
+        WinCheck(hwnd!=nullptr,"Create compositor window");coverWindow=hwnd;
         // Public OS capture-exclusion mode keeps the cover on the monitor while
         // allowing capture of the updated desktop underneath, without hiding it.
         WinCheck(SetWindowDisplayAffinity(hwnd,0x11)!=FALSE,"SetWindowDisplayAffinity(EXCLUDEFROMCAPTURE)");
@@ -247,29 +271,33 @@ public:
     }
     void Abort() {
         if(hwnd){KillTimer(hwnd,1);ShowWindow(hwnd,SW_HIDE);}
-        state.Abort();visible=0;playing=0;
-        // Drop every texture between transitions. No old screenshot is reused.
+        state.Abort();preview.Reset();duration=deskpages::Duration;visible=0;playing=0;motionEnded=0;
+        // Retire DWM/GPU surfaces after every transition. Optional bounded CPU snapshots live separately.
         if(root.p)root->RemoveAllVisuals();
         monitors.clear();oldVisual.reset();newVisual.reset();oldSurface.reset();newSurface.reset();oldAnimation.reset();newAnimation.reset();
         capturedTarget=false;expectedIcons=-1;iconWindow=nullptr;desktopWindow=nullptr;desktopMode=false;
         if(composition.p)composition->Commit();
     }
     void Begin(Job& job) {
-        Abort();Prepare();left=job.left;top=job.top;width=job.width;height=job.height;
-        desktopMode=job.op==Op::BeginDesktop;
+        auto clock=GetTickCount64();
+        Abort();Prepare();incomingKey=job.targetKey;left=job.left;top=job.top;width=job.width;height=job.height;
+        desktopMode=job.op==Op::BeginDesktop || job.op==Op::BeginPreview;
+        if(job.op==Op::BeginPreview){preview.Begin(snapshotRevision.load());duration=0.240;}
+        SetWindowLongPtrW(hwnd,GWL_EXSTYLE,(GetWindowLongPtrW(hwnd,GWL_EXSTYLE)&~WS_EX_TRANSPARENT)|(preview.active?0:WS_EX_TRANSPARENT));
         WinCheck(SetWindowPos(hwnd,HWND_NOTOPMOST,0,0,0,0,SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE|SWP_HIDEWINDOW)!=FALSE,"Remove topmost state");
-        if(desktopMode){
-            FindIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&iconWindow));
-            if(!iconWindow)EnumWindows(FindIcons,reinterpret_cast<LPARAM>(&iconWindow));
-            WinCheck(IsWindow(iconWindow),"Find Explorer desktop icon view");
-            desktopWindow=GetAncestor(iconWindow,GA_ROOT);
-            wchar_t cls[64]{};GetClassNameW(desktopWindow,cls,64);
-            WinCheck(std::wcscmp(cls,L"Progman")==0 || std::wcscmp(cls,L"WorkerW")==0,"Capture only Explorer desktop owner");
-            job.pixels=Capture();
+        if(desktopMode && !preview.active){
+            LocateDesktop();auto generation=snapshotEpoch.load();
+            bool reused=GetFrame(job.sourceKey,job.pixels);
+            if(reused){try{ValidateSourceRender(job.pixels);}catch(...){ClearSnapshots();reused=false;}}
+            if(reused && generation!=snapshotEpoch.load())reused=false;
+            if(reused)++sourceHits;
+            else {if(!job.sourceKey.empty())++snapshotMisses;generation=snapshotEpoch.load();job.pixels=Capture();}
             ValidateSourceRender(job.pixels);
             DWORD_PTR count=0;WinCheck(SendMessageTimeoutW(iconWindow,0x1004,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,400,&count)!=0,"Read source desktop count");
             if(count>0 && deskpages::UniformFrame(job.pixels))throw std::runtime_error("Desktop window rendered blank; refusing a screen capture");
+            // Only stable target/idle captures are retained; a cold source may be a moving wallpaper.
         }
+        if(preview.active)LocateDesktop();
         PlaceCover(SWP_NOACTIVATE|SWP_HIDEWINDOW);
         const D2D_RECT_F clip{0,0,static_cast<float>(width),static_cast<float>(height)};
         Check(root->SetClip(clip),"Clip page");
@@ -300,23 +328,28 @@ public:
         state.Begin(true);visible=1;playing=0;expiry=GetTickCount64()+12000;
         HWND desktop=FindWindowW(L"Progman",nullptr);GetWindowThreadProcessId(desktop,&sourceExplorer);
         WinCheck(SetTimer(hwnd,1,15,nullptr)!=0,"Start cover watchdog");
-        Report(desktopMode?"Desktop HWND source captured; transition below application windows":"Synthetic source presented");
+        sourceMs=GetTickCount64()-clock;
+        Report(desktopMode?"Desktop HWND source ready; transition below application windows":"Synthetic source presented");
     }
     void ConfirmTarget(Job& job) {
-        if(state.phase!=deskpages::Phase::Covering || job.iconCount<0)
+        if((state.phase!=deskpages::Phase::Covering && !(preview.active && state.phase==deskpages::Phase::Playing)) || job.iconCount<0)
             throw std::runtime_error("A source cover and valid target count are required");
         iconWindow=nullptr;
         FindIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&iconWindow));
         if(!iconWindow)EnumWindows(FindIcons,reinterpret_cast<LPARAM>(&iconWindow));
         WinCheck(iconWindow!=nullptr,"Find original desktop icon view");
-        expectedIcons=job.iconCount;VerifyIconCount();
+        expectedIcons=job.iconCount;if(preview.active)preview.Confirm(snapshotRevision.load(),incomingKey==job.targetKey);else incomingKey=job.targetKey;VerifyIconCount();
         Report("Target membership verified; original Explorer icon count="+std::to_string(expectedIcons));
     }
     void Play(Job& job) {
         if(state.phase!=deskpages::Phase::Covering)throw std::runtime_error("No presented source cover");
         if(!job.pixels.empty() && (job.width!=width || job.height!=height))throw std::runtime_error("Target texture dimensions differ from source");
+        auto clock=GetTickCount64();auto generation=snapshotEpoch.load();
         capturedTarget=job.pixels.empty();settleMs=0;
-        std::vector<unsigned char> pixels=capturedTarget?CaptureTarget(&job):job.pixels;
+        std::vector<unsigned char> pixels;
+        if(preview.active){pixels=std::move(job.targetPixels);capturedTarget=false;}
+        else if(capturedTarget && GetFrame(incomingKey,pixels) && generation==snapshotEpoch.load()){PaintTarget();VerifyIconCount();if(generation!=snapshotEpoch.load())pixels=CaptureTarget(&job);else ++targetHits;}
+        else {if(capturedTarget && !incomingKey.empty())++snapshotMisses;pixels=capturedTarget?CaptureTarget(&job):job.pixels;if(capturedTarget)KeepFrame(incomingKey,pixels,generation);}
         Upload(newSurface,pixels);
         if(job.cancelled){Abort();return;}
         for(auto& view:monitors){
@@ -333,14 +366,44 @@ public:
         Check(composition->Commit(),"Slide commit");Check(composition->WaitForCommitCompletion(),"Slide commit fence");
         if(job.cancelled){Abort();return;}
         if(!state.Play(true))throw std::runtime_error("Invalid transition state");
-        playing=1;
+        targetMs=GetTickCount64()-clock;playing=1;motionEnds=GetTickCount64()+static_cast<ULONGLONG>(duration*1000);
         // DWM owns every motion frame. Timer only retires the finished cover.
         double hz=60;DCOMPOSITION_FRAME_STATISTICS stats{};
         if(SUCCEEDED(composition->GetFrameStatistics(&stats)) && stats.currentCompositionRate.Numerator && stats.currentCompositionRate.Denominator)
             hz=static_cast<double>(stats.currentCompositionRate.Numerator)/stats.currentCompositionRate.Denominator;
         if(hz<20 || hz>1000)hz=60;
-        hideAt=GetTickCount64()+static_cast<ULONGLONG>(deskpages::Duration*1000+3000/hz+10);
-        Report("380 ms quintic-eased DWM slide; verified target icons="+std::to_string(expectedIcons)+"; capture wait="+std::to_string(settleMs)+" ms; pixels stable="+(pixelStable?"yes":"no (moving background allowed)"));
+        hideAt=GetTickCount64()+static_cast<ULONGLONG>(duration*1000+3000/hz+10);
+        Report(std::to_string(int(duration*1000))+" ms quintic-eased DWM slide; verified target icons="+std::to_string(expectedIcons)+"; capture wait="+std::to_string(settleMs)+" ms; pixels stable="+(pixelStable?"yes":"no (moving background allowed)"));
+    }
+    bool BeginPreview(Job& job){
+        Abort();Prepare();left=job.left;top=job.top;width=job.width;height=job.height;LocateDesktop();
+        auto generation=snapshotEpoch.load();auto revision=snapshotRevision.load();
+        // Cache-only: a miss never starts capture or changes the desktop.
+        if(!GetFrame(job.sourceKey,job.pixels) || !GetFrame(job.targetKey,job.targetPixels) || generation!=snapshotEpoch.load()){++snapshotMisses;return false;}
+        Begin(job);
+        if(generation!=snapshotEpoch.load() || revision!=snapshotRevision.load()){Abort();return false;}
+        ++sourceHits;++targetHits;Play(job);return true;
+    }
+    void CompletePreview(){
+        WinCheck(preview.active && state.phase==deskpages::Phase::Playing && expectedIcons>=0,"Cached preview must have a verified live target");
+        PaintTarget();preview.Confirm(snapshotRevision.load(),true);preview.Complete();
+        if(!preview.valid){Abort();Report("Cached preview refreshed by verified live desktop");return;}
+        hideAt=std::max(hideAt,GetTickCount64()+32);Tick();
+    }
+    void InvalidatePage(Job& job){snapshots.RemovePrefix(job.sourceKey);snapshotBytes=snapshots.Bytes();}
+    void ClearSnapshots(){snapshots.Clear();snapshotBytes=0;}
+    bool WarmSnapshot(Job& job){
+        if(state.phase!=deskpages::Phase::Idle || job.sourceKey.empty())return false;
+        bool saved=false;
+        auto clock=GetTickCount64();Prepare();left=job.left;top=job.top;width=job.width;height=job.height;desktopMode=true;
+        try{
+            LocateDesktop();auto generation=snapshotEpoch.load();
+            DWORD_PTR count=0;WinCheck(SendMessageTimeoutW(iconWindow,0x1004,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,400,&count)!=0,"Warm icon count");
+            auto pixels=Capture();ValidateSourceRender(pixels,true);
+            if(count>0 && deskpages::UniformFrame(pixels))throw std::runtime_error("Warm desktop rendered blank");
+            KeepFrame(job.sourceKey,pixels,generation);saved=generation==snapshotEpoch.load();
+        }catch(...){Abort();throw;}
+        warmMs=GetTickCount64()-clock;Abort();return saved;
     }
     void Tick() {
         if(state.phase==deskpages::Phase::Idle)return;
@@ -348,15 +411,16 @@ public:
         DWORD explorer=0;GetWindowThreadProcessId(FindWindowW(L"Progman",nullptr),&explorer);
         if(sourceExplorer && explorer!=sourceExplorer){Abort();Report("Transition cancelled: Explorer restarted");return;}
         if(GetTickCount64()>expiry){Abort();Report("Transition cancelled: 12-second cover watchdog");return;}
-        if(state.phase==deskpages::Phase::Playing && GetTickCount64()>=hideAt) {
+        if(state.phase==deskpages::Phase::Playing && GetTickCount64()>=motionEnds)motionEnded=1;
+        if(state.phase==deskpages::Phase::Playing && preview.CanRetire() && GetTickCount64()>=hideAt) {
             Check(DwmFlush(),"Final composition fence");
             // Never replace a moving target texture or cancel motion because
             // unrelated wallpaper pixels differ. Membership was checked first.
             LARGE_INTEGER end,freq;QueryPerformanceCounter(&end);QueryPerformanceFrequency(&freq);
             auto elapsed=(end.QuadPart-playStart)*1000.0/freq.QuadPart;
             auto wait=settleMs;
-            auto count=expectedIcons;
-            Abort();Report("380 ms eased slide completed; verified target icons="+std::to_string(count)+"; capture wait="+std::to_string(wait)+" ms; motion/retirement lifetime="+std::to_string(elapsed)+" ms (not FPS)");
+            auto count=expectedIcons;auto motionMs=int(duration*1000);
+            Abort();Report(std::to_string(motionMs)+" ms eased slide completed; verified target icons="+std::to_string(count)+"; capture wait="+std::to_string(wait)+" ms; motion/retirement lifetime="+std::to_string(elapsed)+" ms (not FPS)");
         }
     }
 };
@@ -377,10 +441,15 @@ DWORD WINAPI Worker(void*) {
                         case Op::Begin:case Op::BeginDesktop:renderer.Begin(*job);break;
                         case Op::ConfirmTarget:renderer.ConfirmTarget(*job);break;
                         case Op::Play:renderer.Play(*job);break;
+                        case Op::BeginPreview:job->accepted=renderer.BeginPreview(*job);break;
+                        case Op::CompletePreview:renderer.CompletePreview();break;
+                        case Op::WarmSnapshot:job->accepted=renderer.WarmSnapshot(*job);break;
+                        case Op::ClearSnapshots:renderer.ClearSnapshots();break;
+                        case Op::InvalidatePage:renderer.InvalidatePage(*job);break;
                         case Op::Abort:renderer.Abort();break;
                         case Op::Shutdown:renderer.Abort();break;
                         }
-                        job->ok=!job->cancelled;
+                        job->ok=job->accepted && !job->cancelled;
                         if(job->cancelled)renderer.Abort();
                     }
                 }catch(const std::exception& e){renderer.Abort();Report(e.what());}
@@ -470,8 +539,42 @@ __declspec(dllexport) int __cdecl DPPlay(const unsigned char* pixels,int width,i
         return Submit(job);
     }catch(...){if(job){job->release();job->release();}return 0;}
 }
+__declspec(dllexport) int __cdecl DPConfigureSnapshotStore(const wchar_t* folder,const wchar_t* scope){try{if(!folder||!scope)return 0;diskSnapshots.Configure(folder,scope);return 1;}catch(...){return 0;}}
+__declspec(dllexport) int __cdecl DPGetSavedSnapshotKey(int page,wchar_t* output,int count){try{if(!output||count<1)return 0;auto key=diskSnapshots.Known(page);if(key.empty()||key.size()>=size_t(count))return 0;std::memcpy(output,key.c_str(),(key.size()+1)*sizeof(wchar_t));return int(key.size());}catch(...){return 0;}}
+__declspec(dllexport) void __cdecl DPInvalidateSnapshotPage(int page){
+    if(page<=0)return;
+    ++snapshotRevision;
+    auto job=new(std::nothrow)Job;if(!job){++snapshotEpoch;++snapshotRevision;return;}
+    job->op=Op::InvalidatePage;job->sourceKey=std::to_wstring(page)+L":";
+    if(!job->done || !Start() || !PostThreadMessageW(workerId,JobMessage,0,reinterpret_cast<LPARAM>(job))){++snapshotEpoch;++snapshotRevision;job->release();job->release();return;}
+    job->release(); // Worker owns the remaining reference.
+}
+__declspec(dllexport) void __cdecl DPInvalidateSnapshots(){++snapshotEpoch;++snapshotRevision;}
+__declspec(dllexport) int __cdecl DPClearSnapshots(){++snapshotEpoch;++snapshotRevision;auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ClearSnapshots;return Submit(job);}
+__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return snapshotBytes.load();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();default:return 0;}}
+__declspec(dllexport) int __cdecl DPConfirmCachedTarget(int count,const wchar_t* key){auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ConfirmTarget;job->iconCount=count;if(key)job->targetKey=key;return Submit(job);}
+__declspec(dllexport) int __cdecl DPWarmSnapshot(const wchar_t* key,int left,int top,int width,int height){
+    if(!key || std::wcslen(key)>256 || width<=0 || height<=0 || static_cast<uint64_t>(width)*height>40000000)return 0;
+    auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::WarmSnapshot;job->sourceKey=key;job->left=left;job->top=top;job->width=width;job->height=height;return Submit(job);
+}
+__declspec(dllexport) int __cdecl DPBeginDesktopCachedRegions(int left,int top,int width,int height,const int* regions,int count,const wchar_t* source){
+    if(!regions || count<1 || count>32 || !source || std::wcslen(source)>256)return 0;
+    Job* job=nullptr;try{job=new Job;job->op=Op::BeginDesktop;job->sourceKey=source;job->left=left;job->top=top;job->width=width;job->height=height;
+        for(int i=0;i<count;i++){const int* r=regions+i*5;job->regions.push_back({r[0],r[1],r[2],r[3],r[4]!=0});}
+        if(!deskpages::ValidRegions(job->regions,width,height)){job->release();job->release();return 0;}return Submit(job);
+    }catch(...){if(job){job->release();job->release();}return 0;}
+}
+__declspec(dllexport) int __cdecl DPBeginCachedPreview(int left,int top,int width,int height,const int* regions,int count,const wchar_t* source,const wchar_t* target,int direction){
+    if(!regions || count<1 || count>32 || !source || !target || std::wcslen(source)>256 || std::wcslen(target)>256)return 0;
+    Job* job=nullptr;try{job=new Job;job->op=Op::BeginPreview;job->sourceKey=source;job->targetKey=target;job->left=left;job->top=top;job->width=width;job->height=height;job->direction=direction>=0?1:-1;
+        for(int i=0;i<count;i++){const int* r=regions+i*5;job->regions.push_back({r[0],r[1],r[2],r[3],r[4]!=0});}
+        if(!deskpages::ValidRegions(job->regions,width,height)){job->release();job->release();return 0;}return Submit(job);
+    }catch(...){if(job){job->release();job->release();}return 0;}
+}
+__declspec(dllexport) int __cdecl DPCompleteCachedPreview(){auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::CompletePreview;return Submit(job);}
 __declspec(dllexport) void __cdecl DPAbort(){if(!worker)return;auto job=new(std::nothrow)Job;if(job){job->op=Op::Abort;Submit(job);}}
-__declspec(dllexport) int __cdecl DPGetState(){return visible.load()|(playing.load()<<1);}
+__declspec(dllexport) int __cdecl DPIsTransitionWindow(HWND window){return visible.load() && window!=nullptr && window==coverWindow.load();}
+__declspec(dllexport) int __cdecl DPGetState(){return visible.load()|(playing.load()<<1)|(motionEnded.load()<<2);}
 __declspec(dllexport) unsigned int __cdecl DPGetCaptureSample(){return captureSample.load();}
 __declspec(dllexport) int __cdecl DPGetReport(wchar_t* text,int count){
     if(!text || count<=0)return 0;
@@ -480,6 +583,7 @@ __declspec(dllexport) int __cdecl DPGetReport(wchar_t* text,int count){
     std::memcpy(text,report.c_str(),written*sizeof(wchar_t));text[written]=0;ReleaseSRWLockShared(&reportLock);return written;
 }
 __declspec(dllexport) void __cdecl DPShutdown(){
+    diskSnapshots.Stop();
     if(!worker)return;
     auto job=new(std::nothrow)Job;if(!job)return;job->op=Op::Shutdown;
     if(!Submit(job))return;

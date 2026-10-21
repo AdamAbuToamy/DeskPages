@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.16 Alpha — snapshot cache experiment
+
+- Add optional durable compressed, user-encrypted snapshots with no timed expiry and layout-triggered refresh. Direct capture remains the default.
+- Restore valid snapshots from local storage after RAM eviction or restart; keep cached animation at 240 ms and dismiss the page number when motion ends.
+- Accept fresh touchpad gestures over transition windows; improve contact rearming and wheel fallback.
+- Add a direct/cached resource comparison and Windows snapshot-store acceptance fixture. Physical device acceptance and actual performance measurements remain pending.
+
 ## 0.8.12 Alpha
 
 - Rebuild settings with a sidebar, four sections and one explicit pixel-layout owner, replacing automatic/mirrored nested layout in that window.
