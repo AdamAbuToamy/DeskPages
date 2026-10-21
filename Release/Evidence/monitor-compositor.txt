@@ -1,1 +1,0 @@
-PASS: monitor compositor simulator; 1006 layouts; both directions, Primary-only/all, 121 frames, 19 samples per region; 41619370 assertions. Native DWM/GPU not simulated.
