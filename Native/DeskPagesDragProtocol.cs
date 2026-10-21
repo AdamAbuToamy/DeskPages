@@ -8,6 +8,22 @@ public sealed class DeskPagesDragRequest {
     public int X,Y;
     public string[] Paths;
 }
+// Hooks preserve the press position; polling recovers if Windows drops a hook.
+// A press is only a candidate. Explorer OLE data and agent validation still arm it.
+public sealed class DeskPagesDragInputState {
+    private readonly object gate=new object();
+    private bool held,queued;private int pressX,pressY;
+    public void Press(int x,int y){lock(gate){pressX=x;pressY=y;queued=true;}}
+    public bool Observe(bool down,int x,int y,out int startX,out int startY){
+        lock(gate){
+            startX=x;startY=y;
+            if(!down){held=false;queued=false;return false;}
+            bool begin=queued || !held;
+            if(queued){startX=pressX;startY=pressY;}
+            held=true;queued=false;return begin;
+        }
+    }
+}
 public static class DeskPagesDragProtocol {
     public static string SessionPath(string token){
         Guid value;if(!Guid.TryParseExact(token,"N",out value))throw new ArgumentException("Invalid drag session token");

@@ -14,6 +14,11 @@ Published installer and source: **0.8.18 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.19
+
+- Edge dragging stays available after a delayed agent reply, with safe cancellation and no replayed navigation.
+- Dedicated input monitoring and a polling fallback recover missed drag starts.
+
 ## What's new in 0.8.18
 
 - Pinned icons show names and their own icons, without full paths.

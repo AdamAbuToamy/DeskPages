@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.19 Alpha
+
+- Keep the drag helper alive when an agent acknowledgement takes more than eight seconds; cancel the obsolete drag after its reply without replaying the command.
+- Run minimal mouse and Escape hooks on a dedicated message-loop thread; recover missing mouse press events by polling.
+- Retain Explorer OLE file validation before arming and page membership validation before committing a drop.
+- Add Windows regression coverage for delayed navigation, single acknowledgement, safe cancellation and the next drag.
+
 ## 0.8.18 Alpha
 
 - Show file/program names and Shell icons in the pin manager, without paths or shortcut suffixes.

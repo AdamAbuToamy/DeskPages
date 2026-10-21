@@ -1,8 +1,7 @@
-# DeskPages 0.8.18 Alpha
+# DeskPages 0.8.19 Alpha
 
-- Pinned icons now show only the file or program name and its actual Windows Shell icon. Shortcut titles omit .lnk/.url; full paths remain internal for correct pin/unpin persistence.
-- Replace Measure resources with a live read-only RAM indicator: percent of total physical RAM and MB used by the DeskPages agent plus same-installation helpers in the current Windows session.
-- Refresh the indicator every three seconds only while General settings is visible, on a background worker. Working sets can count shared pages more than once; the tooltip explains this estimate. GPU memory and disk snapshot sizes are separate from this RAM value.
-- Remove the interactive benchmark launcher and scripts. Preserve page membership, pin state, cache settings and update notifications.
+- Fix edge dragging becoming unavailable for the rest of the session after an agent reply takes more than eight seconds. Keep the original request ID until acknowledgement, then safely cancel the obsolete drag without replaying navigation.
+- Move minimal mouse/Escape hooks off the OLE/UI thread and recover missed mouse presses by polling. Real Explorer OLE file data and agent validation still gate all page and membership changes.
+- Preserve 0.8.18 name-only pin labels, Windows Shell icons, the live memory indicator and automatic update notifications.
 
-Automated Windows fixtures cover multilingual settings geometry, live memory reads and visibility-driven sampling, name-only shortcut labels, icons and pin persistence. Hardware touchpad/Explorer acceptance remains separate.
+Windows fixtures exercise the actual drag broker with a delayed navigation reply, one acknowledgement, cancellation and a subsequent drag request. Physical Explorer/touchpad testing remains separate from these automated fixtures.
