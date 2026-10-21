@@ -15,14 +15,14 @@ public sealed class DeskPagesUpdateRelease {
 public sealed class DeskPagesUpdates:IDisposable {
     public const string Repository="https://github.com/AdamAbuToamy/DeskPages";
     public static readonly Version Current=new Version("0.8.17");
-    private readonly Control owner;private readonly Action<DeskPagesUpdateRelease> announce;
+    private readonly Control owner=new Control();private readonly Action<DeskPagesUpdateRelease> announce;
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
     private DateTime next=DateTime.UtcNow.AddSeconds(60);private int busy;private volatile bool disposed;private string lastAnnounced;private Form window;
     private readonly string preferences=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","update-settings.txt");
     public bool Automatic {get;private set;}
     public DeskPagesUpdateRelease Available {get;private set;}
-    public DeskPagesUpdates(Control owner,Action<DeskPagesUpdateRelease> announce){
-        this.owner=owner;this.announce=announce;Automatic=true;
+    public DeskPagesUpdates(Action<DeskPagesUpdateRelease> announce){
+        IntPtr handle=owner.Handle;this.announce=announce;Automatic=true;
         try{if(File.Exists(preferences))Automatic=File.ReadAllText(preferences).Trim()!="off";}catch{}
         timer.Interval=30000;timer.Tick+=delegate{if(Automatic && DateTime.UtcNow>=next){next=DateTime.UtcNow.AddHours(6);Check(false,null);}};timer.Start();
     }
@@ -74,5 +74,5 @@ public sealed class DeskPagesUpdates:IDisposable {
         layout.Controls.Add(new Label{Text=L("Updates install only when you choose. Saved pages are preserved.","تثبيت التحديث باختيارك. تبقى صفحاتك المحفوظة.","עדכונים מותקנים רק לבחירתכם. הדפים השמורים נשמרים."),AutoSize=true,MaximumSize=new System.Drawing.Size(470,0)});
         form.Shown+=delegate{check();};form.Show();
     }
-    public void Dispose(){disposed=true;timer.Stop();timer.Dispose();if(window!=null)window.Dispose();}
+    public void Dispose(){disposed=true;timer.Stop();timer.Dispose();if(window!=null)window.Dispose();owner.Dispose();}
 }

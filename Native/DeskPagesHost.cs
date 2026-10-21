@@ -126,7 +126,7 @@ public sealed class DeskPagesHost : ApplicationContext
         catch {applicationIcon=(Icon)SystemIcons.Application.Clone();}
         tray=new NotifyIcon {Icon=applicationIcon, ContextMenuStrip=menu,
             Text="DeskPages", Visible=true};
-        updates=new DeskPagesUpdates(sessionWindow,delegate(DeskPagesUpdateRelease release){
+        updates=new DeskPagesUpdates(delegate(DeskPagesUpdateRelease release){
             tray.BalloonTipTitle="DeskPages "+release.Version;tray.BalloonTipText=DeskPagesWorkspaceApi.L("An update is available. Click to review and download.","يتوفر تحديث جديد. اضغط لعرضه وتحميله.","עדכון זמין. לחצו לפרטים ולהורדה.");tray.ShowBalloonTip(10000);
         });
         DeskPagesWorkspaceApi.CheckUpdatesAction=updates.Show;
