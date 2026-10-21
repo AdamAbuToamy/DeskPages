@@ -7,6 +7,8 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly:AssemblyTitle("DeskPages drag interaction")]
@@ -23,7 +25,9 @@ internal sealed class DragBroker:ApplicationContext {
     private readonly ShellDragImage dragImageApi=new ShellDragImage();
     private readonly DeskPagesDragImageSession dragImages;
     private int ownerProcessId;
-    private bool cancelRequested;
+    private volatile bool cancelRequested;
+    private readonly DeskPagesDragInputState inputState=new DeskPagesDragInputState();
+    private Thread inputThread;private uint inputThreadId;
     private readonly System.Windows.Forms.Timer timer;
     private readonly Surface left,right,canvas;
     private Surface activeSurface;
@@ -36,7 +40,7 @@ internal sealed class DragBroker:ApplicationContext {
     private string[] files;
     private DeskPagesDragRequest pending;
     private string pendingPacket,cueNavigationId;
-    private long pendingAt,releaseAt=-1,started=Now();
+    private long pendingAt,releaseAt=-1,started=Now();private bool pendingSlow;
     private Point? dropped;
     private Rectangle area;
     private bool closed,primaryOnly;
@@ -56,8 +60,7 @@ internal sealed class DragBroker:ApplicationContext {
         dragImages=new DeskPagesDragImageSession(dragImageApi,Trace);
         left=new Surface(this);right=new Surface(this);canvas=new Surface(this);
         mouseHook=OnMouse;keyHook=OnKey;
-        mouseHandle=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
-        if(mouseHandle==IntPtr.Zero || keyHandle==IntPtr.Zero)throw new InvalidOperationException("Drag input unavailable");
+        StartInputHooks();
         timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.18");
     }
     private long preferenceRead;
@@ -70,19 +73,29 @@ internal sealed class DragBroker:ApplicationContext {
                     int width,hold;if(int.TryParse(settings[1],out width) && int.TryParse(settings[2],out hold) && width>=16 && width<=120 && hold>=150 && hold<=1500){edges.ZoneWidth=width;edges.HoldMilliseconds=hold;if(settings.Length==4)bool.TryParse(settings[3],out primaryOnly);}
                 }
             }
-            if(cancelRequested){cancelRequested=false;Cancel("Escape");}
+            if(cancelRequested || (GetAsyncKeyState(0x1B)&0x8000)!=0){cancelRequested=false;Cancel("Escape");}
             string state=Path.Combine(folder,"state.txt");
             if(!File.Exists(state)){if(Now()-started>10000)ExitThread();return;}
             string[] lines;if(!DeskPagesDragProtocol.TryReadLines(state,out lines))return;long at;
             if(lines.Length!=5 || lines[0]!="DeskPagesDragState1" || !long.TryParse(lines[4],out at) || !OwnerAlive(at)){ExitThread();return;}
             int count;enabled=lines[2]=="True" && int.TryParse(lines[3],out count) && count>1;
             if(!enabled){Cancel("disabled or fewer than two pages");return;}
+            int pressX,pressY;Point cursor=Cursor.Position;
+            bool mouseDown=(GetAsyncKeyState(1)&0x8000)!=0;
+            if(inputState.Observe(mouseDown,cursor.X,cursor.Y,out pressX,out pressY) && !candidate && !approved && pending==null){
+                Point press=new Point(pressX,pressY);IntPtr hit=WindowFromPoint(press);
+                string cls=ClassName(hit),root=ClassName(GetAncestor(hit,2));
+                if((cls=="SysListView32" || cls=="SHELLDLL_DefView") && (root=="Progman" || root=="WorkerW")){Reset();candidate=true;down=press;}
+            }
             if(cueNavigationId!=null){
                 string[] visual;
                 if(DeskPagesDragProtocol.TryReadLines(Path.Combine(folder,"visual-state.txt"),out visual) && DeskPagesDragProtocol.NavigationSettled(visual,cueNavigationId)){edgeCue.Hide();cueNavigationId=null;}
             }
             if(pending!=null){
-                if(Now()-pendingAt>8000){Trace("drag transport timed out awaiting "+pending.Kind+"; helper stopped without replaying command");Reset();ExitThread();return;}
+                // A slow agent may already have committed the command. Keep its ID
+                // and await the exact acknowledgement, then cancel safely. Exiting
+                // here used to permanently disable edge dragging for this session.
+                if(!pendingSlow && Now()-pendingAt>8000){pendingSlow=true;Trace("drag reply delayed: "+pending.Kind+"; waiting without replay");Cancel("delayed agent reply");}
                 if(pendingPacket!=null){if(!DeskPagesDragProtocol.TryAtomicText(Path.Combine(folder,"request.txt"),pendingPacket))return;pendingPacket=null;}
                 string reply=Path.Combine(folder,"response.txt");
                 if(File.Exists(reply)){
@@ -97,7 +110,7 @@ internal sealed class DragBroker:ApplicationContext {
                     }
                 }
             }
-            if((GetAsyncKeyState(1)&0x8000)==0){
+            if(!mouseDown){
                 if(candidate || approved){if(releaseAt<0)releaseAt=Now();if(Now()-releaseAt>350 && pending==null && !dropped.HasValue)Cancel("mouse released outside accepted drop");}
                 return;
             }
@@ -159,7 +172,7 @@ internal sealed class DragBroker:ApplicationContext {
     private void Send(string kind,int x,int y,string[] paths){
         if(pending!=null)return;
         Trace("request sent: "+kind);
-        pending=new DeskPagesDragRequest{Id=Guid.NewGuid().ToString("N"),Kind=kind,X=x,Y=y,Paths=paths};pendingAt=Now();
+        pending=new DeskPagesDragRequest{Id=Guid.NewGuid().ToString("N"),Kind=kind,X=x,Y=y,Paths=paths};pendingAt=Now();pendingSlow=false;
         pendingPacket=DeskPagesDragProtocol.Encode(pending);
         if(DeskPagesDragProtocol.TryAtomicText(Path.Combine(folder,"request.txt"),pendingPacket))pendingPacket=null;
     }
@@ -172,17 +185,32 @@ internal sealed class DragBroker:ApplicationContext {
     }
     private void Reset(){edgeCue.Hide();cueNavigationId=null;dragImages.Cancel();left.Hide();right.Hide();canvas.Hide();candidate=false;approved=false;files=null;acceptableData=false;activeSurface=null;overCanvas=false;dropped=null;cancelNext=false;releaseAt=-1;edges.Reset();}
     private IntPtr OnMouse(int code,IntPtr msg,IntPtr data){
-        if(code>=0){var value=(MouseData)Marshal.PtrToStructure(data,typeof(MouseData));if((value.Flags&1)==0 && msg.ToInt32()==0x201 && enabled && pending==null){
-            IntPtr hit=WindowFromPoint(value.Point);string cls=ClassName(hit);string root=ClassName(GetAncestor(hit,2));
-            if((cls=="SysListView32" || cls=="SHELLDLL_DefView") && (root=="Progman" || root=="WorkerW")){Reset();candidate=true;down=value.Point;}
-        }}return CallNextHookEx(mouseHandle,code,msg,data);
+        if(code>=0 && msg.ToInt32()==0x201){var value=(MouseData)Marshal.PtrToStructure(data,typeof(MouseData));inputState.Press(value.Point.X,value.Point.Y);}
+        return CallNextHookEx(mouseHandle,code,msg,data);
     }
     private IntPtr OnKey(int code,IntPtr msg,IntPtr data){
         if(code>=0 && (msg.ToInt32()==0x100 || msg.ToInt32()==0x104) && Marshal.ReadInt32(data)==0x1B)cancelRequested=true;
         return CallNextHookEx(keyHandle,code,msg,data);
     }
+    private void StartInputHooks(){
+        var ready=new TaskCompletionSource<Exception>();
+        inputThread=new Thread(delegate(){
+            try{
+                // Create the message queue before publishing the thread ID.
+                NativeMessage message;PeekMessageW(out message,IntPtr.Zero,0,0,0);
+                inputThreadId=GetCurrentThreadId();
+                mouseHandle=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
+                if(mouseHandle==IntPtr.Zero || keyHandle==IntPtr.Zero)throw new InvalidOperationException("Drag input unavailable");
+                ready.TrySetResult(null);Application.Run();
+            }catch(Exception ex){ready.TrySetResult(ex);Trace("drag input hook thread stopped; polling remains active: "+ex.Message);}
+            finally{if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);}
+        });
+        inputThread.IsBackground=true;inputThread.Name="DeskPages drag input";inputThread.SetApartmentState(ApartmentState.STA);inputThread.Start();
+        if(!ready.Task.Wait(3000)){if(inputThreadId!=0)PostThreadMessageW(inputThreadId,0x12,UIntPtr.Zero,IntPtr.Zero);throw new InvalidOperationException("Drag input startup timed out");}
+        if(ready.Task.Result!=null)throw new InvalidOperationException("Drag input unavailable",ready.Task.Result);
+    }
     protected override void ExitThreadCore(){
-        if(closed)return;closed=true;timer.Stop();timer.Dispose();if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);
+        if(closed)return;closed=true;timer.Stop();timer.Dispose();if(inputThreadId!=0)PostThreadMessageW(inputThreadId,0x12,UIntPtr.Zero,IntPtr.Zero);
         dragImages.Cancel();dragImageApi.Dispose();edgeCue.Dispose();left.Dispose();right.Dispose();canvas.Dispose();base.ExitThreadCore();
     }
     private sealed class Surface:Form {
@@ -234,6 +262,7 @@ internal sealed class DragBroker:ApplicationContext {
     private static string ClassName(IntPtr h){var s=new System.Text.StringBuilder(128);GetClassNameW(h,s,s.Capacity);return s.ToString();}
     private static long Now(){return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}
     [StructLayout(LayoutKind.Sequential)]private struct MouseData{public Point Point;public uint Data,Flags,Time;public UIntPtr Extra;}
+    [StructLayout(LayoutKind.Sequential)]private struct NativeMessage{public IntPtr Hwnd;public uint Message;public UIntPtr WParam;public IntPtr LParam;public uint Time;public Point Point;public uint Private;}
     private delegate IntPtr Hook(int code,IntPtr msg,IntPtr data);
     private delegate bool EnumCallback(IntPtr h,IntPtr p);
     [DllImport("user32.dll")]private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -242,6 +271,9 @@ internal sealed class DragBroker:ApplicationContext {
     [DllImport("user32.dll")]private static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")]private static extern IntPtr CallNextHookEx(IntPtr h,int c,IntPtr m,IntPtr d);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern IntPtr GetModuleHandleW(string name);
+    [DllImport("kernel32.dll")]private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")]private static extern bool PeekMessageW(out NativeMessage message,IntPtr hwnd,uint first,uint last,uint remove);
+    [DllImport("user32.dll")]private static extern bool PostThreadMessageW(uint thread,uint message,UIntPtr wParam,IntPtr lParam);
     [DllImport("user32.dll")]private static extern IntPtr WindowFromPoint(Point p);
     [DllImport("user32.dll")]private static extern IntPtr GetAncestor(IntPtr h,uint flags);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]private static extern int GetClassNameW(IntPtr h,System.Text.StringBuilder s,int size);

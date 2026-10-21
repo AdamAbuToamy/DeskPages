@@ -1,6 +1,17 @@
 ﻿$ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Add-Type -Path (Join-Path $root 'Native/DeskPagesDragProtocol.cs')
+$inputState=[DeskPagesDragInputState]::new();$x=0;$y=0
+$inputState.Press(20,30)
+if(-not $inputState.Observe($true,90,100,[ref]$x,[ref]$y) -or $x -ne 20 -or $y -ne 30){throw 'Original drag press position lost'}
+if($inputState.Observe($true,200,300,[ref]$x,[ref]$y)){throw 'Held mouse restarted drag'}
+$null=$inputState.Observe($false,200,300,[ref]$x,[ref]$y)
+# No hook event: a held press must still recover on the next 40 ms poll.
+if(-not $inputState.Observe($true,40,50,[ref]$x,[ref]$y) -or $x -ne 40 -or $y -ne 50){throw 'Missing hook event permanently disabled dragging'}
+$null=$inputState.Observe($false,40,50,[ref]$x,[ref]$y)
+$inputState.Press(1,2);$null=$inputState.Observe($false,4,5,[ref]$x,[ref]$y)
+if(-not $inputState.Observe($true,6,7,[ref]$x,[ref]$y) -or $x -ne 6){throw 'Released stale press was reused'}
+Write-Host 'PASS: captured grab point, missing-hook polling recovery, held-button deduplication and stale press cleanup.'
 $policy=[DeskPagesEdgeDragPolicy]::new()
 if($policy.Observe(0,999,0,1000,$false) -ne 0){throw 'Non-drag activated edge'}
 if($policy.Observe(0,999,0,1000,$true) -ne 0 -or $policy.Observe(319,999,0,1000,$true) -ne 0 -or $policy.Observe(320,999,0,1000,$true) -ne 1){throw 'Edge dwell incorrect'}
