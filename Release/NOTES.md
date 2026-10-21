@@ -1,9 +1,10 @@
-# DeskPages 0.8.16 — durable snapshot and touchpad experiment
+# DeskPages 0.8.17 Alpha
 
-Cached mode now retains losslessly compressed, current-user DPAPI-encrypted snapshots in `%LOCALAPPDATA%\DeskPages\HiddenPages\Snapshots`. The RAM LRU is the hot tier; a RAM miss restores a valid local image instead of taking a new screenshot. Files are private to the account/System, hidden/system/read-only and exclusively locked while the app is running. These controls do not prevent the account owner or an administrator from deliberately deleting files or decrypting under the same account.
+- Use the original DeskPages artwork in settings and utility branding.
+- Hide the Install button while setup runs. Cancel stops preparation cooperatively; once replacement starts, Close when finished waits for a safe completion.
+- Restore a clear Pinned icons manager in Settings > Pages, with file and Windows system icon choices saved together. Existing pin metadata is preserved.
+- Check the official GitHub release feed after startup and every six hours. Notifications and an update menu entry lead to the official download page; installation remains the user's choice. Automatic checks can be disabled. No desktop content is sent.
 
-No timed screenshot expiry or 15-second recapture loop remains. Watcher overflow triggers a rescan/restart rather than silently disabling cached mode. Structural shell events and pointer release request current-layout verification; unchanged keys do not trigger capture. A real layout change captures and queues protected persistence immediately after release (without waiting for navigation). Scene signatures include logical membership, top-level desktop file metadata, displays/DPI and wallpaper/theme state. Project-folder descendant writes do not flush every page. Invalid scene/layout/geometry/ciphertext records are rejected.
+Users of 0.8.16 or older must install this release once manually: those versions have no update checker and cannot receive retroactive notifications. The app must be running and online to check; Windows notification settings can suppress balloons. Updates remain accessible through Settings > General > Check for updates and the tray menu.
 
-Input recognition accepts fresh touchpad gestures over the app's own transition cover and queues them like keys. It still latches each contact sequence to prevent inertia from paging twice. New contact identities rearm without requiring a missing zero-contact report. Single-finger HID traffic no longer blocks wheel fallback for a second. Cached animation remains 240ms; the page number retires at native motion completion.
-
-Windows physical acceptance and actual resource/response-time measurement are still required; no always-instant timing claim or CPU/RAM marketing claim is established. A compiled Windows-only `Tests/DeskPagesSnapshotStoreTest.exe` exercises actual compression, DPAPI, persistence and sharing-lock behavior without capturing a real desktop. It has not been executed on this Linux build host.
+Cached capture remains optional and experimental. Hardware touchpad/Explorer acceptance and measured CPU/RAM/latency comparisons remain separate from CI fixtures.

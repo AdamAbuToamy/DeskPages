@@ -56,10 +56,12 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.16.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.17.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+    Add-Type -AssemblyName System.Web.Extensions
     $references=@(
+        [System.Web.Script.Serialization.JavaScriptSerializer].Assembly.Location,
         [Windows.Forms.Form].Assembly.Location,
         [Drawing.Bitmap].Assembly.Location,
         [System.Linq.Enumerable].Assembly.Location,

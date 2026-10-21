@@ -5,6 +5,13 @@ using System.Windows.Forms;
 
 // One shared palette and DPI-scaled drawing surface for both utility windows.
 public static class DeskPagesTheme {
+    public static Image LoadBrand(){
+        try {string path=System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Assets","DeskPages.png");
+            if(!System.IO.File.Exists(path))path=System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(DeskPagesTheme).Assembly.Location),"..","Assets","DeskPages.png");
+            using(var image=Image.FromFile(path))return new Bitmap(image);
+        }catch{return null;}
+    }
+
     public static readonly Color Canvas=Color.FromArgb(243,243,243),Ink=Color.FromArgb(26,26,26),Muted=Color.FromArgb(96,96,96),Accent=Color.FromArgb(0,103,192),Line=Color.FromArgb(225,225,225);
     public static int Unit(Control c,int value){return (int)Math.Round(value*c.Font.Height/16.0);}
     public static GraphicsPath Round(Rectangle r,int radius){
@@ -55,13 +62,14 @@ public sealed class DeskPagesActionButton:Button {
 }
 
 public sealed class DeskPagesBrand:Control {
+    private readonly Image brand=DeskPagesTheme.LoadBrand();
+    protected override void Dispose(bool disposing){if(disposing && brand!=null)brand.Dispose();base.Dispose(disposing);}
     public DeskPagesBrand(){DoubleBuffered=true;BackColor=DeskPagesTheme.Canvas;}
     protected override void OnPaint(PaintEventArgs e){
         base.OnPaint(e);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;bool rtl=RightToLeft==RightToLeft.Yes;
         Func<int,int> u=delegate(int value){return DeskPagesTheme.Unit(this,value);};
         int size=u(40),x=rtl?Width-size-u(8):u(8),y=u(18);
-        using(var p=DeskPagesTheme.Round(new Rectangle(x,y,size,size),u(11)))using(var b=new SolidBrush(DeskPagesTheme.Accent))e.Graphics.FillPath(b,p);
-        using(var pen=new Pen(Color.White,Math.Max(1,u(2)))){e.Graphics.DrawRectangle(pen,x+u(10),y+u(10),u(17),u(19));e.Graphics.DrawLine(pen,x+u(15),y+u(7),x+u(30),y+u(7));e.Graphics.DrawLine(pen,x+u(30),y+u(7),x+u(30),y+u(25));}
+        if(brand!=null)e.Graphics.DrawImage(brand,new Rectangle(x,y,size,size));
         var title=new Rectangle(rtl?u(8):x+size+u(14),u(12),Math.Max(1,Width-size-u(36)),u(30));var sub=new Rectangle(title.X,u(43),title.Width,u(26));
         var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|(rtl?TextFormatFlags.Right|TextFormatFlags.RightToLeft:TextFormatFlags.Left);
         using(var font=new Font("Segoe UI",18,FontStyle.Bold))TextRenderer.DrawText(e.Graphics,"DeskPages",font,title,DeskPagesTheme.Ink,flags);

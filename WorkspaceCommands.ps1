@@ -203,6 +203,27 @@ function Invoke-DpWorkspaceRequest {
                 }
                 else{$saved.SavedAt.ToLocalTime().ToString('g')}
             }
+            'pinned-icons' {
+                foreach($entry in $script:DpState.Items){if(Test-Path -LiteralPath $entry.Path){"file`t$([bool]($entry.PSObject.Properties['Pinned'] -and $entry.Pinned))`t$([int]$entry.Page)`t$($entry.Path)"}}
+                foreach($id in @('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}')){"system`t$($id -in @($script:DpState.Workspace.SystemPinned))`t$id`tWindows"}
+            }
+            'pins-save' {
+                $edit=New-DpWorkspaceEdit;$paths=@();$seen=@{}
+                $allowed=@('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}')
+                foreach($row in $Arguments){
+                    $f=$row.Split([char]9);if($f.Count -ne 3 -or $seen.ContainsKey($f[2])){throw 'Invalid pinned icon request.'};$seen[$f[2]]=$true;$value=[bool]::Parse($f[1])
+                    if($f[0] -eq 'file'){
+                        $entries=@($edit.After.State.Items | Where-Object {$_.Path -eq $f[2]})
+                        if($entries.Count -ne 1 -or -not(Test-Path -LiteralPath $f[2]) -or ([int][IO.File]::GetAttributes($f[2]) -band 1024)){throw 'Select an existing managed desktop file.'}
+                        $entries[0] | Add-Member -NotePropertyName Pinned -NotePropertyValue $value -Force;$paths+=@($f[2])
+                    }elseif($f[0] -eq 'system' -and $f[2] -in $allowed){
+                        $edit.After.State.Workspace.SystemPinned=@($edit.After.State.Workspace.SystemPinned | Where-Object {$_ -ne $f[2]});if($value){$edit.After.State.Workspace.SystemPinned+=@($f[2])}
+                    }else{throw 'Unknown pinned icon.'}
+                }
+                if($paths.Count){Update-DpMembershipLayouts -Before $edit.Before -After $edit.After -Paths $paths}
+                Update-DpSystemPinLayouts $edit.Before $edit.After
+                if($Arguments.Count){Invoke-DpWorkspaceCommit -Operation 'Update pinned icons' -Before $edit.Before -After $edit.After}
+            }
             {$_ -in @('pin-selected','unpin-selected')} {
                 Connect-DpDesktop
                 $paths=@($script:originalDesktop.Document.SelectedItems() | ForEach-Object {[string]$_.Path})

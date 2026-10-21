@@ -14,6 +14,12 @@ Published installer and source: **0.8.16 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.17
+
+- Original app branding in settings, and a Pinned icons manager under Settings → Pages.
+- Responsive installer actions with safe cancellation before file replacement.
+- Automatic GitHub update checks and notifications, plus a manual check in Settings → General. Disable automatic checks in the update window. Users on 0.8.16 or earlier need one manual upgrade to get this feature.
+
 ## What's new in 0.8.16 (experimental)
 
 - Optional cached page capture under **Settings → Appearance → Page capture**; direct capture remains the default.

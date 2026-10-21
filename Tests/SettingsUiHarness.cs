@@ -1,10 +1,13 @@
 using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
 public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
 public static class DeskPagesWorkspaceApi {
- public static string Language="en";public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,Measurements,CacheWrites;public static string[] LastPreferences;
+ public static string Language="en";public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,Measurements,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;
  public static string L(string en,string ar,string he){return Language=="ar"?ar:Language=="he"?he:en;}
+ public static void CheckUpdates(){UpdateChecks++;}
  public static void StartTour(){Tours++;}public static void RefreshSettingsLanguage(){}
  public static string[] Execute(string command,params string[] args){
+  if(command=="pinned-icons")return new[]{"file\t"+FilePinned+"\t1\tC:\\Desktop\\fixture.txt","system\t"+SystemPinned+"\t{645FF040-5081-101B-9F08-00AA002F954E}\tWindows"};
+  if(command=="pins-save"){PinWrites++;foreach(string row in args){var f=row.Split('\t');if(f[0]=="file")FilePinned=bool.Parse(f[1]);else SystemPinned=bool.Parse(f[1]);}return new string[0];}
   if(command=="capture-settings")return new[]{CacheEnabled.ToString()};
   if(command=="capture-mode"){if(CacheDenied)throw new Exception("Injected capture failure");CacheEnabled=bool.Parse(args[0]);CacheWrites++;return new string[0];}
   if(command=="measure-resources"){Measurements++;return new string[0];}
@@ -28,6 +31,7 @@ public static class SettingsUiHarness {
    DeskPagesWorkspaceApi.Language=language;
    using(var form=new DeskPagesSimpleSettings()){
     form.SetPreviewLayout(scale,width,width==660?480:560);form.Show();form.RefreshData();Application.DoEvents();
+    Require(Field<Image>(form.Surface,"brand")!=null,"Original brand asset was not loaded");
     Require(form.AutoScaleMode==AutoScaleMode.None && !form.RightToLeftLayout,"Native automatic/mirrored scaling must not own the layout");
     int writes=DeskPagesWorkspaceApi.Writes;
     for(int section=0;section<4;section++){
@@ -53,6 +57,8 @@ public static class SettingsUiHarness {
      form.Surface.SelectSection(0);form.Surface.Replay.PerformClick();Require(DeskPagesWorkspaceApi.Tours==1,"Replay button was disconnected");
      form.Surface.SelectSection(3);form.Surface.SaveLayout.PerformClick();Require(DeskPagesWorkspaceApi.Layouts==1,"Save layout button was disconnected");
      form.Surface.SelectSection(0);form.Surface.Performance.PerformClick();Require(DeskPagesWorkspaceApi.Measurements==1,"Resource measurement button was disconnected");
+     form.Surface.Updates.PerformClick();Require(DeskPagesWorkspaceApi.UpdateChecks==1,"Check for updates was disconnected");
+     using(var pins=new DeskPagesPinnedIcons()){pins.Show();Application.DoEvents();var list=Field<CheckedListBox>(pins,"list");Require(list.Items.Count==2 && !list.GetItemChecked(0) && list.GetItemChecked(1) && DeskPagesWorkspaceApi.PinWrites==0,"Loading pin list lost state or wrote data");list.SetItemChecked(0,true);list.SetItemChecked(1,false);typeof(DeskPagesPinnedIcons).GetMethod("Save",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(pins,null);Require(DeskPagesWorkspaceApi.FilePinned && !DeskPagesWorkspaceApi.SystemPinned && DeskPagesWorkspaceApi.PinWrites==1,"Pin manager save was disconnected");pins.Close();}
      var capture=Field<ComboBox>(form,"captureMode");Require(capture.SelectedIndex==0,"Direct capture was not the default");capture.SelectedIndex=1;Require(DeskPagesWorkspaceApi.CacheEnabled,"Cached mode was not persisted");form.RefreshData();Require(capture.SelectedIndex==1,"Cached mode was not loaded");DeskPagesWorkspaceApi.CacheDenied=true;capture.SelectedIndex=0;Require(capture.SelectedIndex==1 && DeskPagesWorkspaceApi.CacheEnabled,"Rejected capture mode was not restored");DeskPagesWorkspaceApi.CacheDenied=false;capture.SelectedIndex=0;Require(!DeskPagesWorkspaceApi.CacheEnabled && DeskPagesWorkspaceApi.CacheWrites==2,"Direct mode was not restored");
      var primary=Field<DeskPagesModernToggle>(form,"primaryOnly");DeskPagesWorkspaceApi.ScopeDenied=true;primary.Checked=true;Require(!primary.Checked && !DeskPagesWorkspaceApi.PrimaryOnly,"Rejected display scope was not restored");DeskPagesWorkspaceApi.ScopeDenied=false;
     }

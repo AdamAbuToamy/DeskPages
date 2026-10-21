@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -106,6 +106,8 @@ public sealed class DeskPagesSimpleSettings:Form {
         Surface.Performance.Click+=delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("measure-resources");});};
         Surface.Add(3,L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose the page for incoming files","اختر الصفحة التي تستقبل الملفات","בחרו דף לקבלת קבצים חדשים"),inbox);
         Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other screens' icons in place","أبقِ أيقونات الشاشات الأخرى ثابتة","השאירו סמלים במסכים אחרים במקומם"),primaryOnly);
+        Surface.Pins.Click+=delegate{using(var dialog=new DeskPagesPinnedIcons())dialog.ShowDialog(this);};
+        Surface.Updates.Click+=delegate{DeskPagesWorkspaceApi.CheckUpdates();};
         Surface.Replay.Click+=delegate{DeskPagesWorkspaceApi.StartTour();};
         Surface.SaveLayout.Click+=delegate{Run(delegate{DeskPagesWorkspaceApi.Execute("save-layout");Surface.SetStatus(L("Layout saved","تم حفظ الترتيب","הסידור נשמר"));});};
         Surface.RestoreLayout.Click+=delegate{Restore();};
@@ -138,4 +140,27 @@ public sealed class DeskPagesSimpleSettings:Form {
     public void QueueRefresh(){load.Stop();load.Start();}
     public void RefreshData(){Run(delegate{loading=true;try{var values=DeskPagesWorkspaceApi.Execute("settings");if(values.Length!=16)throw new InvalidOperationException("Invalid settings response.");var scope=DeskPagesWorkspaceApi.Execute("display-settings");if(scope.Length!=1)throw new InvalidOperationException("Invalid display settings.");primaryOnly.Checked=bool.Parse(scope[0]);captureMode.SelectedIndex=bool.Parse(DeskPagesWorkspaceApi.Execute("capture-settings")[0])?1:0;language.SelectedIndex=values[1]=="ar"?1:values[1]=="he"?2:0;int[] indices={7,12,10,11};for(int i=0;i<4;i++)basic[i].Checked=bool.Parse(values[indices[i]]);reverse.Checked=bool.Parse(values[8]);keyboard.Checked=bool.Parse(values[9]);reduced.Checked=bool.Parse(values[2]);inbox.Items.Clear();inbox.Items.Add(new Destination{Id=0,Name=L("Current page","الصفحة الحالية","הדף הנוכחי")});foreach(var row in DeskPagesWorkspaceApi.Execute("pages")){var f=row.Split('\t');if(f.Length==6 && f[3]!="True")inbox.Items.Add(new Destination{Id=int.Parse(f[0]),Name=f[1]});}for(int i=0;i<inbox.Items.Count;i++)if(((Destination)inbox.Items[i]).Id==int.Parse(values[0]))inbox.SelectedIndex=i;ready=true;Surface.SetStatus(L("Changes save automatically","تُحفظ التغييرات تلقائيًا","השינויים נשמרים אוטומטית"));}finally{loading=false;}});}
     protected override void Dispose(bool disposing){if(disposing){load.Dispose();save.Dispose();}base.Dispose(disposing);}
+}
+
+// Explicit file list keeps pinning available after the desktop loses focus.
+public sealed class DeskPagesPinnedIcons:Form {
+    private readonly CheckedListBox list=new CheckedListBox{Dock=DockStyle.Fill,CheckOnClick=true,IntegralHeight=false,HorizontalScrollbar=true};
+    private readonly Label status=new Label{Dock=DockStyle.Bottom,Height=42,AutoEllipsis=true};
+    private readonly System.Collections.Generic.List<string[]> entries=new System.Collections.Generic.List<string[]>();
+    private static string L(string en,string ar,string he){return DeskPagesWorkspaceApi.L(en,ar,he);}
+    public DeskPagesPinnedIcons(){
+        DeskPagesFluent.Configure(this,L("Pinned icons","الأيقونات الثابتة","סמלים קבועים"),new Size(570,440));
+        var heading=DeskPagesFluent.Heading(L("Show on every page","إظهار في كل الصفحات","הצגה בכל הדפים"),L("Check icons to keep them visible on all pages.","حدد الأيقونات التي تريد إبقاءها ظاهرة في كل الصفحات.","בחרו סמלים שיוצגו בכל הדפים."));heading.Dock=DockStyle.Top;heading.Height=76;
+        var footer=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=48};
+        footer.Controls.Add(DeskPagesFluent.Button(L("Save","حفظ","שמירה"),Save,true));
+        footer.Controls.Add(DeskPagesFluent.Button(L("Close","إغلاق","סגירה"),Close,false));
+        Controls.Add(list);Controls.Add(status);Controls.Add(footer);Controls.Add(heading);
+        Shown+=delegate{LoadIcons();};
+    }
+    public void LoadIcons(){try{list.Items.Clear();entries.Clear();foreach(string row in DeskPagesWorkspaceApi.Execute("pinned-icons")){
+        var f=row.Split('\t');if(f.Length!=4)throw new InvalidOperationException("Invalid pin list.");
+        entries.Add(f);string name=f[0]=="file"?System.IO.Path.GetFileName(f[3]):f[2]=="{20D04FE0-3AEA-1069-A2D8-08002B30309D}"?L("This PC","هذا الكمبيوتر","מחשב זה"):f[2]=="{645FF040-5081-101B-9F08-00AA002F954E}"?L("Recycle Bin","سلة المحذوفات","סל המיחזור"):L("Control Panel","لوحة التحكم","לוח הבקרה");
+        list.Items.Add(name+" — "+(f[0]=="file"?f[3]:L("Windows icon","أيقونة ويندوز","סמל Windows")),bool.Parse(f[1]));
+    }status.Text=L("Uncheck to show an icon only on its own page.","أزل التحديد لإظهار الأيقونة في صفحتها الأصلية فقط.","בטלו סימון להצגה בדף המקורי בלבד.");}catch(Exception ex){status.Text=ex.Message;}}
+    private void Save(){try{var changes=new System.Collections.Generic.List<string>();for(int i=0;i<entries.Count;i++){var f=entries[i];bool value=list.GetItemChecked(i);if(value!=bool.Parse(f[1]))changes.Add(f[0]+"\t"+value+"\t"+(f[0]=="file"?f[3]:f[2]));}if(changes.Count>0)DeskPagesWorkspaceApi.Execute("pins-save",changes.ToArray());LoadIcons();status.Text=L("Saved","تم الحفظ","נשמר");}catch(Exception ex){status.Text=ex.Message;}}
 }

@@ -1,9 +1,17 @@
 DeskPages Privacy Notice
-Version 0.8.16 experiment | Effective 21 October 2026
+Version 0.8.17 alpha | Effective 21 October 2026
 Developer: Adam Abu Toamy
 
-DeskPages works locally. It has no accounts, telemetry, analytics, advertising,
-automatic update checks, or code that uploads your desktop data to a server.
+DeskPages has no accounts, telemetry, analytics, advertising, or
+code that uploads your desktop data to a server.
+
+Update checks contact the official GitHub releases API after startup and every
+six hours while the app is running. GitHub receives the connection IP address
+and DeskPages version in the user agent, but no desktop files, screenshots or
+page metadata. Turn automatic checks off in Check for updates. A manual check
+is also available. Updates open the official release page and are installed
+only when you choose; no downloaded code is run automatically. Version 0.8.16
+and earlier need a one-time manual upgrade to receive this feature.
 
 To organize the original Explorer desktop, it reads item identifiers, paths,
 selection, icon positions, file attributes, sizes and modification times. It

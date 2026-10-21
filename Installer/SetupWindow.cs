@@ -17,11 +17,12 @@ internal sealed class SetupWindow:Form {
     private readonly ProgressBar progress;
     private readonly PictureBox successMark;
     private readonly string sid;
-    private readonly Action<string,string,Action<string>> install;
-    private bool running,finished;
+    private readonly Action<string,string,Action<string>,CancellationToken> install;
+    private bool running,finished,committing,closeWhenFinished;
+    private CancellationTokenSource cancellation;
     public bool InstallFailed{get;private set;}
     private readonly Image brand;
-    public SetupWindow(string account,Action<string,string,Action<string>> installer){
+    public SetupWindow(string account,Action<string,string,Action<string>,CancellationToken> installer){
         sid=account;install=installer;
         SuspendLayout();Text="DeskPages Setup";ClientSize=new Size(880,600);MinimumSize=new Size(720,490);
         StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.Sizable;MaximizeBox=true;
@@ -37,7 +38,7 @@ internal sealed class SetupWindow:Form {
         var tagline=TextLabel("More room.\r\nSame desktop.",18,Color.FromArgb(190,211,244),FontStyle.Regular);tagline.Margin=new Padding(0,20,0,12);side.Controls.Add(tagline,0,2);
         var creatorTitle=TextLabel("CREATED BY",9,Color.FromArgb(143,163,194),FontStyle.Bold);side.Controls.Add(creatorTitle,0,4);
         var creator=TextLabel("Adam Abu Toamy",11,Color.White,FontStyle.Bold);side.Controls.Add(creator,0,5);
-        var version=TextLabel("Version 0.8.16",9,Color.FromArgb(143,163,194),FontStyle.Regular);version.Margin=new Padding(0,12,0,0);side.Controls.Add(version,0,6);
+        var version=TextLabel("Version 0.8.17",9,Color.FromArgb(143,163,194),FontStyle.Regular);version.Margin=new Padding(0,12,0,0);side.Controls.Add(version,0,6);
         side.SizeChanged+=delegate {int width=Math.Max(100,side.ClientSize.Width-side.Padding.Horizontal);foreach(Control child in side.Controls)if(child is Label)child.MaximumSize=new Size(width,0);};
         root.Controls.Add(side,0,0);
         var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty,Padding=Padding.Empty};
@@ -76,8 +77,8 @@ internal sealed class SetupWindow:Form {
         };
         var footer=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.RightToLeft,WrapContents=true,Padding=new Padding(18),Margin=Padding.Empty,BackColor=Color.FromArgb(249,250,252)};
         primary=ButtonStyle("Install DeskPages",true);secondary=ButtonStyle("Cancel",false);
-        primary.Click+=delegate {if(finished){Close();return;}BeginInstall();};secondary.Click+=delegate{Close();};footer.Controls.AddRange(new Control[]{primary,secondary});body.Controls.Add(footer,0,1);
-        FormClosing+=delegate(object sender,FormClosingEventArgs e){if(running)e.Cancel=true;};AcceptButton=primary;CancelButton=secondary;
+        primary.Click+=delegate {if(finished){Close();return;}BeginInstall();};secondary.Click+=delegate{if(running)RequestCancel();else Close();};footer.Controls.AddRange(new Control[]{primary,secondary});body.Controls.Add(footer,0,1);
+        FormClosing+=delegate(object sender,FormClosingEventArgs e){if(running){e.Cancel=true;RequestCancel();}};AcceptButton=primary;CancelButton=secondary;
         Shown+=delegate {Rectangle area=Screen.FromControl(this).WorkingArea;MinimumSize=new Size(Math.Min(MinimumSize.Width,area.Width-20),Math.Min(MinimumSize.Height,area.Height-20));if(Width>area.Width-20 || Height>area.Height-20){Bounds=new Rectangle(area.Left+10,area.Top+10,Math.Min(Width,area.Width-20),Math.Min(Height,area.Height-20));}};
         ResumeLayout(true);
     }
@@ -96,14 +97,21 @@ internal sealed class SetupWindow:Form {
     private static Image DrawSuccess(){var image=new Bitmap(104,104);using(var g=Graphics.FromImage(image)){g.SmoothingMode=SmoothingMode.AntiAlias;using(var b=new SolidBrush(Color.FromArgb(227,247,239)))g.FillEllipse(b,2,2,100,100);using(var p=new Pen(Color.FromArgb(25,145,99),8)){p.StartCap=p.EndCap=LineCap.Round;g.DrawLines(p,new[]{new Point(28,53),new Point(45,70),new Point(77,35)});}}return image;}
     private void BeginInstall(){
         string chosen;try{chosen=DeskPagesInstallLocation.Resolve(location.Text);}catch(Exception ex){MessageBox.Show(this,ex.Message,"Choose an installation folder",MessageBoxButtons.OK,MessageBoxIcon.Information);return;}
-        location.Text=chosen;InstallFailed=false;running=true;primary.Enabled=false;secondary.Enabled=false;field.Visible=false;folderLabel.Visible=false;note.Visible=false;openLog.Visible=false;
+        location.Text=chosen;InstallFailed=false;running=true;committing=false;closeWhenFinished=false;cancellation=new CancellationTokenSource();primary.Visible=false;AcceptButton=null;secondary.Enabled=true;secondary.Text="Cancel";field.Visible=false;folderLabel.Visible=false;note.Visible=false;openLog.Visible=false;
         heading.Text="Installing DeskPages";description.Text="Setting up your desktop pages.\r\nThis window will confirm when DeskPages is ready.";status.Text="Preparing installation…";progress.Visible=true;
-        new Thread(delegate(){string error=null;try{install(sid,chosen,delegate(string message){BeginInvoke((Action)delegate{status.Text=message;});});}catch(Exception ex){error=ex.Message;}BeginInvoke((Action)delegate{CompleteInstall(error,chosen);});}){IsBackground=true}.Start();
+        new Thread(delegate(){string error=null;bool cancelled=false;try{install(sid,chosen,delegate(string message){BeginInvoke((Action)delegate{if(message=="@commit"){committing=true;secondary.Text="Close when finished";}else status.Text=message;});},cancellation.Token);}catch(OperationCanceledException){cancelled=true;}catch(Exception ex){error=ex.Message;}BeginInvoke((Action)delegate{CompleteInstall(error,chosen,cancelled);});}){IsBackground=true}.Start();
     }
-    private void CompleteInstall(string error,string chosen){
-        running=false;progress.Visible=false;primary.Enabled=true;secondary.Enabled=true;
+    private void RequestCancel(){
+        if(!running || !secondary.Enabled)return;
+        if(committing){closeWhenFinished=true;secondary.Text="Closing when finished…";status.Text="Finishing the installation safely before closing.";}
+        else{cancellation.Cancel();secondary.Text="Cancelling…";status.Text="Stopping at the next safe point…";closeWhenFinished=true;}
+        secondary.Enabled=false;
+    }
+    private void CompleteInstall(string error,string chosen,bool cancelled){
+        running=false;progress.Visible=false;primary.Visible=true;AcceptButton=primary;primary.Enabled=true;secondary.Enabled=true;cancellation.Dispose();cancellation=null;
+        if(cancelled){heading.Text="Installation cancelled";description.Text="Setup stopped before changing the installed app.";status.Text="";primary.Text="Try again";secondary.Text="Close";field.Visible=true;folderLabel.Visible=true;if(closeWhenFinished)Close();return;}
         if(error!=null){InstallFailed=true;heading.Text="Installation stopped";description.Text="DeskPages did not finish setting up.\r\nYou can review the log and try again.";field.Visible=true;folderLabel.Visible=true;openLog.Visible=true;status.Text=error;primary.Text="Try again";secondary.Text="Close";return;}
-        finished=true;heading.Text="DeskPages is ready";description.Text="Installation completed successfully.\r\nDeskPages is running in the notification area.";successMark.Visible=true;pathSummary.Text="Installed in: "+chosen;pathSummary.Visible=true;status.Text="";primary.Text="Finish";secondary.Visible=false;
+        finished=true;heading.Text="DeskPages is ready";description.Text="Installation completed successfully.\r\nDeskPages is running in the notification area.";successMark.Visible=true;pathSummary.Text="Installed in: "+chosen;pathSummary.Visible=true;status.Text="";primary.Text="Finish";secondary.Visible=false;if(closeWhenFinished)Close();
     }
     protected override void Dispose(bool disposing){if(disposing){if(brand!=null)brand.Dispose();if(successMark!=null && successMark.Image!=null)successMark.Image.Dispose();}base.Dispose(disposing);}
 }

@@ -13,6 +13,6 @@ try{
     foreach($reference in @('System.dll','System.Core.dll',[Windows.Forms.Form].Assembly.Location,[Drawing.Bitmap].Assembly.Location)){$null=$options.ReferencedAssemblies.Add($reference)}
     try{$result=$provider.CompileAssemblyFromFile($options,[string[]]@((Join-Path $root 'Native/DeskPagesMonitorPolicy.cs'),(Join-Path $root 'Native/DeskPagesDragProtocol.cs'),(Join-Path $root 'Native/DeskPagesDragImageSession.cs'),(Join-Path $PSScriptRoot 'DragBroker.cs'),(Join-Path $PSScriptRoot 'ShellDragImage.cs')));if($result.Errors.HasErrors){throw (($result.Errors | ForEach-Object {$_.ToString()}) -join "`n")}}finally{$provider.Dispose()}
     $null=Read-DpPortableExecutable -Path $options.OutputAssembly -Machine 0x8664 -Managed
-    Assert-DpManagedIdentity -Path $options.OutputAssembly -Name 'DeskPagesDrag' -Version ([Version]'0.8.16.0')
+    Assert-DpManagedIdentity -Path $options.OutputAssembly -Name 'DeskPagesDrag' -Version ([Version]'0.8.17.0')
     Move-Item -LiteralPath $options.OutputAssembly -Destination (Join-Path $root 'DeskPagesDrag.exe') -Force
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force}

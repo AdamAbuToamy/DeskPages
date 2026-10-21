@@ -19,6 +19,7 @@ public sealed class DeskPagesHost : ApplicationContext
     private readonly ConcurrentQueue<HostCommand> commands = new ConcurrentQueue<HostCommand>();
     private bool explicitUiCommand;
     private readonly NotifyIcon tray;
+    private DeskPagesUpdates updates;
     private readonly ContextMenuStrip menu;
     private readonly System.Windows.Forms.Timer timer;
     private readonly Thread inputThread;
@@ -125,6 +126,13 @@ public sealed class DeskPagesHost : ApplicationContext
         catch {applicationIcon=(Icon)SystemIcons.Application.Clone();}
         tray=new NotifyIcon {Icon=applicationIcon, ContextMenuStrip=menu,
             Text="DeskPages", Visible=true};
+        updates=new DeskPagesUpdates(sessionWindow,delegate(DeskPagesUpdateRelease release){
+            tray.BalloonTipTitle="DeskPages "+release.Version;tray.BalloonTipText=DeskPagesWorkspaceApi.L("An update is available. Click to review and download.","يتوفر تحديث جديد. اضغط لعرضه وتحميله.","עדכון זמין. לחצו לפרטים ולהורדה.");tray.ShowBalloonTip(10000);
+        });
+        DeskPagesWorkspaceApi.CheckUpdatesAction=updates.Show;
+        tray.BalloonTipClicked+=delegate{updates.Show();};
+        var updateEntry=new ToolStripMenuItem(DeskPagesWorkspaceApi.L("Check for updates","فحص التحديثات","בדיקת עדכונים"),null,delegate{updates.Show();});menu.Items.Insert(2,updateEntry);
+        menu.Opening+=delegate{updateEntry.Text=updates.Available==null?DeskPagesWorkspaceApi.L("Check for updates","فحص التحديثات","בדיקת עדכונים"):DeskPagesWorkspaceApi.L("Update available: ","يتوفر تحديث: ","עדכון זמין: ")+updates.Available.Version;};
         tray.MouseClick+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left)OpenPanel();};
         inputThread=new Thread(delegate() {
             try {
@@ -303,7 +311,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.16\r\n"+active.hidStatus+
+        return "Build: 0.8.17\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -322,6 +330,7 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     protected override void ExitThreadCore()
     {
+        DeskPagesWorkspaceApi.CheckUpdatesAction=null;if(updates!=null){updates.Dispose();updates=null;}
         DeskPagesWorkspaceApi.Close();
         if(snapshots!=null){snapshots.Dispose();snapshots=null;}
         AbortAnimation(); DeskPagesAnimation.Shutdown(); timer.Stop(); timer.Dispose();
@@ -576,14 +585,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.16 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.17 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.16 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.17 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }

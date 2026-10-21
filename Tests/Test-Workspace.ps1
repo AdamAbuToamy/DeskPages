@@ -80,6 +80,18 @@ try{
     Invoke-DpWorkspaceRequest -Command 'unpin-selected' -Arguments @()
     Assert (-not(Test-DpItemVisible @($script:DpState.Items | Where-Object Path -eq $one)[0] 3)) 'Selected shortcut failed to unpin.'
     $script:selection=@();$failed=$false;try{Invoke-DpWorkspaceRequest -Command 'pin-selected' -Arguments @()}catch{$failed=$true};Assert $failed 'Empty desktop selection was accepted.'
+    $pinRows=@(Invoke-DpWorkspaceRequest 'pinned-icons' @())
+    Assert (@($pinRows | Where-Object {$_ -like "file`t*`t$one"}).Count -eq 1) 'Pin manager omitted a managed file.'
+    $systemId='{645FF040-5081-101B-9F08-00AA002F954E}'
+    Invoke-DpWorkspaceRequest 'pins-save' @("file`tTrue`t$one","system`tTrue`t$systemId")
+    Assert (Test-DpItemVisible @($script:DpState.Items | Where-Object Path -eq $one)[0] 3) 'Pin manager failed to pin across pages.'
+    Assert ($systemId -in @($script:DpState.Workspace.SystemPinned)) 'Pin manager failed to persist a system icon.'
+    $pinHash=(Get-FileHash $script:DpManifest).Hash
+    $failed=$false;try{Invoke-DpWorkspaceRequest 'pins-save' @("file`tFalse`t$one","system`tTrue`tunknown")}catch{$failed=$true}
+    Assert ($failed -and (Get-FileHash $script:DpManifest).Hash -eq $pinHash) 'Invalid batch partially changed pins.'
+    Invoke-DpWorkspaceRequest 'pins-save' @("file`tFalse`t$one","system`tFalse`t$systemId")
+    Assert (-not(Test-DpItemVisible @($script:DpState.Items | Where-Object Path -eq $one)[0] 3)) 'Pin manager failed to unpin.'
+    Write-Host 'PASS: pin manager lists files, commits file/system pins together, preserves membership, rejects invalid batches without partial writes and unpins.'
     Write-Host 'PASS: persistent manual layout save/restore and unchanged recovery point; pin/unpin real fixture Desktop selection without path changes; empty selection rejected.'
     Set-DpWorkspaceItems @($one,$two) 2
     Assert (@($script:DpState.Items | Where-Object Page -eq 2).Count -eq 2) 'Move did not change membership.'

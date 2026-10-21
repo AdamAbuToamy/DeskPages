@@ -20,7 +20,7 @@ try{
     $originalSystem=Join-Path $script:DpDesktop 'original-system.txt'
     foreach($path in @($a,$b,$personalHidden,$originalSystem)){[IO.File]::WriteAllText($path,'preserve content and path')}
     [IO.File]::SetAttributes($a,[IO.FileAttributes]::ReadOnly)
-    [IO.File]::SetAttributes($b,[IO.FileAttributes]::Hidden) # 0.8.16 migration
+    [IO.File]::SetAttributes($b,[IO.FileAttributes]::Hidden) # 0.8.17 migration
     [IO.File]::SetAttributes($personalHidden,[IO.FileAttributes]::Hidden)
     [IO.File]::SetAttributes($originalSystem,[IO.FileAttributes]::System)
     $hashes=@{};foreach($path in @($a,$b,$personalHidden,$originalSystem)){$hashes[$path]=(Get-FileHash -LiteralPath $path).Hash}

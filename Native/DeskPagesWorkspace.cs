@@ -34,6 +34,8 @@ public static class DeskPagesWorkspaceApi {
     public static void StartTour(){if(settings!=null)settings.Hide();Open();if(window!=null && !window.IsDisposed)window.BeginTour();}
     public static void RefreshSettingsLanguage(){if(settings!=null){settings.Dispose();settings=null;}OpenSettings();}
     public static string[] Execute(string command,params string[] args){return DeskPagesHost.WorkspaceCommand(delegate{return Request(command,args)??new string[0];});}
+    public static Action CheckUpdatesAction;
+    public static void CheckUpdates(){if(CheckUpdatesAction!=null)CheckUpdatesAction();}
     public static void PinSelected(bool pin){try{Execute(pin?"pin-selected":"unpin-selected");}catch(Exception ex){DeskPagesHost.ShowError(ex.Message);}}
     public static void Close(){if(window!=null)window.Dispose();if(settings!=null)settings.Dispose();window=null;settings=null;Request=null;}
     public static string L(string en,string ar,string he){return Language=="ar"?ar:(Language=="he"?he:en);}

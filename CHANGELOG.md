@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.17 Alpha
+
+- Restore the original settings logo and a visible file/system pin manager.
+- Hide Install during work; enable cooperative cancellation before replacement and safe deferred closing during replacement.
+- Add automatic/manual official GitHub update checks, notifications and an opt-out. Older versions require one manual upgrade.
+
+
 ## 0.8.16 Alpha — snapshot cache experiment
 
 - Add optional durable compressed, user-encrypted snapshots with no timed expiry and layout-triggered refresh. Direct capture remains the default.

@@ -59,6 +59,8 @@ public sealed class DeskPagesModernSettingsItem {
 public sealed class DeskPagesModernSettingsSurface:Panel {
     public readonly List<DeskPagesModernSettingsItem>[] Pages={new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>(),new List<DeskPagesModernSettingsItem>()};
     private readonly DeskPagesModernButton[] tabs=new DeskPagesModernButton[4];
+    public readonly DeskPagesModernButton Updates=new DeskPagesModernButton(),Pins=new DeskPagesModernButton();
+    private readonly Image brand=DeskPagesTheme.LoadBrand();
     public readonly DeskPagesModernButton Performance=new DeskPagesModernButton();
     public readonly DeskPagesModernButton Replay=new DeskPagesModernButton(),SaveLayout=new DeskPagesModernButton(),RestoreLayout=new DeskPagesModernButton();
     public int Section {get;private set;}public float RequestedScale=1;public float UiScale=1;public bool IsRtl;
@@ -69,11 +71,12 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
         IsRtl=DeskPagesWorkspaceApi.Language=="ar" || DeskPagesWorkspaceApi.Language=="he";
         string[] names={L("General","عام","כללי"),L("Navigation","التنقل","ניווט"),L("Appearance","المظهر","מראה"),L("Pages","الصفحات","דפים")};
         for(int i=0;i<4;i++){int section=i;tabs[i]=new DeskPagesModernButton{Text=names[i],AccessibleName=names[i],IsRtl=IsRtl};tabs[i].Click+=delegate{SelectSection(section);};Controls.Add(tabs[i]);}
+        Updates.Text=L("Check for updates","فحص التحديثات","בדיקת עדכונים");Pins.Text=L("Pinned icons","أيقونات ثابتة","סמלים קבועים");
         Performance.Text=L("Measure resources","قياس استهلاك الموارد","מדידת משאבים");
         Replay.Text=L("Start the tour","ابدأ الجولة","התחלת הסיור");Replay.Primary=true;
         SaveLayout.Text=L("Save layout","حفظ الترتيب","שמירת סידור");SaveLayout.Primary=true;
         RestoreLayout.Text=L("Restore","استعادة","שחזור");
-        foreach(var button in new[]{Replay,SaveLayout,RestoreLayout,Performance}){button.AccessibleName=button.Text;button.IsRtl=IsRtl;Controls.Add(button);}
+        foreach(var button in new[]{Replay,SaveLayout,RestoreLayout,Performance,Updates,Pins}){button.AccessibleName=button.Text;button.IsRtl=IsRtl;Controls.Add(button);}
         initialized=true;
     }
     public void Add(int section,string title,string note,Control action){Pages[section].Add(new DeskPagesModernSettingsItem(title,note,action));if(fieldFont!=null)action.Font=fieldFont;Controls.Add(action);}
@@ -104,15 +107,17 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
                 float tw=contentWidth-60-actionWidth;
                 item.TitleBounds=R(tx,y+14,tw,24);item.DescriptionBounds=R(tx,y+40,tw,19);
             }
-            extra=R(contentX,112+Pages[Section].Count*76+18,contentWidth,Section==0?154:134);
-            Performance.Visible=Section==0;Replay.Visible=Section==0;SaveLayout.Visible=RestoreLayout.Visible=Section==3;
-            foreach(var button in new[]{Replay,SaveLayout,RestoreLayout,Performance})button.UiScale=UiScale;
+            extra=R(contentX,112+Pages[Section].Count*76+18,contentWidth,Section==0?194:134);
+            Updates.Visible=Section==0;Pins.Visible=Section==3;Performance.Visible=Section==0;Replay.Visible=Section==0;SaveLayout.Visible=RestoreLayout.Visible=Section==3;
+            foreach(var button in new[]{Replay,SaveLayout,RestoreLayout,Performance,Updates,Pins})button.UiScale=UiScale;
             float extraY=112+Pages[Section].Count*76+18;
             Replay.Bounds=R(IsRtl?contentX+contentWidth-164:contentX+20,extraY+100,144,36);
             Performance.Bounds=R(IsRtl?contentX+20:contentX+176,extraY+100,180,36);
-            float saveX=IsRtl?contentX+contentWidth-160:contentX+20;
-            SaveLayout.Bounds=R(saveX,extraY+78,140,36);
-            RestoreLayout.Bounds=R(IsRtl?saveX-118:saveX+152,extraY+78,106,36);
+            Updates.Bounds=R(IsRtl?contentX+contentWidth-200:contentX+20,extraY+144,180,36);
+            float saveX=IsRtl?contentX+contentWidth-130:contentX+20;
+            SaveLayout.Bounds=R(saveX,extraY+78,110,36);
+            RestoreLayout.Bounds=R(IsRtl?saveX-98:saveX+118,extraY+78,90,36);
+            Pins.Bounds=R(IsRtl?saveX-246:saveX+216,extraY+78,140,36);
         }finally{arranging=false;}
     }
     protected override void OnPaint(PaintEventArgs e){
@@ -120,10 +125,9 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
         float width=ClientSize.Width/UiScale,height=ClientSize.Height/UiScale,rail=width<700?132:156,railX=IsRtl?width-20-rail:20;
         float cx=IsRtl?20:20+rail+24,cw=width-40-rail-24;
         DeskPagesModernStyle.Round(g,R(railX,20,rail,height-40),(int)(16*UiScale),Color.White,DeskPagesModernStyle.Line);
-        var mark=R(railX+(rail-36)/2,42,36,36);DeskPagesModernStyle.Round(g,mark,(int)(11*UiScale),DeskPagesModernStyle.Blue,Color.Empty);
-        using(var pen=new Pen(Color.White,Math.Max(1,2*UiScale))){int x=mark.Left+(int)(10*UiScale),y=mark.Top+(int)(9*UiScale);g.DrawRectangle(pen,x,y,(int)(12*UiScale),(int)(16*UiScale));g.DrawLine(pen,x+(int)(5*UiScale),y-(int)(3*UiScale),x+(int)(17*UiScale),y-(int)(3*UiScale));}
+        var mark=R(railX+(rail-48)/2,32,48,48);if(brand!=null)g.DrawImage(brand,mark);
         Draw(g,"DeskPages",R(railX+8,84,rail-16,24),15,DeskPagesModernStyle.Ink,true,true);
-        Draw(g,"0.8.16 · Experiment",R(railX+8,height-67,rail-16,22),11,DeskPagesModernStyle.Muted,false,true);
+        Draw(g,"0.8.17 · Experiment",R(railX+8,height-67,rail-16,22),11,DeskPagesModernStyle.Muted,false,true);
         string[] titles={L("General","عام","כללי"),L("Navigation","التنقل","ניווט"),L("Appearance","المظهر","מראה"),L("Pages","الصفحات","דפים")};
         string[] notes={L("Make DeskPages feel like home.","خصص تجربة DeskPages كما تحب.","התאימו את DeskPages אליכם."),L("Choose how you move between pages.","اختر طريقتك للتنقل بين الصفحات.","בחרו כיצד לעבור בין דפים."),L("A calmer desktop, your way.","اضبط حركة الصفحات ومظهرها.","התאימו את תנועת הדפים והמראה."),L("Keep every file in the right place.","نظم ملفاتك واحفظ ترتيبك المفضل.","ארגנו קבצים ושמרו את הסידור." )};
         Draw(g,titles[Section],R(cx,30,cw,40),27,DeskPagesModernStyle.Ink,true,false);
@@ -141,6 +145,6 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
         }
         Draw(g,Status,R(cx,height-48,cw,26),12,DeskPagesModernStyle.Muted,false,false);
     }
-    protected override void Dispose(bool disposing){if(disposing && fieldFont!=null)fieldFont.Dispose();base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing){if(fieldFont!=null)fieldFont.Dispose();if(brand!=null)brand.Dispose();}base.Dispose(disposing);}
     private void Draw(Graphics g,string text,Rectangle r,float size,Color color,bool bold,bool center){DeskPagesModernStyle.Text(g,text,r,size*UiScale,color,IsRtl,bold,center);}
 }
