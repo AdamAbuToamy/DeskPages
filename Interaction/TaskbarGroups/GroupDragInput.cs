@@ -9,7 +9,7 @@ using System.Windows.Forms;
 internal sealed class GroupDragInput:IDisposable {
     private readonly Action<GroupDragGesture> started,finished;private readonly Action refresh;
     private readonly Thread thread,sender;private readonly BlockingCollection<Action> native=new BlockingCollection<Action>();
-    private sealed class NativeBatch {public int Remaining;public bool Resume;public GroupDragGesture Gesture;}
+    private sealed class NativeBatch {public int Remaining;public long Expires;public bool Resume;public GroupDragGesture Gesture;}
     private readonly ConcurrentDictionary<ulong,NativeBatch> pending=new ConcurrentDictionary<ulong,NativeBatch>();private int sequence;private readonly ManualResetEvent initialized=new ManualResetEvent(false);
     private GroupInputMap map=new GroupInputMap();private readonly GroupDragGate gate=new GroupDragGate();
     private Hook mouse,key;private IntPtr mouseHandle,keyHandle;private uint threadId;
@@ -46,13 +46,13 @@ internal sealed class GroupDragInput:IDisposable {
         if(code<0)return CallNextHookEx(IntPtr.Zero,code,message,data);
         var input=(MouseData)Marshal.PtrToStructure(data,typeof(MouseData));
         ulong token=input.Extra.ToUInt64();
-        if((token&0xFFFFFFFFUL)==ReplayTag){
+        if(token==ReplayTag || (token&0xFFFF0000UL)==0x44510000UL){
             NativeBatch batch;pending.TryGetValue(token,out batch);
             // A physical release can race a queued continuation. Never deliver
             // its synthetic down after release; that would leave a button held.
             bool skip=batch!=null && batch.Resume && (batch.Gesture.Released || batch.Gesture.Cancelled);
             IntPtr result=skip?new IntPtr(1):CallNextHookEx(IntPtr.Zero,code,message,data);
-            if(batch!=null)Interlocked.Decrement(ref batch.Remaining);return result;
+            if(batch!=null && Interlocked.Decrement(ref batch.Remaining)==0){NativeBatch removed;pending.TryRemove(token,out removed);}return result;
         }
         int kind=message.ToInt32();
         try{
@@ -128,14 +128,18 @@ internal sealed class GroupDragInput:IDisposable {
         try{native.Add(delegate{finished(gesture);});}catch(InvalidOperationException){}
     }
     private bool Send(Input[] batch,GroupDragGesture gesture,bool resume){
-        ulong token=((ulong)unchecked((uint)Interlocked.Increment(ref sequence))<<32)|ReplayTag;
-        var record=new NativeBatch{Remaining=batch.Length,Resume=resume,Gesture=gesture};pending[token]=record;
+        // Keep tokens in 32 bits as well as ULONG_PTR, and retain resume guards
+        // until delivery. Mouse moves may coalesce; they are not acknowledgements.
+        uint number=unchecked((uint)Interlocked.Increment(ref sequence));ulong token=0x44510000UL|(number&0xFFFF);
+        if((number&255)==0)foreach(var old in pending.Where(p=>p.Value.Expires<Now).ToArray()){NativeBatch removed;pending.TryRemove(old.Key,out removed);}
+        var record=new NativeBatch{Remaining=batch.Length,Expires=Now+2000,Resume=resume,Gesture=gesture};pending[token]=record;
         for(int i=0;i<batch.Length;i++){var mouse=batch[i].Mouse;mouse.Extra=new UIntPtr(token);batch[i].Mouse=mouse;}
-        try{
-            lastNative="sending token="+token+", resume="+resume;uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));lastNative="sent="+sent+", remaining="+Volatile.Read(ref record.Remaining);
-            if(sent==(uint)batch.Length && SpinWait.SpinUntil(delegate{return Volatile.Read(ref record.Remaining)==0;},1000))return true;
-            SendInput(1,new[]{Button(4)},Marshal.SizeOf(typeof(Input)));return false;
-        }finally{NativeBatch removed;pending.TryRemove(token,out removed);}
+        lastNative="sending token="+token+", resume="+resume;
+        uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));
+        lastNative="sent="+sent+", token="+token;
+        if(sent==(uint)batch.Length)return true;
+        NativeBatch unused;pending.TryRemove(token,out unused);
+        SendInput(1,new[]{Button(4)},Marshal.SizeOf(typeof(Input)));return false;
     }
     private static Input Move(Point point,Rectangle area){return new Input{Type=0,Mouse=new MouseInput{X=(int)Math.Round((point.X-area.Left)*65535.0/Math.Max(1,area.Width-1)),Y=(int)Math.Round((point.Y-area.Top)*65535.0/Math.Max(1,area.Height-1)),Flags=0xE001,Extra=new UIntPtr(ReplayTag)}};}
     private static Input Button(uint flag){return new Input{Type=0,Mouse=new MouseInput{Flags=flag,Extra=new UIntPtr(ReplayTag)}};}
