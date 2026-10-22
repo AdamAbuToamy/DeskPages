@@ -334,10 +334,10 @@ public:
     void ConfirmTarget(Job& job) {
         if((state.phase!=deskpages::Phase::Covering && !(preview.active && state.phase==deskpages::Phase::Playing)) || job.iconCount<0)
             throw std::runtime_error("A source cover and valid target count are required");
-        iconWindow=nullptr;
-        FindIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&iconWindow));
-        if(!iconWindow)EnumWindows(FindIcons,reinterpret_cast<LPARAM>(&iconWindow));
-        WinCheck(iconWindow!=nullptr,"Find original desktop icon view");
+        // Explorer can recreate/reparent its desktop owner while refreshing
+        // the target page or changing displays. Rebind the icon view AND its
+        // verified Progman/WorkerW capture owner, not just the child HWND.
+        LocateDesktop();
         expectedIcons=job.iconCount;if(preview.active)preview.Confirm(snapshotRevision.load(),incomingKey==job.targetKey);else incomingKey=job.targetKey;VerifyIconCount();
         Report("Target membership verified; original Explorer icon count="+std::to_string(expectedIcons));
     }
