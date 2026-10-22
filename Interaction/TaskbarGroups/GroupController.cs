@@ -25,7 +25,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=40};
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
-    private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] windows=new GroupWindow[0],drag=new GroupWindow[0];
+    private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
     private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead;
     private LiveGroup target;private Process guardian;private int resolveBusy;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
@@ -57,10 +57,10 @@ internal sealed class GroupController:ApplicationContext {
         if(disposed)return;
         if(stop.WaitOne(0)){ExitThread();return;}
         try{
-            if(Now-lastRead>=800 && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
+            if(Now-lastRead>=(held?350:2000) && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
             bool down=(WindowShell.GetAsyncKeyState(1)&0x8000)!=0;Point point=Cursor.Position;
             if((WindowShell.GetAsyncKeyState(0x1B)&0x8000)!=0){CancelDrag();held=down;return;}
-            if(down && !held){press=point;moved=false;drag=new GroupWindow[0];int request=++generation;
+            if(down && !held){press=point;moved=false;drag=new GroupWindow[0];RefreshSoon();int request=++generation;
                 var root=WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2);
                 if(snapshot.Bounds.Contains(point) || WindowShell.Class(root)=="TaskListThumbnailWnd")ResolvePress(point,request);
             }
@@ -83,12 +83,12 @@ internal sealed class GroupController:ApplicationContext {
     private void ResolvePress(Point point,int request){
         if(Interlocked.CompareExchange(ref resolveBusy,1,0)!=0)return;
         ThreadPool.QueueUserWorkItem(delegate{
-            TaskButton button=null;try{button=TaskbarAccess.Hit(point);}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
+            TaskButton button=null;GroupWindow[] running=new GroupWindow[0];try{button=TaskbarAccess.Hit(point);running=WindowShell.Windows();}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
             Post(delegate{
                 if(request!=generation || (WindowShell.GetAsyncKeyState(1)&0x8000)==0)return;
                 // Dragging a numbered group itself is left to Explorer's reorder.
                 if(button!=null && model.Find(button.AppId)!=null)return;
-                drag=TaskbarAccess.Resolve(button,windows);
+                drag=TaskbarAccess.Resolve(button,running);
                 if(drag.Length==0 && button!=null)hint.Show("No unambiguous running window was found for this button. Closed pinned apps are not grouped.",plus,0,-60,4000);
             });
         });
@@ -106,10 +106,10 @@ internal sealed class GroupController:ApplicationContext {
     }
     private void ReadSnapshot(){
         ThreadPool.QueueUserWorkItem(delegate{
-            TaskbarSnapshot next=null;GroupWindow[] running=null;
-            try{next=TaskbarAccess.Read();running=WindowShell.Windows();}catch(Exception){ }
+            TaskbarSnapshot next=null;
+            try{next=TaskbarAccess.Read();}catch(Exception){ }
             Interlocked.Exchange(ref readBusy,0);
-            if(next!=null && running!=null)Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;windows=running;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
+            if(next!=null)Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
         });
     }
     private void PlacePlus(){
