@@ -28,6 +28,7 @@ internal sealed class GroupController:ApplicationContext {
     private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
     private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead;
     private LiveGroup target;private Process guardian;private int resolveBusy;
+    private TaskButton[] pressGroups=new TaskButton[0];private string sourceAppId;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
     public GroupController(){
         model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);plus.Show();plus.Hide();
@@ -60,19 +61,19 @@ internal sealed class GroupController:ApplicationContext {
             if(Now-lastRead>=(held?350:2000) && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
             bool down=(WindowShell.GetAsyncKeyState(1)&0x8000)!=0;Point point=Cursor.Position;
             if((WindowShell.GetAsyncKeyState(0x1B)&0x8000)!=0){CancelDrag();held=down;return;}
-            if(down && !held){press=point;moved=false;drag=new GroupWindow[0];RefreshSoon();int request=++generation;
+            if(down && !held){press=point;moved=false;drag=new GroupWindow[0];sourceAppId=null;pressGroups=snapshot.Buttons.Where(b=>model.Find(b.AppId)!=null).ToArray();RefreshSoon();int request=++generation;
                 var root=WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2);
                 if(snapshot.Bounds.Contains(point) || WindowShell.Class(root)=="TaskListThumbnailWnd")ResolvePress(point,request);
             }
             if(down && drag.Length>0){
                 moved=moved || Math.Abs(point.X-press.X)+Math.Abs(point.Y-press.Y)>SystemInformation.DragSize.Width;
-                var button=snapshot.At(point);target=moved && button!=null?model.Find(button.AppId):null;
+                var button=TaskbarAccess.DropTarget(snapshot,pressGroups,point,sourceAppId,id=>model.Find(id)!=null);target=moved && button!=null?model.Find(button.AppId):null;
                 ready=dwell.Observe(target==null?null:target.AppId,Now);
                 if(target!=null)cue.Present(button.Bounds,ready);else cue.Hide();
             }
             if(!down && held){
                 if(moved && drag.Length>0){
-                    if(ready && target!=null && snapshot.At(point)!=null && snapshot.At(point).AppId==target.AppId)VerifyDrop(target,drag,point);
+                    if(ready && target!=null && TaskbarAccess.DropTarget(snapshot,pressGroups,point,sourceAppId,id=>model.Find(id)!=null)!=null)VerifyDrop(target,drag,point);
                     else if(target==null && (Math.Abs(point.X-press.X)+Math.Abs(point.Y-press.Y)>48))foreach(var w in drag)if(model.Owner(w)!=null){recovery.Restore(w);if(!recovery.Owns(w))model.Remove(w);}
                 }
                 CancelDrag();Prune();RefreshSoon();
@@ -88,6 +89,7 @@ internal sealed class GroupController:ApplicationContext {
                 if(request!=generation || (WindowShell.GetAsyncKeyState(1)&0x8000)==0)return;
                 // Dragging a numbered group itself is left to Explorer's reorder.
                 if(button!=null && model.Find(button.AppId)!=null)return;
+                sourceAppId=button==null?null:button.AppId;
                 drag=resolved;
                 if(drag.Length==0 && button!=null)hint.Show("No unambiguous running window was found for this button. Closed pinned apps are not grouped.",plus,0,-60,4000);
             });
@@ -95,9 +97,10 @@ internal sealed class GroupController:ApplicationContext {
     }
     private void VerifyDrop(LiveGroup group,GroupWindow[] items,Point point){
         int approvedGeneration=generation+1;
+        string source=sourceAppId;TaskButton[] original=pressGroups;
         if(Interlocked.CompareExchange(ref resolveBusy,1,0)!=0)return;
         ThreadPool.QueueUserWorkItem(delegate{
-            TaskButton actual=null;try{actual=TaskbarAccess.Hit(point);}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
+            TaskButton actual=null;try{actual=TaskbarAccess.Hit(point);if(actual==null || actual.AppId!=group.AppId)actual=TaskbarAccess.DropTarget(TaskbarAccess.Read(),original,point,source,id=>id==group.AppId);}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
             if(actual!=null && actual.AppId==group.AppId)Post(delegate{
                 if(model.Find(group.AppId)!=group || generation!=approvedGeneration)return;
                 try{Assign(group,items);}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}
@@ -154,7 +157,7 @@ internal sealed class GroupController:ApplicationContext {
         popup.Closed+=delegate{popup.Dispose();};popup.Show(Cursor.Position);
     }
     private void RefreshSoon(){lastRead=0;}
-    private void CancelDrag(){generation++;drag=new GroupWindow[0];target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
+    private void CancelDrag(){generation++;drag=new GroupWindow[0];pressGroups=new TaskButton[0];sourceAppId=null;target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
     private void Post(Action action){if(disposed)return;try{plus.BeginInvoke((Action)delegate{if(!disposed)try{action();}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}});}catch(InvalidOperationException){ }}
     protected override void ExitThreadCore(){
         if(disposed)return;disposed=true;timer.Stop();timer.Dispose();

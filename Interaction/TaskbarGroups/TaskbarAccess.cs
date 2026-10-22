@@ -12,6 +12,17 @@ internal sealed class TaskbarSnapshot {
     public TaskButton At(Point point){return Buttons.FirstOrDefault(b=>b.Bounds.Contains(point));}
 }
 internal static class TaskbarAccess {
+    // Explorer can insert the dragged app into a hovered slot before mouse-up.
+    // Retain only an explicit numbered target at the original press snapshot,
+    // and only while the source button occupies that slot and the target is
+    // still immediately adjacent. This never identifies an app by its label.
+    internal static TaskButton DropTarget(TaskbarSnapshot current,TaskButton[] originalGroups,Point point,string sourceAppId,Func<string,bool> isGroup){
+        var hit=current.At(point);if(hit!=null && isGroup(hit.AppId))return hit;
+        if(hit==null || string.IsNullOrEmpty(sourceAppId) || !string.Equals(hit.AppId,sourceAppId,StringComparison.OrdinalIgnoreCase))return null;
+        var prior=originalGroups.FirstOrDefault(b=>b.Bounds.Contains(point));if(prior==null)return null;
+        var now=current.Buttons.FirstOrDefault(b=>b.AppId==prior.AppId);if(now==null)return null;
+        return Math.Abs(now.Bounds.Left-prior.Bounds.Left)<=2*Math.Max(now.Bounds.Width,prior.Bounds.Width) && Math.Abs(now.Bounds.Top-prior.Bounds.Top)<8?now:null;
+    }
     public static TaskbarSnapshot Read(){
         IntPtr h=WindowShell.FindWindowW("Shell_TrayWnd",null);var result=new TaskbarSnapshot{Handle=h,Bounds=WindowShell.Bounds(h)};if(h==IntPtr.Zero)return result;
         var root=AutomationElement.FromHandle(h);var list=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));var buttons=new List<TaskButton>();
