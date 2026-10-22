@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.20.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.21.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions

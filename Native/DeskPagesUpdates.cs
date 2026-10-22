@@ -14,7 +14,7 @@ public sealed class DeskPagesUpdateRelease {
 }
 public sealed class DeskPagesUpdates:IDisposable {
     public const string Repository="https://github.com/AdamAbuToamy/DeskPages";
-    public static readonly Version Current=new Version("0.8.20");
+    public static readonly Version Current=new Version("0.8.21");
     private readonly Control owner=new Control();private readonly Action<DeskPagesUpdateRelease> announce;
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
     private DateTime next=DateTime.UtcNow.AddSeconds(60);private int busy;private volatile bool disposed;private string lastAnnounced;private Form window;

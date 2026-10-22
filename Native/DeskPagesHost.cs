@@ -313,7 +313,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.20\r\n"+active.hidStatus+
+        return "Build: 0.8.21\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -588,14 +588,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.20 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.21 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.20 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.21 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }

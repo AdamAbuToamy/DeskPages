@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.21 — taskbar groups device trial
+
+- Make newly created numbered groups eligible for native taskbar buttons.
+- Use a translucent white add button with press/release animation.
+- Clean up failed group creation and cover native window eligibility and button alpha in Windows validation.
+
 ## 0.8.20 Alpha - taskbar groups experiment
 
 - Optional native numbered taskbar groups for currently running windows, with a separate add button near weather.

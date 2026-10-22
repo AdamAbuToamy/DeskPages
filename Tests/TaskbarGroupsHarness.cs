@@ -50,6 +50,22 @@ public static class TaskbarGroupsHarness {
         Check(!GroupLayoutPolicy.Fullscreen(new Rectangle(0,0,1920,1032),screen,"Chrome_WidgetWin_1"),"Ordinary maximized app hid the add button");
     }
     private static void Native(){
+        var group=new GroupModel(Guid.NewGuid().ToString("N")).Add();
+        using(var anchor=new GroupAnchor(group,delegate{}))using(var taskbar=new GroupTaskbar()){
+            WindowShell.Set(anchor.Handle,5,group.AppId);
+            Check(WindowShell.Get(anchor.Handle,5)==group.AppId,"Group identity was not set before first show");
+            anchor.Show();Application.DoEvents();taskbar.Add(anchor.Handle);
+            long style=GetWindowLongPtrW(anchor.Handle,-20).ToInt64();
+            Check(anchor.ShowInTaskbar && anchor.Owner==null && (style&0x40000)!=0 && (style&0x08000080)==0,"Numbered group is not eligible for a native taskbar button");
+            Check(WindowShell.IsWindowVisible(anchor.Handle) && IsIconic(anchor.Handle),"Empty group must remain visible to Explorer and minimized");
+            taskbar.Remove(anchor.Handle);anchor.Finish();
+        }
+        using(var normal=GroupAddButton.Surface(36,36,0,false))using(var pressed=GroupAddButton.Surface(36,36,1,true)){
+            var background=normal.GetPixel(8,8);Check(background.A>0 && background.A<255 && background.R==255,"Add background is not translucent white");
+            Check(normal.GetPixel(18,18).A==255,"Plus glyph lost its opaque contrast");
+            Check(normal.GetPixel(2,18)!=pressed.GetPixel(2,18),"Press animation did not change the button shape");
+        }
+        Console.WriteLine("PASS: minimized unowned APPWINDOW anchor, pre-show AppID, native AddTab/RemoveTab; white per-pixel alpha and press surface.");
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;
         try{
             child=Process.Start(new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location,"--window"){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true});
@@ -77,5 +93,7 @@ public static class TaskbarGroupsHarness {
             if(child!=null){if(!child.HasExited){PostMessageW(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);if(!child.WaitForExit(5000))child.Kill();}child.Dispose();}
         }
     }
+    [DllImport("user32.dll")]private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd,int index);
+    [DllImport("user32.dll")]private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")]private static extern bool PostMessageW(IntPtr hwnd,uint message,IntPtr wParam,IntPtr lParam);
 }

@@ -49,11 +49,18 @@ internal sealed class GroupController:ApplicationContext {
         if(!File.Exists(receipt) || guardian.HasExited)throw new InvalidOperationException("The taskbar recovery helper could not start");
     }
     private void AddGroup(){
+        LiveGroup group=null;GroupAnchor anchor=null;
         try{
-            var group=model.Add();var anchor=new GroupAnchor(group,delegate{OpenGroup(group);});anchors.Add(group.Number,anchor);
-            anchor.Show();WindowShell.Set(anchor.Handle,5,group.AppId);taskbar.Add(anchor.Handle);
+            group=model.Add();var added=group;anchor=new GroupAnchor(group,delegate{OpenGroup(added);});
+            // Set the window identity before Explorer sees its first visible state.
+            WindowShell.Set(anchor.Handle,5,group.AppId);anchors.Add(group.Number,anchor);
+            anchor.Show();taskbar.Add(anchor.Handle);
             hint.Show("Drag a running taskbar icon over the numbered group. Wait for the green border, then release.",plus,0,-70,5000);RefreshSoon();
-        }catch(Exception ex){MessageBox.Show(ex.Message,"DeskPages groups");}
+        }catch(Exception ex){
+            if(anchor!=null){try{taskbar.Remove(anchor.Handle);}catch(Exception){}anchor.Finish();}
+            if(group!=null){anchors.Remove(group.Number);model.DeleteEmpty(group);}
+            MessageBox.Show(ex.Message,"DeskPages groups");
+        }
     }
     private void Tick(){
         if(disposed)return;
