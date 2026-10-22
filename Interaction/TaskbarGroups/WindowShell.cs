@@ -13,24 +13,26 @@ internal static class WindowShell {
         [FieldOffset(0)]public ushort Kind;[FieldOffset(8)]public IntPtr Pointer;
         public static Value Text(string text){return text==null?new Value():new Value{Kind=31,Pointer=Marshal.StringToCoTaskMemUni(text)};}
     }
-    [ComImport,Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]private interface IStore {
+    [ComImport,Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]internal interface IStore {
         void GetCount(out uint count);void GetAt(uint index,out Key key);void GetValue(ref Key key,out Value value);void SetValue(ref Key key,ref Value value);void Commit();
     }
     public static string Get(IntPtr hwnd,uint id){
         IStore store;Guid iid=typeof(IStore).GUID;Marshal.ThrowExceptionForHR(SHGetPropertyStoreForWindow(hwnd,ref iid,out store));
-        try{var key=new Key(id);Value value;store.GetValue(ref key,out value);try{if(value.Kind==0)return null;if(value.Kind!=31)throw new InvalidOperationException("Unexpected Shell property type");return Marshal.PtrToStringUni(value.Pointer);}finally{PropVariantClear(ref value);}}
+        try{return ReadStore(store,id);}
         finally{Marshal.ReleaseComObject(store);}
     }
+    internal static string ReadStore(IStore store,uint id){var key=new Key(id);Value value;store.GetValue(ref key,out value);try{if(value.Kind==0)return null;if(value.Kind!=31)throw new InvalidOperationException("Unexpected Shell property type");return Marshal.PtrToStringUni(value.Pointer);}finally{PropVariantClear(ref value);}}
     public static void Set(IntPtr hwnd,uint id,string text){
         IStore store;Guid iid=typeof(IStore).GUID;Marshal.ThrowExceptionForHR(SHGetPropertyStoreForWindow(hwnd,ref iid,out store));
         try{var key=new Key(id);var value=Value.Text(text);try{store.SetValue(ref key,ref value);}finally{PropVariantClear(ref value);}}finally{Marshal.ReleaseComObject(store);}
     }
     public static GroupWindow Identity(IntPtr hwnd){
         uint pid;GetWindowThreadProcessId(hwnd,out pid);if(pid==0 || !IsWindow(hwnd))return null;
-        try{using(var p=Process.GetProcessById((int)pid)){var text=new StringBuilder(2048);GetWindowTextW(hwnd,text,text.Capacity);return new GroupWindow{Handle=hwnd.ToInt64(),ProcessId=(int)pid,Started=p.StartTime.ToUniversalTime().Ticks,Title=text.ToString(),AppId=Get(hwnd,5)??ProcessAppId(pid)};}}
+        try{using(var p=Process.GetProcessById((int)pid)){var text=new StringBuilder(2048);GetWindowTextW(hwnd,text,text.Capacity);return new GroupWindow{Handle=hwnd.ToInt64(),ProcessId=(int)pid,Started=p.StartTime.ToUniversalTime().Ticks,Title=text.ToString(),AppId=Get(hwnd,5)??ProcessAppId(pid),ImagePath=ProcessPath(pid)};}}
         catch(ArgumentException){return null;}catch(System.ComponentModel.Win32Exception){return null;}catch(COMException){return null;}
     }
     private static string ProcessAppId(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{uint length=0;GetApplicationUserModelId(process,ref length,null);if(length==0 || length>32768)return null;var s=new StringBuilder((int)length);return GetApplicationUserModelId(process,ref length,s)==0?s.ToString():null;}finally{CloseHandle(process);}}
+    private static string ProcessPath(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{int length=32768;var s=new StringBuilder(length);return QueryFullProcessImageNameW(process,0,s,ref length)?s.ToString():null;}finally{CloseHandle(process);}}
     public static bool Same(GroupWindow w){var h=new IntPtr(w.Handle);uint pid;if(!IsWindow(h))return false;GetWindowThreadProcessId(h,out pid);if(pid!=w.ProcessId)return false;try{using(var p=Process.GetProcessById(w.ProcessId))return p.StartTime.ToUniversalTime().Ticks==w.Started;}catch(ArgumentException){return false;}catch(System.ComponentModel.Win32Exception){return true;}}
     public static GroupWindow[] Windows(){
         var list=new List<GroupWindow>();int self=Process.GetCurrentProcess().Id;
@@ -51,6 +53,7 @@ internal static class WindowShell {
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern int GetApplicationUserModelId(IntPtr process,ref uint length,StringBuilder appId);
     [DllImport("kernel32.dll")]private static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
     [DllImport("kernel32.dll")]private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern bool QueryFullProcessImageNameW(IntPtr process,uint flags,StringBuilder path,ref int length);
     [DllImport("user32.dll")]private static extern bool EnumWindows(EnumProc callback,IntPtr parameter);
     [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")]public static extern bool IsWindowVisible(IntPtr hwnd);

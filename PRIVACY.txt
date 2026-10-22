@@ -87,3 +87,5 @@ exits. Group membership is session-only; closing a window removes its membership
 The helper uses mouse-button state and pointer location for drag dwell, with no
 keyboard text recording, screenshot capture or network requests. UI Automation
 runs off the UI thread. The RAM indicator includes the helper and its guardian.
+
+Classic process-only AppIDs may be resolved through a read-only mapping of installed Start menu/Desktop shortcut AppIDs to running executable paths. Shortcuts are not executed or modified.

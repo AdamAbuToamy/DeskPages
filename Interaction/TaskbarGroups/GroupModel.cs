@@ -4,7 +4,7 @@ using System.Linq;
 
 // Session-only membership: a process restart or reused HWND is never a member.
 internal sealed class GroupWindow {
-    public long Handle,Started;public int ProcessId;public string Title,AppId;
+    public long Handle,Started;public int ProcessId;public string Title,AppId,ImagePath;
     public string Key {get{return Handle+":"+ProcessId+":"+Started;}}
 }
 internal sealed class LiveGroup {

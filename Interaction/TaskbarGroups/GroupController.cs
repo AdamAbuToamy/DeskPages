@@ -83,12 +83,12 @@ internal sealed class GroupController:ApplicationContext {
     private void ResolvePress(Point point,int request){
         if(Interlocked.CompareExchange(ref resolveBusy,1,0)!=0)return;
         ThreadPool.QueueUserWorkItem(delegate{
-            TaskButton button=null;GroupWindow[] running=new GroupWindow[0];try{button=TaskbarAccess.Hit(point);running=WindowShell.Windows();}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
+            TaskButton button=null;GroupWindow[] resolved=new GroupWindow[0];try{button=TaskbarAccess.Hit(point);resolved=TaskbarAccess.Resolve(button,WindowShell.Windows());}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
             Post(delegate{
                 if(request!=generation || (WindowShell.GetAsyncKeyState(1)&0x8000)==0)return;
                 // Dragging a numbered group itself is left to Explorer's reorder.
                 if(button!=null && model.Find(button.AppId)!=null)return;
-                drag=TaskbarAccess.Resolve(button,running);
+                drag=resolved;
                 if(drag.Length==0 && button!=null)hint.Show("No unambiguous running window was found for this button. Closed pinned apps are not grouped.",plus,0,-60,4000);
             });
         });

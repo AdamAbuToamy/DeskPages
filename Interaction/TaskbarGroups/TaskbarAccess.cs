@@ -37,8 +37,16 @@ internal static class TaskbarAccess {
     }
     public static GroupWindow[] Resolve(TaskButton button,GroupWindow[] windows){
         if(button==null)return new GroupWindow[0];
-        if(!string.IsNullOrEmpty(button.AppId))return windows.Where(w=>!string.IsNullOrEmpty(w.AppId) && string.Equals(w.AppId,button.AppId,StringComparison.OrdinalIgnoreCase)).ToArray();
+        if(!string.IsNullOrEmpty(button.AppId)){
+            var direct=windows.Where(w=>!string.IsNullOrEmpty(w.AppId) && string.Equals(w.AppId,button.AppId,StringComparison.OrdinalIgnoreCase)).ToArray();
+            if(direct.Length>0 || windows.Length==0)return direct;
+            return ResolveShortcut(button,windows,ShortcutIdentity.Map);
+        }
         var titled=windows.Where(w=>w.Title==button.Name || button.Names.Contains(w.Title)).ToArray();return titled.Length==1?titled:new GroupWindow[0];
+    }
+    internal static GroupWindow[] ResolveShortcut(TaskButton button,GroupWindow[] windows,IDictionary<string,HashSet<string>> aliases){
+        HashSet<string> paths;if(!aliases.TryGetValue(button.AppId,out paths))return new GroupWindow[0];
+        return windows.Where(w=>string.IsNullOrEmpty(w.AppId) && w.ImagePath!=null && paths.Contains(w.ImagePath)).ToArray();
     }
     private static Rectangle Box(System.Windows.Rect r){return r.IsEmpty || double.IsInfinity(r.X)?Rectangle.Empty:Rectangle.FromLTRB((int)r.Left,(int)r.Top,(int)r.Right,(int)r.Bottom);}
 }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -32,6 +33,10 @@ public static class TaskbarGroupsHarness {
         Check(TaskbarAccess.Resolve(new TaskButton{AppId="Chrome"},new GroupWindow[0]).Length==0,"Closed pinned button was accepted");
         Check(TaskbarAccess.Resolve(new TaskButton{AppId="Chrome"},new[]{window}).Length==1,"Exact native AppID was not resolved");
         Check(TaskbarAccess.Resolve(new TaskButton{Name="Work"},new[]{window,new GroupWindow{Title="Work"}}).Length==0,"Ambiguous thumbnail selected an arbitrary window");
+        var classic=new GroupWindow{ImagePath="C:\\Apps\\Code.exe",Title="Project"};
+        var aliases=new Dictionary<string,HashSet<string>>{{"Microsoft.VisualStudioCode",new HashSet<string>(StringComparer.OrdinalIgnoreCase){classic.ImagePath}}};
+        Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==1,"Classic process-only AppID shortcut mapping failed");
+        classic.AppId="Another.Profile";Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==0,"Shortcut alias overrode a distinct explicit window profile");
     }
     private static void Native(){
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;
