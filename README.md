@@ -14,9 +14,14 @@ Published installer and source: **0.8.28 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
-## What's new in 0.8.20 (experimental)
+## What's new in 0.8.28
 
-Optional **Taskbar groups** from the DeskPages tray menu organize currently running windows under native numbered taskbar buttons. The add button appears near weather; hover uses Windows previews. This preview requires device testing before release. See [taskbar experiment](Release/TASKBAR-GROUPS.md).
+- Optional taskbar groups for currently running applications, with numbered buttons and hover previews.
+- Native taskbar reordering and immediate drop into a group, without an automatic app picker.
+- Primary-display icon arrangements preserved across monitor connection/disconnection, including delayed Explorer rearrangements and rapid reconnection.
+- A failed animation capture after a completed page switch no longer reloads the icon layout.
+
+Enable **Taskbar groups - experimental** from the DeskPages tray menu. See [taskbar group details](Release/TASKBAR-GROUPS.md).
 
 ## What's new in 0.8.19
 

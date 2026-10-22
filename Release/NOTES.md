@@ -1,28 +1,16 @@
-# 0.8.28 monitor attachment arrangement protection trial
+# DeskPages 0.8.28 Alpha
 
-Primary-only pages retain their current arrangement instead of loading a stale layout from a prior monitor configuration. Display broadcasts are tracked separately from monitor geometry so fast unplug/replug cycles with identical final geometry are detected. Geometry settles before conversion.
+## What's new
 
-After display changes the saved page remains authoritative, including delayed Explorer rearrangements inside the primary display. A lightweight reconciliation check repairs these changes without saving them as user edits. A completed desktop drag or deliberate desktop context action releases protection so manual arrangement remains available. Held drags are neither restored nor saved. Display changes during layout capture block that write.
+- Optional taskbar groups for organizing currently running applications under numbered buttons.
+- Normal taskbar reordering, with immediate drop onto a group and no automatic app-selection window.
+- A persistent + button for creating groups, plus hover previews and native group reordering.
+- Desktop pages stay on the Windows primary display.
+- Icon arrangements survive monitor connection, disconnection and rapid reconnection. Delayed Explorer rearrangements are restored from saved positions instead of being saved as user edits.
+- Manual desktop arrangement remains available. Animation capture failures after a completed page switch no longer reload the icon layout.
 
-Validation includes stale profile reuse, long-delayed in-bounds reflow, shifted origins, same-key display roundtrips, held/completed manual drags, and display events during capture. Fixtures simulate Explorer and input; physical monitor behavior still requires device testing. Trial only.
+## Download and updates
 
-# 0.8.27 icon arrangement preservation trial
+Download `DeskPages-Setup-0.8.28.exe` from Assets below. Source and SHA-256 checksums are included. Existing installations with update checking enabled can discover this release; installation remains the user's choice.
 
-Preserves valid hand-arranged icon positions during page restoration and display changes, including close spacing and shifted desktop origins. Only out-of-bounds icons are fitted after reserving all existing positions. Verifies repaired coordinates before saving.
-
-An animation failure after a successful page commit now ends the cover without refreshing/reapplying the desktop or showing a transition error. Existing layout history is retained; previous arrangements are not guessed or automatically overwritten.
-
-Includes the 0.8.26 native taskbar dragging changes. Windows CI uses simulated Explorer adapters for layout assertions; physical monitor and touchpad validation remains a device test.
-
-# 0.8.26 native taskbar dragging and primary display trial
-
-- Page icons stay on the primary display after connecting, disconnecting or changing displays. Existing installations migrate to Main display only once; the setting can still be changed explicitly.
-- Display profiles are revalidated against the primary work area, including shifted Explorer coordinates, mixed sizes and a changed primary display. A full primary display does not spill onto another display.
-- Displaced icons no longer become shared icons across every page. Permanent user pins and file membership remain intact.
-- Before saving, delayed Explorer spillover is repaired using the last saved positions. New-file placement and pin/membership layout planning also stay within the primary display.
-- Ordinary taskbar clicks and app reordering remain native from press through release. Only entering a numbered group transfers the drag; leaving it resumes native movement while held.
-- Dropping on a group assigns immediately, with no long green-light wait and no automatic picker. Resolve the original source AppID after native movement; exact executable-path Shell identities are supported.
-- Keep + visible over applications. The open-app picker remains an explicitly invoked menu command.
-- Windows 11 physical taskbar/trackpad gestures and physical monitor hotplug still need device testing.
-
-Trial build only; no public release.
+Windows 11 x64. Alpha release. Windows build, regression and stress checks passed; physical display and taskbar configurations remain device tests.
