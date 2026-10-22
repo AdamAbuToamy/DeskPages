@@ -1,8 +1,9 @@
-# 0.8.24 taskbar groups device trial
+﻿# 0.8.25 primary display trial
 
-- Own taskbar app-button presses before window metadata is ready. Hit-region refresh no longer waits for process and shortcut resolution; unmatched drops require explicit selection of a currently open window instead of silently passing the drag to Explorer.
-- Ignore only DeskPages-tagged replay input, rather than every injected/promoted input event. Accept taskbar children and owned content islands. Group-source drags and modifier gestures stay native.
-- Add **Add open apps…** to a group menu, with a checkbox picker for currently open windows, app names and icons. The actual selected HWNDs use the same guarded Shell assignment/recovery path.
-- Keep '+' visible over application windows and fullscreen windows. Missing/auto-hidden taskbar geometry uses a persistent fallback; opening an app no longer hides it.
-- Add a Copy taskbar diagnostics command that copies the last taskbar press decision locally when requested.
-- Native tests exercise the actual low-level hook using externally generated press/move/release events on an owned fixture, own-replay bypass, native group-source pass-through, and actual picker assignment of a foreign window. Physical Windows 11 taskbar/touchpad acceptance remains required.
+- Page icons stay on the primary display after connecting, disconnecting or changing displays. Existing installations migrate to Main display only once; the setting can still be changed explicitly.
+- Display profiles are revalidated against the primary work area, including shifted Explorer coordinates, mixed sizes and a changed primary display. A full primary display does not spill onto another display.
+- Displaced icons no longer become shared icons across every page. Permanent user pins and file membership remain intact.
+- Before saving, delayed Explorer spillover is repaired using the last saved positions. New-file placement and pin/membership layout planning also stay within the primary display.
+- Includes the 0.8.24 taskbar trial with the persistent + button and Add open apps picker. Physical Windows 11 taskbar dragging and physical monitor hotplug still need device testing.
+
+Trial build only; no public release.

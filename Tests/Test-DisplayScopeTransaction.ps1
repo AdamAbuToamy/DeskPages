@@ -29,7 +29,7 @@ try{
  foreach($path in @($a,$b)){[IO.File]::WriteAllText($path,'unchanged')}
  $hash=(Get-FileHash $b).Hash
  $script:DpState=[PSCustomObject]@{Desktop=$script:DpDesktop;Current=1;PageCount=3;Pages=@(1,2,3);Items=@([PSCustomObject]@{Path=$a;Page=1},[PSCustomObject]@{Path=$b;Page=1});SystemIconBackup=@()}
- Initialize-DpWorkspace;Save-DpState
+ Initialize-DpWorkspace;$script:DpState.Workspace.PrimaryOnly=$false;Save-DpState
  $script:screens=@([PSCustomObject]@{Device='main';Left=0;Top=0;Right=1920;Bottom=1080;Primary=$true},[PSCustomObject]@{Device='second';Left=1920;Top=0;Right=3840;Bottom=1080;Primary=$false});$script:DpScopeScreens=$script:screens
  $icons=@([PSCustomObject]@{Key=$a;Name='a';X=17;Y=2},[PSCustomObject]@{Key=$b;Name='b';X=2000;Y=100})
  [OriginalDesktopReader]::Icons=$icons
@@ -39,18 +39,18 @@ try{
  Assert ((Read-DpManifest $script:DpManifest).Workspace.PrimaryOnly) 'Scope command was not persisted.'
  Assert ($script:DpState.Items[1].Page -eq 1 -and -not $script:DpState.Items[1].PSObject.Properties['Pinned']) 'Scope mutated file page or user pin.'
  $script:DpState.Current=2;Save-DpState;Resume-DpCommittedPage
- Assert ($b -in $script:visible -and $a -notin $script:visible) 'Only primary content should page.'
- Assert (@($script:positions | Where-Object {$_.Key -eq $b -and $_.X -eq 2000 -and $_.Y -eq 100}).Count -eq 1) 'Secondary layout moved during scope command.'
+ Assert ($b -notin $script:visible -and $a -notin $script:visible) 'Display scope must not override page membership.'
+ foreach($layout in (Get-DpWorkspaceSnapshot).Layouts){foreach($icon in $layout.Icons){Assert ($icon.X -ge 0 -and $icon.X+80 -le 1920) 'Scope command retained secondary icon coordinates.'}}
  $manifest=(Get-FileHash $script:DpManifest).Hash
  $failed=$false;try{Invoke-DpWorkspaceRequest 'display-scope' @('invalid')}catch{$failed=$true};Assert ($failed -and (Get-FileHash $script:DpManifest).Hash -eq $manifest) 'Invalid scope changed state.'
  # Inject a failure before the new manifest is committed; recovery must agree.
  function Invoke-DpFaultPoint {param($Stage) if($Stage -eq 'WorkspaceLayouts'){throw 'Injected scope commit failure.'}}
  $failed=$false;try{Invoke-DpWorkspaceRequest 'display-scope' @('False')}catch{$failed=$true}
  Assert ($failed -and $script:DpState.Workspace.PrimaryOnly -and (Read-DpManifest $script:DpManifest).Workspace.PrimaryOnly) 'Scope failure left split durable state.'
- Assert ($b -in $script:visible -and -not(Test-Path (Join-Path $script:DpWorkspaceRoot 'pending.xml'))) 'Scope recovery lost secondary view or left journal.'
+ Assert ($b -notin $script:visible -and -not(Test-Path (Join-Path $script:DpWorkspaceRoot 'pending.xml'))) 'Scope recovery changed membership or left journal.'
  function Invoke-DpFaultPoint {param($Stage)}
  Invoke-DpWorkspaceRequest 'display-scope' @('False')
  Assert (-not $script:DpState.Workspace.PrimaryOnly -and $b -notin $script:visible) 'Disabling scope did not resume assigned-page visibility.'
  Assert ((Get-FileHash $b).Hash -eq $hash) 'Scope commit/recovery changed file content or path.'
- Write-Host 'PASS: production display-scope dispatcher and durable workspace commit, three pages, secondary layout/visibility, invalid command, injected precommit failure/recovery, disable, unchanged real file and permanent pin ownership. Explorer rendering mocked.'
+ Write-Host 'PASS: production display-scope dispatcher and durable workspace commit, three pages, primary confinement without shared secondary membership, invalid command, injected precommit failure/recovery, disable, unchanged real file and permanent pin ownership. Explorer rendering mocked.'
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}

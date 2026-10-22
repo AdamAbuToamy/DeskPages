@@ -6,11 +6,12 @@
 }
 function Get-DpMonitorKey {
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
-    $text=(@(Get-DpMonitorGeometry | Sort-Object Device | ForEach-Object {"$($_.Device)|$($_.Left)|$($_.Top)|$($_.Right)|$($_.Bottom)|$($_.Primary)"}) -join ';')+"|$($spacing.X)|$($spacing.Y)"
+    $text=(@(Get-DpMonitorGeometry | Sort-Object Device | ForEach-Object {"$($_.Device)|$($_.Left)|$($_.Top)|$($_.Right)|$($_.Bottom)|$($_.Primary)"}) -join ';')+"|$($spacing.X)|$($spacing.Y)|primary-v2=$($script:DpState.Workspace.PrimaryOnly)"
     $sha=[Security.Cryptography.SHA256]::Create();try{([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))).Replace('-','').Substring(0,24)}finally{$sha.Dispose()}
 }
 function Convert-DpMonitorLayouts {param([object[]]$Layouts,[object[]]$OldScreens,[object[]]$NewScreens,[int]$SpacingX,[int]$SpacingY)
     if($NewScreens.Count -lt 1 -or $SpacingX -lt 16 -or $SpacingY -lt 16){throw 'Invalid monitor geometry.'}
+    if($script:DpState.Workspace.PrimaryOnly){$NewScreens=@($NewScreens | Where-Object Primary);if($NewScreens.Count -ne 1){throw 'Primary display unavailable; saved layouts preserved.'}}
     foreach($layout in $Layouts){
         $copy=Copy-DpData $layout;$placed=[Collections.Generic.List[object]]::new()
         foreach($icon in @($copy.Icons)){
@@ -32,25 +33,32 @@ function Convert-DpMonitorLayouts {param([object[]]$Layouts,[object[]]$OldScreen
     }
 }
 function Sync-DpMonitorProfile {
-    if($script:DpSuspended -or $script:DpEdgeDrag){return}
+    if($script:DpSuspended -or $script:DpEdgeDrag -or $script:DpMonitorSyncBusy){return}
+    if(Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml')){return}
     $script:DpScopeScreens=@(Get-DpMonitorGeometry)
     $key=Get-DpMonitorKey;$w=$script:DpState.Workspace
     if($key -eq $w.MonitorKey){return}
+    if($script:DpNewItemContext -and (Get-Command Stop-DpNewItemPlacement -ErrorAction SilentlyContinue)){Stop-DpNewItemPlacement}
     $before=Get-DpWorkspaceSnapshot;$screens=@(Get-DpMonitorGeometry)
     $profilePath=Join-Path $script:DpWorkspaceRoot "Profiles/$key.xml"
-    if(-not $w.MonitorKey){$w.MonitorKey=$key;Save-DpState;Write-DpAtomicXml $profilePath ([PSCustomObject]@{Screens=$screens;Layouts=$before.Layouts});return}
-    $oldPath=Join-Path $script:DpWorkspaceRoot ("Profiles/"+$w.MonitorKey+'.xml')
-    $oldScreens=@();if(Test-Path -LiteralPath $oldPath){$oldScreens=@((Import-Clixml -LiteralPath $oldPath).Screens)}
-    Write-DpAtomicXml $oldPath ([PSCustomObject]@{Screens=$oldScreens;Layouts=$before.Layouts})
+    $oldScreens=@()
+    if($w.MonitorKey){
+        $oldPath=Join-Path $script:DpWorkspaceRoot ("Profiles/"+$w.MonitorKey+'.xml')
+        if(Test-Path -LiteralPath $oldPath){$oldScreens=@((Import-Clixml -LiteralPath $oldPath).Screens)}
+        Write-DpAtomicXml $oldPath ([PSCustomObject]@{Screens=$oldScreens;Layouts=$before.Layouts})
+    }
     $after=Copy-DpData $before
     $profile=$null;if(Test-Path -LiteralPath $profilePath){$profile=Import-Clixml -LiteralPath $profilePath}
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
     $after.Layouts=@(foreach($layout in $before.Layouts){
         $saved=@($profile.Layouts | Where-Object {[int]$_.Page -eq [int]$layout.Page})
-        if($saved.Count){$saved[0]}else{Convert-DpMonitorLayouts @($layout) $oldScreens $screens $spacing.X $spacing.Y}
+        # Revalidate saved profiles too: older releases allowed secondary spillover.
+        if($saved.Count){Convert-DpMonitorLayouts @($saved[0]) $screens $screens $spacing.X $spacing.Y}else{Convert-DpMonitorLayouts @($layout) $oldScreens $screens $spacing.X $spacing.Y}
     })
     $after.State.Workspace.MonitorKey=$key
-    Invoke-DpWorkspaceCommit -Operation 'Display configuration changed' -After $after -Before $before
+    $script:DpMonitorSyncBusy=$true
+    try{Invoke-DpWorkspaceCommit -Operation 'Display configuration changed' -After $after -Before $before -Record $false}
+    finally{$script:DpMonitorSyncBusy=$false}
     Write-DpAtomicXml $profilePath ([PSCustomObject]@{Screens=$screens;Layouts=$after.Layouts})
 }
 function Invoke-DpWorkspaceRequest {
@@ -167,7 +175,9 @@ function Invoke-DpWorkspaceRequest {
                 $enabled=[bool]::Parse($Arguments[0]);if($enabled -eq [bool]$script:DpState.Workspace.PrimaryOnly){break}
                 $edit=New-DpWorkspaceEdit;$w=$edit.After.State.Workspace
                 $w.PrimaryOnly=$enabled
-                $w.SecondaryIcons=@();if($enabled){$w.SecondaryIcons=@(Get-DpSecondaryIcons @([OriginalDesktopReader]::Read($script:originalDesktop)) @(Get-DpMonitorGeometry))}
+                $w.SecondaryIcons=@()
+                if($enabled){$screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop);$prior=$script:DpState.Workspace.PrimaryOnly;try{$script:DpState.Workspace.PrimaryOnly=$true;$edit.After.Layouts=@(Convert-DpMonitorLayouts $edit.After.Layouts $screens $screens $spacing.X $spacing.Y)}finally{$script:DpState.Workspace.PrimaryOnly=$prior}}
+                $w.MonitorKey=''
                 Invoke-DpWorkspaceCommit -Operation 'Change display scope' -After $edit.After -Before $edit.Before
             }
             'preferences-save' {
@@ -195,7 +205,7 @@ function Invoke-DpWorkspaceRequest {
                 if($Command -eq 'restore-layout'){
                     $snapshot=Copy-DpData $saved.Snapshot
                     # Restoring organization must not revert the app's current preferences.
-                    foreach($field in @('PrimaryOnly','SecondaryIcons','Language','Input','ReduceMotion','WheelThreshold','PointerThreshold','EdgeWidth','EdgeDwell')){$snapshot.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field) -Force}
+                    foreach($field in @('PrimaryOnly','SecondaryIcons','DisplayPolicyVersion','Language','Input','ReduceMotion','WheelThreshold','PointerThreshold','EdgeWidth','EdgeDwell')){$snapshot.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field) -Force}
                     $inbox=[int]$script:DpState.Workspace.Inbox
                     $snapshot.State.Workspace.Inbox=$(if($inbox -in @($snapshot.State.Pages) -and $inbox -notin @($snapshot.State.Workspace.Archived)){$inbox}else{0})
                     Restore-DpWorkspaceSnapshot -Snapshot $snapshot -Operation 'Restore saved layout'

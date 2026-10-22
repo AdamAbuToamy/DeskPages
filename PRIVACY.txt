@@ -1,5 +1,5 @@
 DeskPages Privacy Notice
-Version 0.8.24 alpha | Effective 22 October 2026
+Version 0.8.25 alpha | Effective 22 October 2026
 Developer: Adam Abu Toamy
 
 DeskPages has no accounts, telemetry, analytics, advertising, or

@@ -1,3 +1,7 @@
+## 0.8.25 · Primary display trial
+
+Keep page icons on the primary display across hotplug and profile restoration; prevent secondary spillover from being saved or becoming cross-page visibility. Preserve file membership and permanent user pins.
+
 # Changelog
 
 ## 0.8.24 — taskbar groups device trial

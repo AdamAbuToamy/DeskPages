@@ -24,6 +24,7 @@ function Read-DpManifest {
 }
 function Save-DpVerifiedSourceLayout {
     param([int]$Page)
+    if((Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue) -and -not $script:DpMonitorSyncBusy){Sync-DpMonitorProfile}
     try{Save-DpPageLayout $Page}
     catch{
         if(-not $_.ToString().Contains('layout saving is blocked.')){throw}
