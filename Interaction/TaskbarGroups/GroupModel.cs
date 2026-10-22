@@ -32,8 +32,9 @@ internal sealed class GroupDropDwell {
     public void Reset(){target=null;since=0;}
 }
 internal static class GroupLayoutPolicy {
+    public static bool ShellSurface(string windowClass){return windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="Shell_TrayWnd" || windowClass=="Shell_SecondaryTrayWnd";}
     public static bool Fullscreen(Rectangle window,Rectangle display,string windowClass){
-        if(windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="SHELLDLL_DefView" || windowClass=="SysListView32" || windowClass=="Shell_TrayWnd")return false;
+        if(ShellSurface(windowClass) || windowClass=="SHELLDLL_DefView" || windowClass=="SysListView32")return false;
         return !window.IsEmpty && window.Width>=display.Width && window.Height>=display.Height;
     }
 }

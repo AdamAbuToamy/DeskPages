@@ -37,6 +37,7 @@ internal static class WindowShell {
     public static GroupWindow[] Windows(){
         var list=new List<GroupWindow>();int self=Process.GetCurrentProcess().Id;
         EnumWindows(delegate(IntPtr h,IntPtr unused){
+            if(GroupLayoutPolicy.ShellSurface(Class(h)))return true;
             if(!IsWindowVisible(h) || GetWindow(h,4)!=IntPtr.Zero || (GetWindowLongPtrW(h,-20).ToInt64()&0x80)!=0)return true;
             uint pid;GetWindowThreadProcessId(h,out pid);if(pid==self)return true;
             int cloaked;DwmGetWindowAttribute(h,14,out cloaked,4);if(cloaked!=0)return true;
