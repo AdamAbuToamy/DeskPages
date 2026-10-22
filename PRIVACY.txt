@@ -1,5 +1,5 @@
 DeskPages Privacy Notice
-Version 0.8.23 alpha | Effective 22 October 2026
+Version 0.8.24 alpha | Effective 22 October 2026
 Developer: Adam Abu Toamy
 
 DeskPages has no accounts, telemetry, analytics, advertising, or
@@ -92,7 +92,10 @@ Classic process-only AppIDs may be resolved through a read-only mapping of insta
 
 While taskbar groups are enabled, a dedicated input thread inspects mouse button
 presses and Escape to distinguish an app drop into a group from native group
-reordering. It does not log these events or typed text. Unmodified running-app
+reordering. It does not log these events or typed text. Unmodified taskbar app-button
 clicks/drags may be consumed and replayed locally through Windows SendInput after
-release; group drags, modifier gestures and closed pins remain native. All
+release; group drags and modifier gestures remain native. Closed pins are never
+automatically assigned; an unmatched drop requires an explicit open-window
+selection. Optional Copy taskbar diagnostics copies the most recent taskbar
+press decision, button IDs, input flags and geometry to the local clipboard. All
 window resolution and hit-region data remains in memory on this computer.

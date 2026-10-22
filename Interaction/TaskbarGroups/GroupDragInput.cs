@@ -11,12 +11,12 @@ internal sealed class GroupDragSource {
     public TaskButton Button;public GroupWindow[] Windows;
 }
 internal sealed class GroupInputMap {
-    public long Created;public IntPtr Taskbar;public GroupDragSource[] Sources=new GroupDragSource[0];
+    public long Created;public IntPtr Taskbar;public Rectangle Bounds;public GroupDragSource[] Sources=new GroupDragSource[0];
     public TaskButton[] Groups=new TaskButton[0];
     public GroupDragSource SourceAt(Point point,long now){
         if(now-Created<0 || now-Created>3000 || Groups.Length==0)return null;
         if(Groups.Any(g=>g.Bounds.Contains(point)))return null; // Native group reordering.
-        return Sources.FirstOrDefault(s=>s.Windows.Length>0 && s.Button.Bounds.Contains(point));
+        return Sources.FirstOrDefault(s=>s.Button.Bounds.Contains(point));
     }
 }
 internal sealed class GroupDragGesture {
@@ -50,6 +50,8 @@ internal sealed class GroupDragInput:IDisposable {
     private GroupInputMap map=new GroupInputMap();private readonly GroupDragGate gate=new GroupDragGate();
     private Hook mouse,key;private IntPtr mouseHandle,keyHandle;private uint threadId;
     private Exception error;private int disposed;
+    internal const uint ReplayTag=0x44504752;private volatile string lastPress="No taskbar press observed";
+    public string Diagnostics{get{return lastPress;}}
     public GroupDragInput(Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action changed=null){
         started=begin;finished=end;refresh=changed??delegate{};thread=new Thread(Run){IsBackground=true,Name="DeskPages taskbar input"};thread.SetApartmentState(ApartmentState.STA);thread.Start();
         if(!initialized.WaitOne(3000)){Dispose();throw new InvalidOperationException("Taskbar input could not start");}
@@ -78,11 +80,15 @@ internal sealed class GroupDragInput:IDisposable {
     private IntPtr Mouse(int code,IntPtr message,IntPtr data){
         if(code<0)return CallNextHookEx(IntPtr.Zero,code,message,data);
         var input=(MouseData)Marshal.PtrToStructure(data,typeof(MouseData));
-        if((input.Flags&1)!=0)return CallNextHookEx(IntPtr.Zero,code,message,data); // Never recapture replay/injected input.
+        if(input.Extra.ToUInt64()==ReplayTag)return CallNextHookEx(IntPtr.Zero,code,message,data); // Ignore only our own native replay, not device-generated mouse input.
         int kind=message.ToInt32();
         try{
-            IntPtr root=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
-            if(gate.Process(kind,input.Point,false,kind==0x201 && ModifierDown(),root,map,Now,started,finished,delegate{Publish(new GroupInputMap());refresh();}))return new IntPtr(1);
+            var current=map;IntPtr actual=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
+            IntPtr root=kind==0x201 && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Taskbar:actual;
+            bool modified=kind==0x201 && ModifierDown();
+            bool owned=gate.Process(kind,input.Point,false,modified,root,current,Now,started,finished,delegate{Publish(new GroupInputMap());refresh();});
+            if(kind==0x201 && current.Bounds.Contains(input.Point))lastPress="Owned="+owned+"; flags="+input.Flags+"; root="+WindowShell.Class(actual)+"; taskbarMatch="+(root==current.Taskbar)+"; source="+(current.Sources.FirstOrDefault(v=>v.Button.Bounds.Contains(input.Point))??new GroupDragSource{Button=new TaskButton{AppId="none"}}).Button.AppId+"; groups="+current.Groups.Length+"; sources="+current.Sources.Length+"; ageMs="+(Now-current.Created)+"; modified="+modified;
+            if(owned)return new IntPtr(1);
         }catch(Exception){gate.Cancel();}
         return CallNextHookEx(IntPtr.Zero,code,message,data);
     }
@@ -94,7 +100,7 @@ internal sealed class GroupDragInput:IDisposable {
     // A cancelled/short group drop is consumed. Ordinary clicks and drops between
     // other app buttons replay the user's gesture as one bounded native batch.
     internal static bool Replay(GroupDragGesture gesture,TaskbarSnapshot fresh){
-        if(gesture.Cancelled || fresh.Handle!=gesture.Taskbar || WindowShell.GetAncestor(WindowShell.WindowFromPoint(gesture.Release),2)!=fresh.Handle)return false;
+        if(gesture.Cancelled || fresh.Handle!=gesture.Taskbar || !WindowShell.OnTaskbar(gesture.Release,fresh.Handle))return false;
         var source=fresh.At(gesture.Press);if(source==null || source.AppId!=gesture.Source.Button.AppId)return false;
         if(Math.Abs(Cursor.Position.X-gesture.Release.X)+Math.Abs(Cursor.Position.Y-gesture.Release.Y)>4)return false;
         if((WindowShell.GetAsyncKeyState(1)&0x8000)!=0 || ModifierDown())return false;
@@ -106,8 +112,8 @@ internal sealed class GroupDragInput:IDisposable {
         uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));
         if(sent!=(uint)batch.Length){var release=new[]{Button(4)};SendInput(1,release,Marshal.SizeOf(typeof(Input)));return false;}return true;
     }
-    private static Input Move(Point point,Rectangle area){return new Input{Type=0,Mouse=new MouseInput{X=(int)Math.Round((point.X-area.Left)*65535.0/Math.Max(1,area.Width-1)),Y=(int)Math.Round((point.Y-area.Top)*65535.0/Math.Max(1,area.Height-1)),Flags=0xE001}};}
-    private static Input Button(uint flag){return new Input{Type=0,Mouse=new MouseInput{Flags=flag}};}
+    private static Input Move(Point point,Rectangle area){return new Input{Type=0,Mouse=new MouseInput{X=(int)Math.Round((point.X-area.Left)*65535.0/Math.Max(1,area.Width-1)),Y=(int)Math.Round((point.Y-area.Top)*65535.0/Math.Max(1,area.Height-1)),Flags=0xE001,Extra=new UIntPtr(ReplayTag)}};}
+    private static Input Button(uint flag){return new Input{Type=0,Mouse=new MouseInput{Flags=flag,Extra=new UIntPtr(ReplayTag)}};}
     public void Dispose(){if(Interlocked.Exchange(ref disposed,1)!=0)return;gate.Cancel();if(threadId!=0)PostThreadMessageW(threadId,0x12,IntPtr.Zero,IntPtr.Zero);if(thread!=Thread.CurrentThread && thread.Join(1000))initialized.Dispose();}
     private delegate IntPtr Hook(int code,IntPtr message,IntPtr data);
     [StructLayout(LayoutKind.Sequential)]private struct MouseData{public Point Point;public uint Data,Flags,Time;public UIntPtr Extra;}

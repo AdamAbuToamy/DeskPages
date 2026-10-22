@@ -7,10 +7,10 @@ using System.Windows.Forms;
 // disposal boundary: WinForms still uses it while unwinding mouse/menu messages.
 internal sealed class GroupPopup:IDisposable {
     private readonly Control owner;private readonly Func<LiveGroup,bool> exists;
-    private readonly Action<LiveGroup> remove;private readonly Action<GroupWindow> activate,drag;
+    private readonly Action<LiveGroup> remove,add;private readonly Action<GroupWindow> activate,drag;
     internal readonly ContextMenuStrip Menu=new ContextMenuStrip();
     private LiveGroup pending;private Point location;private bool scheduled,disposed;
-    public GroupPopup(Control stableOwner,Func<LiveGroup,bool> present,Action<LiveGroup> delete,Action<GroupWindow> focus,Action<GroupWindow> beginDrag){owner=stableOwner;exists=present;remove=delete;activate=focus;drag=beginDrag;}
+    public GroupPopup(Control stableOwner,Func<LiveGroup,bool> present,Action<LiveGroup> delete,Action<GroupWindow> focus,Action<GroupWindow> beginDrag,Action<LiveGroup> choose=null){add=choose;owner=stableOwner;exists=present;remove=delete;activate=focus;drag=beginDrag;}
     public void Show(LiveGroup group,Point at){pending=group;location=at;Schedule();}
     private void Schedule(){if(disposed || scheduled || owner.IsDisposed)return;scheduled=true;owner.BeginInvoke((Action)Present);}
     private void Present(){
@@ -18,6 +18,7 @@ internal sealed class GroupPopup:IDisposable {
         if(Menu.Visible){Menu.Close();Schedule();return;}
         foreach(ToolStripItem item in Menu.Items.Cast<ToolStripItem>().ToArray()){Menu.Items.Remove(item);item.Dispose();}
         var group=pending;
+        if(add!=null){Menu.Items.Add("Add open apps…",null,delegate{Defer(delegate{if(exists(group))add(group);});});Menu.Items.Add(new ToolStripSeparator());}
         foreach(var window in group.Windows.Values){
             var member=window;var item=Menu.Items.Add(member.Title);
             item.Click+=delegate{Defer(delegate{activate(member);});};

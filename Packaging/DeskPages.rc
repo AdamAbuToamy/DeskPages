@@ -2,8 +2,8 @@
 101 ICON "Assets/DeskPages.ico"
 1 RT_MANIFEST "Packaging/DeskPages.manifest"
 1 VERSIONINFO
-FILEVERSION 0,8,23,0
-PRODUCTVERSION 0,8,23,0
+FILEVERSION 0,8,24,0
+PRODUCTVERSION 0,8,24,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS VS_FF_PRERELEASE
 FILEOS VOS_NT_WINDOWS32
@@ -14,11 +14,11 @@ BEGIN
   BLOCK "040904b0"
   BEGIN
    VALUE "FileDescription", "DeskPages launcher\0"
-   VALUE "FileVersion", "0.8.23\0"
+   VALUE "FileVersion", "0.8.24\0"
    VALUE "CompanyName", "Adam Abu Toamy\0"
    VALUE "LegalCopyright", "Copyright 2026 Adam Abu Toamy\0"
    VALUE "ProductName", "DeskPages\0"
-   VALUE "ProductVersion", "0.8.23\0"
+   VALUE "ProductVersion", "0.8.24\0"
    VALUE "OriginalFilename", "DeskPages.exe\0"
   END
  END

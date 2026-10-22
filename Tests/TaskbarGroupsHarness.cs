@@ -65,14 +65,15 @@ public static class TaskbarGroupsHarness {
         Check(gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,108,begin,end),"Abandoned drag blocked the next source press");gate.Abort(end);
         int refreshes=0;gate.Process(0x201,new Point(220,20),false,false,inputMap.Taskbar,inputMap,109,begin,end);
         Check(!gate.Process(0x202,new Point(120,20),false,false,inputMap.Taskbar,inputMap,110,begin,end,delegate{refreshes++;}) && refreshes==1,"Native group reorder did not invalidate old input regions");
+        source.Windows=new GroupWindow[0];
+        Check(inputMap.SourceAt(new Point(120,20),120)!=null,"Unresolved window metadata let Explorer reorder groups before a drag could be owned");
         var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
+        Check(!GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar hid persistent '+'");
+        Check(!GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hide/fullscreen hid persistent '+'");
         var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
         Check(!fallback.IsEmpty && fallback.Bottom<bar.Top,"Native taskbar fallback hid '+' or covered unknown app buttons before UIA was ready");
         Check(GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Left==128,"Weather-adjacent placement changed");
-        var screen=new Rectangle(0,0,1920,1080);Check(!GroupLayoutPolicy.Fullscreen(screen,screen,"Progman"),"Desktop focus hid the add button");
         Check(GroupLayoutPolicy.ShellSurface("Progman") && GroupLayoutPolicy.ShellSurface("WorkerW") && GroupLayoutPolicy.ShellSurface("Shell_TrayWnd") && !GroupLayoutPolicy.ShellSurface("CabinetWClass"),"Explorer taskbar grouping included a desktop/taskbar Shell surface");
-        Check(GroupLayoutPolicy.Fullscreen(screen,screen,"Chrome_WidgetWin_1"),"Real full-screen application did not hide the overlay");
-        Check(!GroupLayoutPolicy.Fullscreen(new Rectangle(0,0,1920,1032),screen,"Chrome_WidgetWin_1"),"Ordinary maximized app hid the add button");
     }
     private static void Native(){
         var group=new GroupModel(Guid.NewGuid().ToString("N")).Add();
@@ -98,6 +99,7 @@ public static class TaskbarGroupsHarness {
             listener.Publish(new GroupInputMap());
         }
         Console.WriteLine("PASS: input hook thread installs/uninstalls; native group restore is rejected before showing a client window.");
+        HookOwnershipFixture();
         PopupLifecycle();
         ReplayNativeFixture();
         int clicks=0;
@@ -136,12 +138,59 @@ public static class TaskbarGroupsHarness {
             for(int i=0;i<4;i++)Check(WindowShell.Get(hwnd,keys[i])==original[i],"Guardian changed an original property, including an unset one");
             var stale=new GroupWindow{Handle=window.Handle,ProcessId=window.ProcessId,Started=window.Started+1};
             bool rejected=false;try{recovery.Assign(stale,assigned);}catch(InvalidOperationException){rejected=true;}Check(rejected,"Stale HWND/process identity was accepted");
+            PickerAssignment(window);
             Console.WriteLine("PASS: foreign-process window AppID/icon/relaunch properties; visible live app; persisted guardian restoration; exact unset-value restoration; stale identity rejection.");
         }finally{
             if(recovery!=null){recovery.RestoreAll();Directory.Delete(recovery.Folder,true);}
             if(child!=null){if(!child.HasExited){PostMessageW(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);if(!child.WaitForExit(5000))child.Kill();}child.Dispose();}
         }
     }
+    private static void HookOwnershipFixture(){
+        var original=Cursor.Position;
+        try{
+            using(var form=new Form{Text="DeskPages hook fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),ClientSize=new Size(380,100),TopMost=true}){
+                int nativeDowns=0,begins=0,ends=0;GroupDragGesture received=null;
+                form.MouseDown+=delegate{nativeDowns++;};form.Show();form.Activate();Application.DoEvents();
+                Point source=form.PointToScreen(new Point(30,30)),target=form.PointToScreen(new Point(230,30));
+                var button=new TaskButton{AppId="FixtureApp",Bounds=new Rectangle(source.X-10,source.Y-10,40,40)};
+                var group=new TaskButton{AppId="FixtureGroup",Bounds=new Rectangle(target.X-10,target.Y-10,40,40)};
+                using(var listener=new GroupDragInput(g=>System.Threading.Interlocked.Increment(ref begins),g=>{received=g;System.Threading.Interlocked.Increment(ref ends);})){
+                    Func<GroupInputMap> map=()=>new GroupInputMap{Taskbar=form.Handle,Bounds=form.Bounds,Created=(long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency),Groups=new[]{group},Sources=new[]{new GroupDragSource{Button=button,Windows=new GroupWindow[0]}}};
+                    listener.Publish(map());
+                    SendFixtureInput(source,target);PumpUntil(delegate{return System.Threading.Interlocked.CompareExchange(ref ends,0,0)==1;});Application.DoEvents();
+                    Check(begins==1 && nativeDowns==0 && received.Source.Windows.Length==0 && Math.Abs(received.Release.X-target.X)<=1 && Math.Abs(received.Release.Y-target.Y)<=1,"Real low-level hook did not consume source press/release before metadata resolved");
+                    Check(group.Bounds.Contains(target),"Group target moved during an owned drag");
+                    listener.Publish(map());SendFixtureInput(target,target);PumpUntil(delegate{return nativeDowns==1;});
+                    Check(begins==1,"Dragging/clicking a group itself was captured");
+                    listener.Publish(map());Cursor.Position=source;Application.DoEvents();
+                    var gesture=new GroupDragGesture{Taskbar=form.Handle,Source=new GroupDragSource{Button=button,Windows=new GroupWindow[0]},Press=source,Release=source};
+                    Check(GroupDragInput.Replay(gesture,new TaskbarSnapshot{Handle=form.Handle,Buttons=new[]{button,group}}),"Own tagged replay failed");
+                    PumpUntil(delegate{return nativeDowns==2;});Check(begins==1 && ends==1,"Our own replay recursively entered the drag hook");
+                }
+                form.Close();
+            }
+            Console.WriteLine("PASS: real low-level hook owns externally generated press/move/release with unresolved metadata, leaves target fixed and group-source native; own replay tag bypasses capture. Owned fixture, not physical Win11 taskbar.");
+        }finally{Cursor.Position=original;}
+    }
+    private static void SendFixtureInput(Point start,Point finish){
+        var screen=SystemInformation.VirtualScreen;
+        Func<Point,FixtureInput> move=p=>new FixtureInput{Mouse=new FixtureMouse{X=(int)Math.Round((p.X-screen.Left)*65535.0/(screen.Width-1)),Y=(int)Math.Round((p.Y-screen.Top)*65535.0/(screen.Height-1)),Flags=0xE001}};
+        var batch=new[]{move(start),new FixtureInput{Mouse=new FixtureMouse{Flags=2}},move(finish),new FixtureInput{Mouse=new FixtureMouse{Flags=4}}};
+        Check(SendInput((uint)batch.Length,batch,40)==batch.Length,"Fixture SendInput failed");
+    }
+    private static void PickerAssignment(GroupWindow window){
+        var session=Guid.NewGuid().ToString("N");var recovery=new GroupRecovery(session);bool committed=false;
+        try{
+            using(var picker=new GroupWindowPicker(1,chosen=>{Check(chosen.Length==1 && chosen[0].Key==window.Key,"Picker changed the selected live window");recovery.Assign(chosen[0],new[]{"fixture-command","fixture-icon,0","Fixture group","DeskPages.Fixture.Picker"});committed=true;},()=>new[]{window})){
+                picker.Show();PumpUntil(delegate{return picker.Apps.Items.Count==1;});picker.Apps.Items[0].Checked=true;Application.DoEvents();picker.Add.PerformClick();
+                Check(committed && WindowShell.Get(new IntPtr(window.Handle),5)=="DeskPages.Fixture.Picker","Picker did not assign the real foreign live window");
+            }
+            Console.WriteLine("PASS: open-window picker selection commits the exact foreign HWND through the real Shell-property recovery adapter.");
+        }finally{recovery.RestoreAll();Directory.Delete(recovery.Folder,true);}
+    }
+    [StructLayout(LayoutKind.Sequential)]private struct FixtureMouse{public int X,Y;public uint Data,Flags,Time;public UIntPtr Extra;}
+    [StructLayout(LayoutKind.Explicit,Size=40)]private struct FixtureInput{[FieldOffset(0)]public uint Type;[FieldOffset(8)]public FixtureMouse Mouse;}
+    [DllImport("user32.dll")]private static extern uint SendInput(uint count,FixtureInput[] input,int size);
     private static void PopupLifecycle(){
         var model=new GroupModel(Guid.NewGuid().ToString("N"));var group=model.Add();int removed=0;var anchor=new GroupAnchor(group,delegate{});anchor.Show();
         using(var owner=new Form{Text="DeskPages popup fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),Size=new Size(200,100),TopMost=true}){

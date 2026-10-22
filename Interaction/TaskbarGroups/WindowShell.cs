@@ -28,17 +28,29 @@ internal static class WindowShell {
     }
     public static GroupWindow Identity(IntPtr hwnd){
         uint pid;GetWindowThreadProcessId(hwnd,out pid);if(pid==0 || !IsWindow(hwnd))return null;
-        try{using(var p=Process.GetProcessById((int)pid)){var text=new StringBuilder(2048);GetWindowTextW(hwnd,text,text.Capacity);return new GroupWindow{Handle=hwnd.ToInt64(),ProcessId=(int)pid,Started=p.StartTime.ToUniversalTime().Ticks,Title=text.ToString(),AppId=Get(hwnd,5)??ProcessAppId(pid),ImagePath=ProcessPath(pid)};}}
+        try{using(var p=Process.GetProcessById((int)pid)){
+            var text=new StringBuilder(2048);GetWindowTextW(hwnd,text,text.Capacity);
+            var window=new GroupWindow{Handle=hwnd.ToInt64(),ProcessId=(int)pid,Started=p.StartTime.ToUniversalTime().Ticks,Title=text.ToString(),ImagePath=ProcessPath(pid)};
+            try{window.AppId=Get(hwnd,5);}catch(COMException){}catch(InvalidOperationException){}
+            if(string.IsNullOrEmpty(window.AppId))window.AppId=ProcessAppId(pid);return window;
+        }}
         catch(ArgumentException){return null;}catch(System.ComponentModel.Win32Exception){return null;}catch(COMException){return null;}
     }
     private static string ProcessAppId(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{uint length=0;GetApplicationUserModelId(process,ref length,null);if(length==0 || length>32768)return null;var s=new StringBuilder((int)length);return GetApplicationUserModelId(process,ref length,s)==0?s.ToString():null;}finally{CloseHandle(process);}}
     private static string ProcessPath(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{int length=32768;var s=new StringBuilder(length);return QueryFullProcessImageNameW(process,0,s,ref length)?s.ToString():null;}finally{CloseHandle(process);}}
+    public static bool OnTaskbar(Point point,IntPtr taskbar){
+        if(taskbar==IntPtr.Zero)return false;IntPtr hit=WindowFromPoint(point);
+        if(hit==taskbar || IsChild(taskbar,hit) || GetAncestor(hit,2)==taskbar)return true;
+        // WinUI can place the content bridge in an owned island rather than a
+        // conventional child HWND. Require the real taskbar in its owner chain.
+        for(int i=0;i<8 && hit!=IntPtr.Zero;i++){hit=GetWindow(hit,4);if(hit==taskbar)return true;}return false;
+    }
     public static bool Same(GroupWindow w){var h=new IntPtr(w.Handle);uint pid;if(!IsWindow(h))return false;GetWindowThreadProcessId(h,out pid);if(pid!=w.ProcessId)return false;try{using(var p=Process.GetProcessById(w.ProcessId))return p.StartTime.ToUniversalTime().Ticks==w.Started;}catch(ArgumentException){return false;}catch(System.ComponentModel.Win32Exception){return true;}}
     public static GroupWindow[] Windows(){
         var list=new List<GroupWindow>();int self=Process.GetCurrentProcess().Id;
         EnumWindows(delegate(IntPtr h,IntPtr unused){
             if(GroupLayoutPolicy.ShellSurface(Class(h)))return true;
-            if(!IsWindowVisible(h) || GetWindow(h,4)!=IntPtr.Zero || (GetWindowLongPtrW(h,-20).ToInt64()&0x80)!=0)return true;
+            long style=GetWindowLongPtrW(h,-20).ToInt64();if(!IsWindowVisible(h) || (GetWindow(h,4)!=IntPtr.Zero && (style&0x40000)==0) || (style&0x80)!=0)return true;
             uint pid;GetWindowThreadProcessId(h,out pid);if(pid==self)return true;
             int cloaked;DwmGetWindowAttribute(h,14,out cloaked,4);if(cloaked!=0)return true;
             var w=Identity(h);if(w!=null && !string.IsNullOrWhiteSpace(w.Title))list.Add(w);return true;
@@ -56,6 +68,7 @@ internal static class WindowShell {
     [DllImport("kernel32.dll")]private static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern bool QueryFullProcessImageNameW(IntPtr process,uint flags,StringBuilder path,ref int length);
     [DllImport("user32.dll")]private static extern bool EnumWindows(EnumProc callback,IntPtr parameter);
+    [DllImport("user32.dll")]private static extern bool IsChild(IntPtr parent,IntPtr child);
     [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")]public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")]private static extern bool IsIconic(IntPtr hwnd);

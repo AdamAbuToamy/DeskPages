@@ -58,6 +58,8 @@ internal sealed class GroupAddButton:Form {
     protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(e.Button!=MouseButtons.Left)return;armed=true;Capture=true;animation.Start();}
     protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);if(e.Button!=MouseButtons.Left)return;bool invoke=armed && ClientRectangle.Contains(e.Location);armed=false;Capture=false;animation.Start();if(invoke)add();}
     protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(!Capture && armed){armed=false;animation.Start();}}
+    public void KeepAbove(){if(IsHandleCreated && Visible)SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x13);}
+    [DllImport("user32.dll")]private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
     internal static Bitmap Surface(int width,int height,float pressed,bool over){
         var bitmap=new Bitmap(width,height,System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
         using(var g=Graphics.FromImage(bitmap)){
@@ -106,7 +108,7 @@ internal sealed class GroupDragGhost:Form {
     protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x080000A0;return p;}}
     public void Begin(GroupDragSource source){
         if(image!=null){image.Dispose();image=null;}
-        try{if(!string.IsNullOrEmpty(source.Windows[0].ImagePath))image=Icon.ExtractAssociatedIcon(source.Windows[0].ImagePath);}catch(Exception){}
+        try{if(source.Windows.Length>0 && !string.IsNullOrEmpty(source.Windows[0].ImagePath))image=Icon.ExtractAssociatedIcon(source.Windows[0].ImagePath);}catch(Exception){}
         if(image==null)image=(Icon)SystemIcons.Application.Clone();
     }
     public void Present(Point point){Location=new Point(point.X+12,point.Y-42);if(!Visible)Show();Invalidate();}

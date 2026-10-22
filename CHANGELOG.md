@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.24 — taskbar groups device trial
+
+- Separate drag ownership from window/shortcut metadata; tag own replay and support taskbar content islands.
+- Add a live-window selection command for group assignment.
+- Keep '+' visible when apps/fullscreen windows open, with persistent geometry fallback.
+- Add real low-level hook and picker-to-Shell assignment regressions and opt-in clipboard diagnostics.
+
 ## 0.8.23 — taskbar groups device trial
 
 - Fix disposed context-menu access during group deletion and helper shutdown.
