@@ -25,6 +25,18 @@ public sealed class DeskPagesHost : ApplicationContext
     private readonly Thread inputThread;
     private InputPump input;
     private bool busy;
+    private long displayRevision,layoutEditRevision,displayChangedAt;
+    private static bool monitorArrangementProtected;
+    private long nextMonitorCheck;
+    public static void ProtectMonitorArrangement(bool enabled){monitorArrangementProtected=enabled;}
+    private void DisplayChanged(){
+        Interlocked.Exchange(ref displayChangedAt,ElapsedMs());Interlocked.Increment(ref displayRevision);
+        Enqueue(9701);
+    }
+    public static long[] GetDisplaySignal(){
+        if(active==null)return new long[]{0,0,long.MaxValue,0};
+        return new long[]{Interlocked.Read(ref active.displayRevision),Interlocked.Read(ref active.layoutEditRevision),Math.Max(0,ElapsedMs()-Interlocked.Read(ref active.displayChangedAt)),CreationInputBusy?1:0};
+    }
     private DeskPagesSnapshotSession snapshots;
     private sealed class ContextClick {public int X,Y;public long At;}
     private ContextClick contextClick;
@@ -115,6 +127,8 @@ public sealed class DeskPagesHost : ApplicationContext
         menu=new ContextMenuStrip();
         var openEntry=menu.Items.Add("Open DeskPages",null,delegate{OpenPanel();});
         var settingsEntry=menu.Items.Add("Settings",null,delegate{DeskPagesWorkspaceApi.OpenSettings();});
+        var groupsEntry=menu.Items.Add("Taskbar groups · experimental",null,delegate{Enqueue(9760);});
+        menu.Opening+=delegate{groupsEntry.Text=DeskPagesWorkspaceApi.L("Taskbar groups · experimental","مجموعات التاسك بار · تجريبي","קבוצות בשורת המשימות · ניסיוני");};
         var common=new ToolStripMenuItem("Selected desktop icons");common.DropDownItems.Add("Show on every page",null,delegate{DeskPagesWorkspaceApi.PinSelected(true);});common.DropDownItems.Add("Show only on their page",null,delegate{DeskPagesWorkspaceApi.PinSelected(false);});menu.Items.Add(common);
         pagesMenu=new ToolStripMenuItem("Pages");menu.Items.Add(pagesMenu);
         var previousEntry=menu.Items.Add("Previous page",null,delegate{Enqueue(-1);});
@@ -168,6 +182,14 @@ public sealed class DeskPagesHost : ApplicationContext
 
             }
             if(busy || DeskPagesAnimation.IsVisible) return;
+            if(monitorArrangementProtected && ElapsedMs()>=nextMonitorCheck){
+                nextMonitorCheck=ElapsedMs()+500;
+                if(!CreationInputBusy && !DeskPagesLayout.IsLabelEditing()){
+                    busy=true;
+                    try{dispatch(9702);}catch(Exception ex){DeskPagesStartupGate.Log("display arrangement repair deferred: "+ex.Message);}
+                    finally{busy=false;}
+                }
+            }
             try{snapshots.Poll();}catch(Exception ex){DeskPagesStartupGate.Log("resource collector request: "+ex.Message);}
             if(dragMailbox!=null){
                 try{if(dragMailbox.Poll(currentPage,edgeDrag,knownPages.Length)){
@@ -245,7 +267,9 @@ public sealed class DeskPagesHost : ApplicationContext
         private readonly DeskPagesHost owner;
         public SessionWindow(DeskPagesHost host){owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});}
         protected override void WndProc(ref Message m){
-            if(m.Msg==0x7e || m.Msg==0x02e0){if(owner.snapshots!=null)owner.snapshots.Invalidate();owner.Enqueue(9701);}
+            if(m.Msg==0x7e || m.Msg==0x02e0 || (m.Msg==0x1a && m.WParam.ToInt64()==0x2f)){
+                owner.DisplayChanged();if(owner.snapshots!=null)owner.snapshots.Invalidate();
+            }
             if(m.Msg==0x1a || m.Msg==0x31a || m.Msg==0x320 || m.Msg==0x218 || m.Msg==0x11){if(owner.snapshots!=null)owner.snapshots.Invalidate();}
             if(m.Msg==0x11){m.Result=owner.session.Query()?new IntPtr(1):IntPtr.Zero;return;}
             if(m.Msg==0x16){owner.EndSession(m.WParam!=IntPtr.Zero,m.LParam.ToInt64());m.Result=IntPtr.Zero;return;}
@@ -311,7 +335,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.19\r\n"+active.hidStatus+
+        return "Build: 0.8.28\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -330,6 +354,7 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     protected override void ExitThreadCore()
     {
+        try{using(var stopGroups=EventWaitHandle.OpenExisting("Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value))stopGroups.Set();}catch(WaitHandleCannotBeOpenedException){}
         DeskPagesWorkspaceApi.CheckUpdatesAction=null;if(updates!=null){updates.Dispose();updates=null;}
         DeskPagesWorkspaceApi.Close();
         if(snapshots!=null){snapshots.Dispose();snapshots=null;}
@@ -412,6 +437,7 @@ public sealed class DeskPagesHost : ApplicationContext
         private readonly DeskPagesTouchpad touchpad=new DeskPagesTouchpad();
         private Point dragStart;
         private bool dragging;
+        private long dragDisplayRevision;
         private readonly HashSet<uint> swallowed=new HashSet<uint>();
         public InputPump(DeskPagesHost host)
         {
@@ -457,6 +483,7 @@ public sealed class DeskPagesHost : ApplicationContext
             // Low-level and Raw Input may deliver the same physical click.
             if(now-lastContextAt<250)return;
             lastContextAt=now;
+            if(now-Interlocked.Read(ref owner.displayChangedAt)>=1000)Interlocked.Increment(ref owner.layoutEditRevision);
             Interlocked.Exchange(ref owner.contextClick,new ContextClick{X=point.X,Y=point.Y,At=now});
         }
         private IntPtr OnMouse(int code,IntPtr message,IntPtr data)
@@ -470,10 +497,11 @@ public sealed class DeskPagesHost : ApplicationContext
                 if(msg==0x204)RememberContext(md.Position);
                 if((md.Flags&1)==0) {
                     bool onDesktop=DesktopAt(md.Position);
-                    if(msg==0x201 && onDesktop) {dragStart=md.Position;dragging=true;}
+                    if(msg==0x201 && onDesktop) {dragStart=md.Position;dragging=true;dragDisplayRevision=Interlocked.Read(ref owner.displayRevision);}
                     if(msg==0x202 && dragging) {
                         dragging=false;
                         if(Math.Abs(md.Position.X-dragStart.X)+Math.Abs(md.Position.Y-dragStart.Y)>6 && onDesktop){
+                            if(dragDisplayRevision==Interlocked.Read(ref owner.displayRevision) && ElapsedMs()-Interlocked.Read(ref owner.displayChangedAt)>=1000)Interlocked.Increment(ref owner.layoutEditRevision);
                             owner.checkpoints.Changed(ElapsedMs());
                         }
                     }
@@ -563,6 +591,9 @@ public sealed class DeskPagesHost : ApplicationContext
             public Receiver(InputPump pump) {owner=pump;CreateHandle(new CreateParams {Caption="DeskPages input"});}
             protected override void WndProc(ref Message message)
             {
+                // This input STA continues receiving display broadcasts while
+                // the main STA is restoring/settling an Explorer layout.
+                if(message.Msg==0x7e || message.Msg==0x02e0 || (message.Msg==0x1a && message.WParam.ToInt64()==0x2f))owner.owner.DisplayChanged();
                 if(message.Msg==0x10) {owner.ExitThread();return;}
                 if(message.Msg==0x11) {owner.owner.Enqueue(9100);message.Result=new IntPtr(1);return;}
                 if(message.Msg==0xFF) owner.Raw(message.LParam);
@@ -585,14 +616,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.19 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.28 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.19 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.28 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }

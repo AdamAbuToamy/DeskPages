@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.19.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.28.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -338,6 +338,17 @@ try {
             }
             elseif ($Code -eq 9700) {[DeskPagesWorkspaceApi]::Open()}
             elseif ($Code -eq 9701) {Sync-DpMonitorProfile}
+            elseif ($Code -eq 9702) {
+                if(-not $script:DpSuspended -and -not $script:DpEdgeDrag -and -not $script:DpNewItemContext -and -not (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){
+                    Sync-DpMonitorProfile
+                    Connect-DpDesktop
+                    $null=Protect-DpMonitorArrangement -Page ([int]$script:DpState.Current) -Icons @([OriginalDesktopReader]::Read($script:originalDesktop))
+                }
+            }
+            elseif ($Code -eq 9760) {
+                Connect-DpDesktop
+                $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
+            }
             elseif ($Code -eq 9600) { . (Join-Path $script:base 'EdgeDrag.ps1'); Invoke-DpEdgeRequest }
             elseif ($Code -eq 9401) {
                 Start-Process explorer.exe -ArgumentList ('"'+[Environment]::GetFolderPath('Desktop')+'"')
@@ -402,9 +413,9 @@ try {
         } catch {
             Write-DpLog ([string]$_)
             if($Code -in @(9500,9501)){Stop-DpNewItemPlacement}
-            elseif ($Code -ne 9100 -and $Code -ne 9300 -and $Code -ne 9750) {[DeskPagesHost]::ShowError([string]$_)}
+            elseif ($Code -notin @(9100,9300,9750,9701,9702)) {[DeskPagesHost]::ShowError([string]$_)}
         } finally {
-            if($Code -notin @(9500,9501,9750)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
+            if($Code -notin @(9500,9501,9750,9702)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
         }
     }
     $script:hostReady=$true
@@ -426,6 +437,12 @@ try {
             [DeskPagesHost]::ConfigureDragSession($dragToken)
         }
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
+    try{
+        $groupsEnabled=Join-Path $env:LOCALAPPDATA 'DeskPages\TaskbarGroups\enabled.txt'
+        if((Test-Path -LiteralPath $groupsEnabled) -and [IO.File]::ReadAllText($groupsEnabled).Trim() -eq 'on'){
+            $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
+        }
+    }catch{Write-DpLog ('Taskbar groups could not start: '+[string]$_)}
     [DeskPagesHost]::Run($action)
 }
 catch {

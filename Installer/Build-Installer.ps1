@@ -14,6 +14,7 @@ try {
     & (Join-Path $root 'Guard\Build.ps1')
     & (Join-Path $root 'Interaction\Build.ps1')
     & (Join-Path $root 'Interaction\Build-Rescue.ps1')
+    & (Join-Path $root 'Interaction\Build-Groups.ps1')
     & (Join-Path $PSHOME 'powershell.exe') -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $root 'Tests\Run-Validation.ps1')
     if($LASTEXITCODE -ne 0){throw 'Workspace/regression release validation failed.'}
     $cert=$null
@@ -31,7 +32,7 @@ try {
     }
     foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll') -and $_.FullName -notlike ($OutputDirectory+'\*')}){Sign-ReleaseFile $file.FullName}
     . (Join-Path $root 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $root -Version ([Version]'0.8.19.0')
+    Assert-DpPackage -Root $root -Version ([Version]'0.8.28.0')
     $payload=Join-Path $work 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem

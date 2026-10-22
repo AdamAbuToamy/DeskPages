@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.8.26 · Native taskbar drag trial
+
+Pass ordinary taskbar clicks and reordering directly to Windows. Transfer a drag only when it enters a numbered group, assign on release without a hold timer or automatic picker, and resume native reordering when leaving the group. Includes the primary display fixes from 0.8.25.
+
+## 0.8.25 · Primary display trial
+
+Keep page icons on the primary display across hotplug and profile restoration; prevent secondary spillover from being saved or becoming cross-page visibility. Preserve file membership and permanent user pins.
+
+## 0.8.24 — taskbar groups device trial
+
+- Separate drag ownership from window/shortcut metadata; tag own replay and support taskbar content islands.
+- Add a live-window selection command for group assignment.
+- Keep '+' visible when apps/fullscreen windows open, with persistent geometry fallback.
+- Add real low-level hook and picker-to-Shell assignment regressions and opt-in clipboard diagnostics.
+
+## 0.8.23 — taskbar groups device trial
+
+- Fix disposed context-menu access during group deletion and helper shutdown.
+- Show '+' from native taskbar geometry while accessibility starts; redraw on reshow.
+- Retain valid taskbar geometry when a UIA control disappears.
+
+## 0.8.22 — taskbar groups device trial
+
+- Reject empty group window restoration before showing a normal client window.
+- Own live-app drags before Explorer reorders group targets; leave group drags native.
+- Add an app-icon drag ghost, bounded native click/reorder replay, stale-region rejection and cancellation checks.
+
+## 0.8.21 — taskbar groups device trial
+
+- Make newly created numbered groups eligible for native taskbar buttons.
+- Use a translucent white add button with press/release animation.
+- Clean up failed group creation and cover native window eligibility and button alpha in Windows validation.
+
+## 0.8.20 Alpha - taskbar groups experiment
+
+- Optional native numbered taskbar groups for currently running windows, with a separate add button near weather.
+- Dwell before drop, native preview member extraction, automatic removal of previously populated empty groups, and exact original property restoration.
+- Independent journal guardian and new Windows cross-process recovery fixtures; hardware taskbar acceptance remains pending.
+
 ## 0.8.19 Alpha
 
 - Keep the drag helper alive when an agent acknowledgement takes more than eight seconds; cancel the obsolete drag after its reply without replaying the command.

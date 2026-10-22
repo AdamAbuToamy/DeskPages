@@ -58,6 +58,10 @@ function Start-DpNewItemPlacement {
     # Auto-arrange menu state on an empty page is not a prerequisite.
     # Do not change any Explorer sort/arrange preference here.
     $geometry=[DeskPagesLayout]::ContextGeometry($point[0],$point[1])
+    if($script:DpState.PSObject.Properties['Workspace'] -and $script:DpState.Workspace.PrimaryOnly){
+        $primary=@(Get-DpPageScreens)[0]
+        $geometry=[int[]]@($geometry[0],$geometry[1],$primary.Left,$primary.Top,$primary.Right,$primary.Bottom)
+    }
     $icons=@(Read-DpVisibleIcons)
     Assert-DpPageView -Page ([int]$script:DpState.Current) -Icons $icons
     $baseline=@{};foreach($icon in $icons){$baseline[[string]$icon.Key]=$true}

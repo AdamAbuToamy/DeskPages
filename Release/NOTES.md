@@ -1,7 +1,28 @@
-# DeskPages 0.8.19 Alpha
+# 0.8.28 monitor attachment arrangement protection trial
 
-- Fix edge dragging becoming unavailable for the rest of the session after an agent reply takes more than eight seconds. Keep the original request ID until acknowledgement, then safely cancel the obsolete drag without replaying navigation.
-- Move minimal mouse/Escape hooks off the OLE/UI thread and recover missed mouse presses by polling. Real Explorer OLE file data and agent validation still gate all page and membership changes.
-- Preserve 0.8.18 name-only pin labels, Windows Shell icons, the live memory indicator and automatic update notifications.
+Primary-only pages retain their current arrangement instead of loading a stale layout from a prior monitor configuration. Display broadcasts are tracked separately from monitor geometry so fast unplug/replug cycles with identical final geometry are detected. Geometry settles before conversion.
 
-Windows fixtures exercise the actual drag broker with a delayed navigation reply, one acknowledgement, cancellation and a subsequent drag request. Physical Explorer/touchpad testing remains separate from these automated fixtures.
+After display changes the saved page remains authoritative, including delayed Explorer rearrangements inside the primary display. A lightweight reconciliation check repairs these changes without saving them as user edits. A completed desktop drag or deliberate desktop context action releases protection so manual arrangement remains available. Held drags are neither restored nor saved. Display changes during layout capture block that write.
+
+Validation includes stale profile reuse, long-delayed in-bounds reflow, shifted origins, same-key display roundtrips, held/completed manual drags, and display events during capture. Fixtures simulate Explorer and input; physical monitor behavior still requires device testing. Trial only.
+
+# 0.8.27 icon arrangement preservation trial
+
+Preserves valid hand-arranged icon positions during page restoration and display changes, including close spacing and shifted desktop origins. Only out-of-bounds icons are fitted after reserving all existing positions. Verifies repaired coordinates before saving.
+
+An animation failure after a successful page commit now ends the cover without refreshing/reapplying the desktop or showing a transition error. Existing layout history is retained; previous arrangements are not guessed or automatically overwritten.
+
+Includes the 0.8.26 native taskbar dragging changes. Windows CI uses simulated Explorer adapters for layout assertions; physical monitor and touchpad validation remains a device test.
+
+# 0.8.26 native taskbar dragging and primary display trial
+
+- Page icons stay on the primary display after connecting, disconnecting or changing displays. Existing installations migrate to Main display only once; the setting can still be changed explicitly.
+- Display profiles are revalidated against the primary work area, including shifted Explorer coordinates, mixed sizes and a changed primary display. A full primary display does not spill onto another display.
+- Displaced icons no longer become shared icons across every page. Permanent user pins and file membership remain intact.
+- Before saving, delayed Explorer spillover is repaired using the last saved positions. New-file placement and pin/membership layout planning also stay within the primary display.
+- Ordinary taskbar clicks and app reordering remain native from press through release. Only entering a numbered group transfers the drag; leaving it resumes native movement while held.
+- Dropping on a group assigns immediately, with no long green-light wait and no automatic picker. Resolve the original source AppID after native movement; exact executable-path Shell identities are supported.
+- Keep + visible over applications. The open-app picker remains an explicitly invoked menu command.
+- Windows 11 physical taskbar/trackpad gestures and physical monitor hotplug still need device testing.
+
+Trial build only; no public release.

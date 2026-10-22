@@ -58,6 +58,9 @@ function Assert-DpPackage {
     $rescue=Join-Path $Root 'DeskPagesRescue.exe'
     $null=Read-DpPortableExecutable -Path $rescue -Machine 0x8664 -Managed
     Assert-DpManagedIdentity -Path $rescue -Name 'DeskPagesRescue' -Version $Version
+    $groups=Join-Path $Root 'DeskPagesGroups.exe'
+    $null=Read-DpPortableExecutable -Path $groups -Machine 0x8664 -Managed
+    Assert-DpManagedIdentity -Path $groups -Name 'DeskPagesGroups' -Version $Version
     $runtime=Join-Path $Root 'Bin/DeskPagesNative.dll'
     $null=Read-DpPortableExecutable -Path $runtime -Managed
     Assert-DpManagedIdentity -Path $runtime -Name 'DeskPagesNative'

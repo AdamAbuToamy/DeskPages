@@ -14,6 +14,10 @@ Published installer and source: **0.8.19 Alpha**.
 
 You only need the EXE installer. Release notes, source and SHA-256 checksums are available under [Releases](https://github.com/AdamAbuToamy/DeskPages/releases). This Alpha is unsigned; Windows may display an unknown-publisher or SmartScreen warning.
 
+## What's new in 0.8.20 (experimental)
+
+Optional **Taskbar groups** from the DeskPages tray menu organize currently running windows under native numbered taskbar buttons. The add button appears near weather; hover uses Windows previews. This preview requires device testing before release. See [taskbar experiment](Release/TASKBAR-GROUPS.md).
+
 ## What's new in 0.8.19
 
 - Edge dragging stays available after a delayed agent reply, with safe cancellation and no replayed navigation.

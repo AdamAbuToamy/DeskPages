@@ -2,58 +2,129 @@
 $base=Split-Path $PSScriptRoot -Parent
 Add-Type -Path (Join-Path $base 'Native/DeskPagesPageNames.cs')
 Add-Type @'
-public sealed class TestSpacing {public int X=80,Y=100;}
-public static class DeskPagesLayout {public static TestSpacing Spacing(object value){return new TestSpacing();}}
+public sealed class ScopeSpacing {public int X=80,Y=100;}
+public delegate void ScopeRestore(string[] ids,int[] xs,int[] ys);
+public static class DeskPagesLayout {
+ public static ScopeRestore Apply;
+ public static ScopeSpacing Spacing(object value){return new ScopeSpacing();}
+ public static int Restore(object value,string[] ids,int[] xs,int[] ys){Apply(ids,xs,ys);return ids.Length;}
+}
+public static class OriginalDesktopReader {public static object[] Icons;public static object[] Read(object value){return Icons;}}
+public static class DeskPagesAnimation {public static bool IsVisible {get{return false;}}}
 '@
 . (Join-Path $base 'StateEngine.ps1');. (Join-Path $base 'Workspace.ps1');. (Join-Path $base 'WorkspaceCommands.ps1');. (Join-Path $base 'NewItemPlacement.ps1')
 function Assert($Pass,$Reason){if(-not $Pass){throw $Reason}}
-# Isolated fixture identity on every OS; no production COM/native type is loaded.
-function Get-DpWorkspaceIdentity {param([string]$Path) if(Test-Path -LiteralPath $Path){return [IO.File]::GetCreationTimeUtc($Path).Ticks.ToString()};return ''}
 function Get-DpMonitorGeometry {return $script:screens}
-$temp=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-monitor-'+[guid]::NewGuid().ToString('N'))
+function Get-DpWorkspaceIdentity {param([string]$Path) return [IO.File]::GetCreationTimeUtc($Path).Ticks.ToString()}
+function Save-DpVerifiedSourceLayout {param($Page)}
+function Publish-DpWorkspacePreferences {}
+function Write-DpLog {param($Message)}
+function Resume-DpCommittedPage {
+ $script:visible=@($script:DpState.Items | Where-Object {Test-DpItemVisible $_ ([int]$script:DpState.Current)} | ForEach-Object {$_.Path})
+}
+$temp=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-primary-'+[guid]::NewGuid().ToString('N'))
 try{
- $script:DpDesktop=Join-Path $temp 'Desktop';$script:DpPublic=Join-Path $temp 'Public';$script:DpStore=Join-Path $temp 'Store';$script:DpManifest=Join-Path $script:DpStore 'pages.xml';$script:DpLayoutStore=Join-Path $temp 'Layouts'
+ $script:DpDesktop=Join-Path $temp 'Desktop';$script:DpPublic=Join-Path $temp 'Public';$script:DpStore=Join-Path $temp 'Store';$script:DpLayoutStore=Join-Path $temp 'Layouts';$script:DpManifest=Join-Path $script:DpStore 'pages.xml'
  New-Item -ItemType Directory -Force $script:DpDesktop,$script:DpPublic,$script:DpStore,$script:DpLayoutStore | Out-Null
- $a=Join-Path $script:DpDesktop 'primary.txt';$b=Join-Path $script:DpDesktop 'secondary.txt';$c=Join-Path $script:DpPublic 'other-page.txt'
- foreach($file in @($a,$b,$c)){[IO.File]::WriteAllText($file,'payload must never move or change')}
- $hashes=@{};foreach($file in @($a,$b,$c)){$hashes[$file]=(Get-FileHash $file).Hash}
- $script:DpState=[PSCustomObject]@{Desktop=$script:DpDesktop;Current=1;Pages=@(1,2,3);PageCount=3;Items=@([PSCustomObject]@{Path=$a;Page=1},[PSCustomObject]@{Path=$b;Page=1},[PSCustomObject]@{Path=$c;Page=2});SystemIconBackup=@()}
+ $a=Join-Path $script:DpDesktop 'a.txt';$b=Join-Path $script:DpPublic 'b.txt'
+ foreach($f in @($a,$b)){[IO.File]::WriteAllText($f,'unchanged bytes and path')}
+ $hash=(Get-FileHash $b).Hash
+ $script:DpState=[PSCustomObject]@{Desktop=$script:DpDesktop;Current=1;Pages=@(1,2,3);PageCount=3;Items=@([PSCustomObject]@{Path=$a;Page=1},[PSCustomObject]@{Path=$b;Page=2;Pinned=$true});SystemIconBackup=@()}
  Initialize-DpWorkspace
- $script:DpState.Workspace.PrimaryOnly=$true
+ Assert ($script:DpState.Workspace.PrimaryOnly) 'Upgrade must enable primary confinement.'
+ $w=$script:DpState.Workspace
+ $w.SecondaryIcons=@([PSCustomObject]@{Key=$a;Name='a';X=2017;Y=2})
+ Assert (-not(Test-DpSecondaryKey $a)) 'Legacy displaced icon became shared across pages.'
+ Assert (-not(Test-DpItemVisible $script:DpState.Items[0] 2)) 'Hotplug altered page visibility.'
+ Assert (Test-DpItemVisible $script:DpState.Items[1] 3) 'Permanent user pin was lost.'
  $count=0
  foreach($scale in @(1,1.25,1.5,2,2.5)){
-  foreach($direction in @(-1,1)){
-   $w=[int](1920*$scale);$h=[int](1080*$scale);$left=0;if($direction -lt 0){$left=-$w}
-   $script:screens=@([PSCustomObject]@{Device='main';Left=0;Top=0;Right=$w;Bottom=$h;Primary=$true},[PSCustomObject]@{Device='second';Left=($direction*$w);Top=-200;Right=($direction*$w+$w);Bottom=($h-200);Primary=$false});$script:DpScopeScreens=$script:screens
-   $icons=@([PSCustomObject]@{Key=$a;Name='primary';X=17;Y=2},[PSCustomObject]@{Key=$b;Name='secondary';X=($direction*$w+17);Y=2})
-   $script:DpState.Workspace.SecondaryIcons=@(Get-DpSecondaryIcons $icons $script:screens)
-   Assert (@($script:DpState.Workspace.SecondaryIcons).Count -eq 1) 'Secondary selection failed.'
-   foreach($page in @(1,2,3,2,1)){
-    Assert (Test-DpItemVisible $script:DpState.Items[1] $page) 'Secondary visibility changed with page.'
-    Assert ((Test-DpItemVisible $script:DpState.Items[0] $page) -eq ($page -eq 1)) 'Primary membership wrong.'
-    $saved=@([PSCustomObject]@{Key=$b;Name='secondary';X=1;Y=100},[PSCustomObject]@{Key=$c;Name='other';X=($direction*$w+100);Y=102})
-    $targets=@(Get-DpScopedLayoutIcons $saved @());$stationary=@($targets | Where-Object Key -eq $b)[0];$paged=@($targets | Where-Object Key -eq $c)[0]
-    Assert ($stationary.X -eq $icons[1].X -and $stationary.Y -eq 2) 'Page-specific layout moved secondary icon.'
-    Assert ($paged.X -ge 0 -and $paged.X -lt $w) 'Page icon was not fitted onto Primary.'
-    $script:DpState.Current=$page;Save-DpState;$script:DpState=Read-DpManifest $script:DpManifest
-    Assert (Test-DpItemVisible $script:DpState.Items[1] $page) 'Reload lost display scope.';$count++
+  foreach($side in @(-1,1)){
+   $width=[int](1920*$scale);$height=[int](1080*$scale)
+   # Explorer client origin shifts when the new display is to the left or above.
+   $offset=0;if($side -lt 0){$offset=$width}
+   $main=[PSCustomObject]@{Device='main';Left=$offset;Top=200;Right=($offset+$width);Bottom=($height+200);Primary=$true}
+   $second=[PSCustomObject]@{Device='second';Left=($offset+$side*$width);Top=0;Right=($offset+$side*$width+$width);Bottom=$height;Primary=$false}
+   $script:screens=@($main,$second)
+   foreach($page in @(1,2,3)){
+    $icons=@([PSCustomObject]@{Key=$a;Name='a';X=($second.Left+17);Y=2},[PSCustomObject]@{Key=$b;Name='b';X=($second.Left+100);Y=102})
+    $layout=[PSCustomObject]@{Page=$page;Icons=$icons}
+    $converted=@(Convert-DpMonitorLayouts @($layout) @($second) $script:screens 80 100)
+    foreach($icon in $converted[0].Icons){Assert ($icon.X -ge $main.Left -and $icon.Y -ge $main.Top -and $icon.X+80 -le $main.Right -and $icon.Y+100 -le $main.Bottom) 'Conversion spilled onto the attached display.'}
+    $scoped=@(Get-DpScopedLayoutIcons $icons @())
+    foreach($icon in $scoped){Assert ($icon.X -ge $main.Left -and $icon.X+80 -le $main.Right -and $icon.Y -ge $main.Top -and $icon.Y+100 -le $main.Bottom) 'Restore retained secondary coordinates.'}
+    Write-DpAtomicXml (Join-Path $script:DpLayoutStore "page-$page.xml") $layout
+    $count++
    }
-   $script:DpScopeScreens=@($script:screens[0]);Assert (-not(Test-DpSecondaryKey $b)) 'Unplugged display left shared icons outside screen.'
-   $targets=@(Get-DpScopedLayoutIcons @([PSCustomObject]@{Key=$b;Name='secondary';X=($direction*$w+17);Y=2}) @());$target=@($targets | Where-Object Key -eq $b)[0]
-   # The adapter reports the unplugged geometry just as Windows would.
-   $previous=$script:screens;$script:screens=$script:DpScopeScreens
-   $targets=@(Get-DpScopedLayoutIcons @([PSCustomObject]@{Key=$b;Name='secondary';X=($direction*$w+17);Y=2}) @());$target=@($targets | Where-Object Key -eq $b)[0]
-   Assert ($target.X -ge 0 -and $target.X -lt $w) 'Disconnected icon was not reflowed.'
-   $script:screens=$previous;$script:DpScopeScreens=$previous;Assert (Test-DpSecondaryKey $b) 'Replug lost stationary membership.'
+   # Real profile journal, hotplug, unplug, replug, changed primary display.
+   $w.MonitorKey='';Sync-DpMonitorProfile
+   $key=$script:DpState.Workspace.MonitorKey
+   foreach($layout in (Get-DpWorkspaceSnapshot).Layouts){foreach($icon in $layout.Icons){Assert ($icon.X -ge $main.Left -and $icon.X+80 -le $main.Right) 'Committed profile escaped Primary.'}}
+   $script:screens=@($main);Sync-DpMonitorProfile
+   $script:screens=@($main,$second);Sync-DpMonitorProfile
+   Assert ($script:DpState.Workspace.MonitorKey -eq $key) 'Replug did not select the same profile.'
+   $main.Primary=$false;$second.Primary=$true;Sync-DpMonitorProfile
+   foreach($layout in (Get-DpWorkspaceSnapshot).Layouts){foreach($icon in $layout.Icons){Assert ($icon.X -ge $second.Left -and $icon.X+80 -le $second.Right -and $icon.Y -ge $second.Top -and $icon.Y+100 -le $second.Bottom) 'Changed primary was ignored.'}}
+   $main.Primary=$true;$second.Primary=$false
+   $w=$script:DpState.Workspace
   }
  }
- $key1=Get-DpMonitorKey;$script:screens[0].Primary=$false;$script:screens[1].Primary=$true;$key2=Get-DpMonitorKey;Assert ($key1 -ne $key2) 'Changing the primary display did not select a distinct profile.';$script:screens[0].Primary=$true;$script:screens[1].Primary=$false
- $previousIcons=@($script:DpState.Workspace.SecondaryIcons);$second=$script:screens[1]
- $script:DpState.Workspace.SecondaryIcons=@([PSCustomObject]@{Key='::{26EE0668-A00A-44D7-9371-BEB064C98683}';Name='Control Panel';X=($second.Left+17);Y=2})
- Assert (Test-DpSecondarySystem '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}') 'Secondary Control Panel alias was not retained.';$script:DpState.Workspace.SecondaryIcons=$previousIcons
- $before=(@($script:DpState.Items | ForEach-Object {$_.Path+'|'+$_.Page}) -join ';')
- $script:DpState.Workspace.PrimaryOnly=$false;Assert (-not(Test-DpItemVisible $script:DpState.Items[1] 2)) 'Disabling scope changed permanent pins.'
- foreach($file in @($a,$b,$c)){Assert ((Test-Path $file) -and (Get-FileHash $file).Hash -eq $hashes[$file]) 'File content/path changed.'}
- Assert ($before -eq (@($script:DpState.Items | ForEach-Object {$_.Path+'|'+$_.Page}) -join ';')) 'Scope changed page ownership.'
- Write-Host "PASS: $count primary-only page/reload scenarios, left/right monitors, negative origins, 5 pixel scales, secondary coordinates, unplug/replug, unchanged real file bytes and membership. Explorer adapter simulated."
+ # A hand-arranged layout can be tighter than grid spacing. Neither repeated
+ # profile reuse nor restoration may relocate those existing coordinates.
+ $main=[PSCustomObject]@{Device='main';Left=0;Top=0;Right=1920;Bottom=1080;Primary=$true}
+ $second=[PSCustomObject]@{Device='second';Left=1920;Top=0;Right=3840;Bottom=1080;Primary=$false}
+ $script:screens=@($main,$second)
+ $dense=@([PSCustomObject]@{Key='z';X=17;Y=12},[PSCustomObject]@{Key='a';X=60;Y=62},[PSCustomObject]@{Key='m';X=100;Y=112},[PSCustomObject]@{Key='edge';X=1860;Y=1000})
+ $denseLayout=[PSCustomObject]@{Page=1;Icons=$dense}
+ for($repeat=0;$repeat -lt 10;$repeat++){
+   $converted=@(Convert-DpMonitorLayouts @($denseLayout) @($main) $script:screens 80 100)[0]
+   $scoped=@(Get-DpScopedLayoutIcons $converted.Icons @())
+   foreach($icon in $dense){$found=@($scoped | Where-Object Key -eq $icon.Key)[0];Assert ($found.X -eq $icon.X -and $found.Y -eq $icon.Y) 'An existing free-form icon was reflowed.'}
+   $denseLayout=$converted
+ }
+ $larger=[PSCustomObject]@{Device='main';Left=1920;Top=200;Right=4480;Bottom=1640;Primary=$true}
+ $translated=@(Convert-DpMonitorLayouts @($denseLayout) @($main) @($larger) 80 100)[0]
+ foreach($icon in $dense){$found=@($translated.Icons | Where-Object Key -eq $icon.Key)[0];Assert ($found.X -eq $icon.X+1920 -and $found.Y -eq $icon.Y+200) 'Origin/size change scaled a valid local offset.'}
+ # An early out-of-bounds icon must not steal a later valid icon's position.
+ $mixed=[PSCustomObject]@{Page=1;Icons=@([PSCustomObject]@{Key='off';X=-500;Y=-500},[PSCustomObject]@{Key='kept';X=0;Y=0})}
+ $reserved=@(Convert-DpMonitorLayouts @($mixed) @() @($main) 80 100)[0]
+ $kept=@($reserved.Icons | Where-Object Key -eq 'kept')[0]
+ Assert ($kept.X -eq 0 -and $kept.Y -eq 0) 'Spillover displaced a valid primary icon.'
+ Write-Host 'PASS: repeated free-form restore, close spacing, shifted origins, resized primary and spillover preserve valid coordinates exactly.'
+ # Full Primary cannot fall back to an empty secondary screen.
+ $script:screens=@([PSCustomObject]@{Device='tiny';Left=0;Top=0;Right=80;Bottom=100;Primary=$true},[PSCustomObject]@{Device='big';Left=80;Top=0;Right=2000;Bottom=1080;Primary=$false})
+ $before=(Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash
+ $failed=$false;try{Convert-DpMonitorLayouts @([PSCustomObject]@{Page=1;Icons=@([PSCustomObject]@{X=0;Y=0},[PSCustomObject]@{X=100;Y=0})}) @() $script:screens 80 100}catch{$failed=$true}
+ Assert ($failed -and (Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash -eq $before) 'Overflow used secondary or overwrote saved layout.'
+ Assert ((Get-FileHash $b).Hash -eq $hash -and $script:DpState.Items[1].Page -eq 2 -and $script:DpState.Items[1].Pinned) 'Hotplug mutated bytes, membership or permanent pins.'
+ # Exercise the real autosave guard against a delayed Explorer rearrangement.
+ . (Join-Path $base 'Layouts.ps1')
+ function Connect-DpDesktop {}
+ $script:screens=@([PSCustomObject]@{Device='main';Left=0;Top=0;Right=1920;Bottom=1080;Primary=$true},[PSCustomObject]@{Device='second';Left=1920;Top=0;Right=3840;Bottom=1080;Primary=$false})
+ $script:DpState.Current=1;$script:DpState.Workspace.MonitorKey=Get-DpMonitorKey
+ $icons=@([PSCustomObject]@{Id='a';Key=$a;Name='a';X=17;Y=2},[PSCustomObject]@{Id='b';Key=$b;Name='b';X=200;Y=202})
+ Write-DpAtomicXml (Join-Path $script:DpLayoutStore 'page-1.xml') ([PSCustomObject]@{Page=1;Icons=$icons})
+ [OriginalDesktopReader]::Icons=Copy-DpData $icons
+ [OriginalDesktopReader]::Icons[0].X=2100
+ [DeskPagesLayout]::Apply=[ScopeRestore]{param($ids,$xs,$ys)
+   for($i=0;$i -lt $ids.Length;$i++){foreach($icon in [OriginalDesktopReader]::Icons){if($icon.Id -eq $ids[$i]){$icon.X=$xs[$i];$icon.Y=$ys[$i]}}}
+ }
+ Save-DpPageLayout 1
+ $saved=Import-Clixml (Join-Path $script:DpLayoutStore 'page-1.xml')
+ Assert (@($saved.Icons | Where-Object {$_.X -ge 1920}).Count -eq 0) 'Autosave persisted delayed secondary spillover.'
+ Assert (@($saved.Icons | Where-Object {$_.Key -eq $a})[0].X -eq 17) 'Displaced icon did not recover its saved coordinate.'
+ Assert (@($saved.Icons | Where-Object {$_.Key -eq $b})[0].X -eq 200) 'Repair moved an unaffected primary icon.'
+ $hashBefore=(Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash
+ [OriginalDesktopReader]::Icons[0].X=2200
+ [DeskPagesLayout]::Apply=[ScopeRestore]{param($ids,$xs,$ys)}
+ $failed=$false;try{Save-DpPageLayout 1}catch{$failed=$true}
+ Assert ($failed -and (Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash -eq $hashBefore) 'Explorer rejection overwrote trusted layout.'
+ # Being inside Primary is insufficient: reject a different arrangement too.
+ [DeskPagesLayout]::Apply=[ScopeRestore]{param($ids,$xs,$ys)
+   foreach($icon in [OriginalDesktopReader]::Icons){$icon.X=400;$icon.Y=400}
+ }
+ $failed=$false;try{Save-DpPageLayout 1}catch{$failed=$true}
+ Assert ($failed -and (Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash -eq $hashBefore) 'In-bounds shell rearrangement replaced trusted coordinates.'
+ Write-Host 'PASS: real autosave repairs delayed spillover, retains trusted/unaffected coordinates, and preserves saved bytes if Explorer rejects placement.'
+ Write-Host "PASS: $count primary page cases, five scales, both sides/shifted origins, real profile commits, unplug/replug/primary changes, legacy metadata, overflow preservation and user pins. Explorer adapter simulated."
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}

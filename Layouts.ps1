@@ -1,11 +1,17 @@
 ﻿function Save-DpPageLayout {
     param([int]$Page)
     if ($script:DpSuspended) {return}
+    if($script:DpMonitorProtection -and (Get-DpDisplaySignal)[3] -eq 1){return}
     if (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml')) {throw 'Cannot save a layout during an incomplete transition.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Locked) -and (Test-Path -LiteralPath (Join-Path $script:DpLayoutStore "page-$Page.xml"))){Restore-DpPageLayout $Page}
+    if((Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue) -and -not $script:DpMonitorSyncBusy){Sync-DpMonitorProfile}
+    $displaySignal=$null
+    if(Get-Command Get-DpDisplaySignal -ErrorAction SilentlyContinue){$displaySignal=Get-DpDisplaySignal}
     Connect-DpDesktop
     $icons = @([OriginalDesktopReader]::Read($script:originalDesktop))
     Assert-DpPageView -Page $Page -Icons $icons
+    if(Get-Command Protect-DpMonitorArrangement -ErrorAction SilentlyContinue){$icons=@(Protect-DpMonitorArrangement -Page $Page -Icons $icons)}
+    if(Get-Command Repair-DpPrimaryPlacement -ErrorAction SilentlyContinue){$icons=@(Repair-DpPrimaryPlacement -Page $Page -Icons $icons)}
     if((Get-Command Sync-DpSecondaryIcons -ErrorAction SilentlyContinue) -and -not(Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){Sync-DpSecondaryIcons $icons}
     if (-not $script:DpLastLayoutSignature) {$script:DpLastLayoutSignature=@{}}
     $signature=($icons | Sort-Object -Property @('Key','Name') | ForEach-Object {"$($_.Key)|$($_.Name)|$($_.X)|$($_.Y)"}) -join "`n"
@@ -13,7 +19,11 @@
     if ($script:DpLastLayoutSignature.ContainsKey($Page) -and
         $script:DpLastLayoutSignature[$Page] -eq $signature -and
         (Test-Path -LiteralPath $path)) {return}
+    if($script:DpState.PSObject.Properties['Workspace'] -and $script:DpState.Workspace.MonitorKey -and -not $script:DpMonitorSyncBusy){
+        if((Get-DpMonitorKey) -ne $script:DpState.Workspace.MonitorKey){throw 'Display geometry changed; layout saving is blocked.'}
+    }
     $snapshot = [PSCustomObject]@{Page=$Page; SavedAt=[DateTime]::UtcNow; Icons=$icons}
+    if($null -ne $displaySignal -and (Get-DpDisplaySignal)[0] -ne $displaySignal[0]){throw 'Display changed during layout capture; layout saving is blocked.'}
     $history=Join-Path $script:DpLayoutStore 'History'
     New-Item -ItemType Directory -Path $history -Force | Out-Null
     if (Test-Path -LiteralPath $path) {
@@ -21,6 +31,29 @@
     }
     Write-DpAtomicXml -Path $path -Value $snapshot
     $script:DpLastLayoutSignature[$Page]=$signature
+}
+
+function Protect-DpMonitorArrangement {param([int]$Page,[object[]]$Icons)
+    if($null -eq $script:DpMonitorProtection){return $Icons}
+    $signal=Get-DpDisplaySignal
+    if($signal[0] -ne $script:DpMonitorProtection.Revision){throw 'Display changed during layout capture; layout saving is blocked.'}
+    if($signal[1] -ne $script:DpMonitorProtection.EditRevision -and $signal[2] -ge 1000){
+        $script:DpMonitorProtection=$null;Set-DpMonitorWatch $false;return $Icons
+    }
+    $path=Join-Path $script:DpLayoutStore "page-$Page.xml"
+    if(-not(Test-Path -LiteralPath $path)){return $Icons}
+    $saved=@((Import-Clixml -LiteralPath $path).Icons)
+    $targets=@(Resolve-DpLayoutTargets -Saved $saved -Current $Icons)
+    $byId=@{};foreach($icon in $Icons){$byId[$icon.Id]=$icon}
+    foreach($target in $targets){
+        $icon=$byId[$target.Id]
+        if([Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2){
+            Restore-DpPageLayout $Page
+            $actual=@([OriginalDesktopReader]::Read($script:originalDesktop));Assert-DpPageView -Page $Page -Icons $actual
+            return $actual
+        }
+    }
+    return $Icons
 }
 
 function Resolve-DpLayoutTargets {
@@ -97,6 +130,7 @@ function Restore-DpPageLayout {
 
 function Set-DeskPage {
     param([ValidateRange(1,99)][int]$Page,[bool]$Animate=$true,[ValidateRange(-1,1)][int]$Direction=0)
+    if(Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue){Sync-DpMonitorProfile}
     $feedback=$script:hostReady -and [int]$script:DpState.Current -ne $Page
     if($feedback){[DeskPagesHost]::BeginPageFeedback($Page,$Direction)}
     try {
@@ -182,4 +216,33 @@ function Assert-DpPageView {
         if ((Test-DpFileVisible $entry $Page) -and -not $shown) {throw 'Page view is incomplete; layout saving is blocked.'}
         if (-not (Test-DpFileVisible $entry $Page) -and $shown) {throw 'Page view contains another page; layout saving is blocked.'}
     }
+}
+
+function Repair-DpPrimaryPlacement {param([int]$Page,[object[]]$Icons)
+    if(-not $script:DpState.PSObject.Properties['Workspace'] -or -not $script:DpState.Workspace.PrimaryOnly){return $Icons}
+    $p=@(Get-DpPageScreens)[0];$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
+    $outside=@($Icons | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X -ge $p.Right -or $_.Y -ge $p.Bottom})
+    if(-not $outside.Count){return $Icons}
+    $trusted=@{};$path=Join-Path $script:DpLayoutStore "page-$Page.xml"
+    if(Test-Path -LiteralPath $path){foreach($icon in (Import-Clixml -LiteralPath $path).Icons){$trusted[[string]$icon.Key]=$icon}}
+    $candidates=@(foreach($icon in $Icons){
+        if($icon -in $outside -and $trusted.ContainsKey([string]$icon.Key)){Copy-DpData $trusted[[string]$icon.Key]}else{Copy-DpData $icon}
+    })
+    $saved=@(Get-DpScopedLayoutIcons -Saved $candidates -Current $Icons)
+    $targets=@(Resolve-DpLayoutTargets -Saved $saved -Current $Icons)
+    if($targets.Count){$null=[DeskPagesLayout]::Restore($script:originalDesktop,[string[]]@($targets | ForEach-Object {$_.Id}),[int[]]@($targets | ForEach-Object {$_.X}),[int[]]@($targets | ForEach-Object {$_.Y}))}
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    do{
+        $actual=@(Read-DpVisibleIcons);Assert-DpPageView -Page $Page -Icons $actual
+        $outside=@($actual | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X -ge $p.Right -or $_.Y -ge $p.Bottom})
+        $byId=@{};foreach($icon in $actual){$byId[$icon.Id]=$icon}
+        $positioned=$true
+        foreach($target in $targets){
+            $icon=$byId[$target.Id]
+            if($null -eq $icon -or [Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2){$positioned=$false;break}
+        }
+        if(-not $outside.Count -and $positioned){return $actual}
+        Start-Sleep -Milliseconds 25
+    }while($clock.ElapsedMilliseconds -lt 1200)
+    throw 'Explorer has not retained the primary display layout; layout saving is blocked.'
 }

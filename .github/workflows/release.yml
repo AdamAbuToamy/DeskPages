@@ -9,24 +9,37 @@ on:
         description: Publish the validated build as a public GitHub Pre-release
         type: boolean
         default: false
+      input_only:
+        description: Run the isolated Windows taskbar input fixture only (no installer or publication)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: deskpages-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Isolated taskbar input regression
+        if: github.event_name == 'workflow_dispatch' && inputs.input_only
+        shell: powershell
+        run: |
+          ./Interaction/Build-Groups.ps1
+          ./Tests/Test-TaskbarGroupsWindows.ps1
       - name: Build native compositor, runtime and installer; run isolated acceptance
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Release/Build-Windows.ps1
       - name: Stress test durable workspace operations
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Tests/Run-Validation.ps1 -Stress
       - name: Prepare source and checksums
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Release/Prepare-Assets.ps1
       - name: Retain validation results even after failure
@@ -36,12 +49,13 @@ jobs:
           name: windows-validation
           path: ~/AppData/Local/DeskPages/Verification/
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         with:
           name: deskpages-preview
           path: dist/*
           if-no-files-found: error
   publish:
-    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish && !inputs.input_only)) && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:

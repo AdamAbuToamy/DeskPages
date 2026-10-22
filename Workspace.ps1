@@ -11,8 +11,14 @@ function Initialize-DpWorkspace {
         if(Test-Path -LiteralPath $path){$lines=@(Get-Content -LiteralPath $path);$indices=@(0,1,2,3,5,6);for($i=0;$i -lt 6;$i++){$value=$false;if($indices[$i] -lt $lines.Count -and [bool]::TryParse($lines[$indices[$i]],[ref]$value)){$inputFlags[$i]=$value}}}
         $script:DpState.Workspace | Add-Member -NotePropertyName Input -NotePropertyValue $inputFlags
     }
-    if(-not $script:DpState.Workspace.PSObject.Properties['PrimaryOnly']){$script:DpState.Workspace | Add-Member -NotePropertyName PrimaryOnly -NotePropertyValue $false}
+    if(-not $script:DpState.Workspace.PSObject.Properties['PrimaryOnly']){$script:DpState.Workspace | Add-Member -NotePropertyName PrimaryOnly -NotePropertyValue $true}
     if(-not $script:DpState.Workspace.PSObject.Properties['SecondaryIcons']){$script:DpState.Workspace | Add-Member -NotePropertyName SecondaryIcons -NotePropertyValue @()}
+    # Upgrade the old display scope once. Secondary coordinates are not pins.
+    if(-not $script:DpState.Workspace.PSObject.Properties['DisplayPolicyVersion']){
+        $script:DpState.Workspace.PrimaryOnly=$true
+        $script:DpState.Workspace.SecondaryIcons=@()
+        $script:DpState.Workspace | Add-Member -NotePropertyName DisplayPolicyVersion -NotePropertyValue 2
+    }
     if(-not $script:DpState.PSObject.Properties['Revision']){$script:DpState | Add-Member -NotePropertyName Revision -NotePropertyValue ''}
     $script:DpWorkspaceRoot=Join-Path $script:DpStore 'Workspace'
     New-Item -ItemType Directory -Force $script:DpWorkspaceRoot,(Join-Path $script:DpWorkspaceRoot 'History'),(Join-Path $script:DpWorkspaceRoot 'HistoryIndex'),(Join-Path $script:DpWorkspaceRoot 'Profiles') | Out-Null
@@ -156,7 +162,7 @@ function Restore-DpWorkspaceSnapshot {
             if($ids.ContainsKey([string]$entry.Path)){$currentId=Get-DpWorkspaceIdentity $entry.Path;if($currentId -and $currentId -ne $ids[[string]$entry.Path]){$entry.Page=1;$entry | Add-Member -NotePropertyName Pinned -NotePropertyValue $false -Force}}
         }
     }
-    foreach($field in @('PrimaryOnly','SecondaryIcons')){if(-not $after.State.Workspace.PSObject.Properties[$field]){$after.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field)}}
+    foreach($field in @('PrimaryOnly','SecondaryIcons','DisplayPolicyVersion')){if(-not $after.State.Workspace.PSObject.Properties[$field]){$after.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field)}}
     if($null -ne $Undo){$after.State.Workspace.Undo=@($Undo)}
     if($null -ne $Redo){$after.State.Workspace.Redo=@($Redo)}
     foreach($field in @('Undo','Redo')){$after.State.Workspace.$field=@($after.State.Workspace.$field | Where-Object {Test-Path -LiteralPath (Join-Path $script:DpWorkspaceRoot ("History/"+$_+'.xml'))})}
@@ -196,7 +202,7 @@ function Update-DpMembershipLayouts {param($Before,$After,[string[]]$Paths,[bool
     $map=@{};foreach($layout in $Before.Layouts){foreach($icon in $layout.Icons){if($icon.Key -and -not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=$icon}}}
     $members=@{};foreach($entry in $After.State.Items){$members[[string]$entry.Path]=$entry}
     $sourcePages=@{};foreach($entry in $Before.State.Items){$sourcePages[[string]$entry.Path]=[int]$entry.Page}
-    $screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
+    $screens=@(Get-DpPageScreens);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
     $After.Layouts=@(foreach($page in $After.State.Pages){
         $old=@($Before.Layouts | Where-Object {[int]$_.Page -eq $page})
         $icons=@(if($old.Count){foreach($icon in @($old[0].Icons)){
@@ -225,7 +231,7 @@ function Update-DpMembershipLayouts {param($Before,$After,[string[]]$Paths,[bool
 }
 function Update-DpSystemPinLayouts {param($Before,$After)
     $templates=@{};foreach($layout in $Before.Layouts){foreach($icon in $layout.Icons){foreach($id in @($Before.State.SystemIconBackup | ForEach-Object {$_.Id})){if(([string]$icon.Key).IndexOf([string]$id,[StringComparison]::OrdinalIgnoreCase) -ge 0){$templates[[string]$id]=$icon}}}}
-    $screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
+    $screens=@(Get-DpPageScreens);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
     $After.Layouts=@(foreach($page in $After.State.Pages){
         $prior=@($After.Layouts | Where-Object {[int]$_.Page -eq $page});$icons=@(if($prior.Count){foreach($icon in $prior[0].Icons){
             $system=@($After.State.SystemIconBackup | Where-Object {([string]$icon.Key).IndexOf([string]$_.Id,[StringComparison]::OrdinalIgnoreCase) -ge 0})
@@ -316,39 +322,16 @@ function Get-DpCompatibilityReport {
     return $rows.ToArray()
 }
 
-# Display scope: secondary icons are temporary shared view metadata, never moved
-# on disk and never converted to permanent user pins.
-function Test-DpSecondaryKey {param([string]$Key)
-    if(-not $script:DpState.PSObject.Properties['Workspace']){return $false}
-    $w=$script:DpState.Workspace
-    if(-not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return $false}
-    $matches=@($w.SecondaryIcons | Where-Object {([string]$_.Key) -ieq $Key})
-    if(-not $matches.Count){return $false}
-    if($null -eq $script:DpScopeScreens){$script:DpScopeScreens=@(Get-DpMonitorGeometry)}
-    $icon=$matches[0]
-    return @($script:DpScopeScreens | Where-Object {-not $_.Primary -and $icon.X -ge $_.Left -and $icon.X -lt $_.Right -and $icon.Y -ge $_.Top -and $icon.Y -lt $_.Bottom}).Count -gt 0
-}
-function Test-DpSecondarySystem {param([string]$Id)
-    if(-not $script:DpState.PSObject.Properties['Workspace']){return $false}
-    $w=$script:DpState.Workspace
-    if(-not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return $false}
-    $aliases=@($Id);if($Id -eq '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'){$aliases+=@('{26EE0668-A00A-44D7-9371-BEB064C98683}')}
-    foreach($icon in @($w.SecondaryIcons | Where-Object {$null -ne $_})){foreach($alias in $aliases){if(([string]$icon.Key).IndexOf($alias,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and (Test-DpSecondaryKey ([string]$icon.Key))){return $true}}}
-    return $false
-}
-function Get-DpSecondaryIcons {param([object[]]$Icons,[object[]]$Screens)
-    @($Icons | Where-Object {$icon=$_;@($Screens | Where-Object {-not $_.Primary -and $icon.X -ge $_.Left -and $icon.X -lt $_.Right -and $icon.Y -ge $_.Top -and $icon.Y -lt $_.Bottom}).Count -gt 0} | ForEach-Object {[PSCustomObject]@{Key=[string]$_.Key;Name=[string]$_.Name;X=[int]$_.X;Y=[int]$_.Y}})
-}
-function Sync-DpSecondaryIcons {param([object[]]$Icons)
-    $w=$script:DpState.Workspace
-    if($null -eq $w -or -not $w.PSObject.Properties['PrimaryOnly'] -or -not $w.PrimaryOnly){return}
+# Legacy secondary metadata must never turn displaced page items into shared pins.
+function Test-DpSecondaryKey {param([string]$Key) return $false}
+function Test-DpSecondarySystem {param([string]$Id) return $false}
+function Get-DpSecondaryIcons {param([object[]]$Icons,[object[]]$Screens) return @()}
+function Sync-DpSecondaryIcons {param([object[]]$Icons)}
+function Get-DpPageScreens {
     $screens=@(Get-DpMonitorGeometry)
-    if(@($screens | Where-Object {-not $_.Primary}).Count -eq 0){return}
-    $next=@(Get-DpSecondaryIcons $Icons $screens)
-    if(([Management.Automation.PSSerializer]::Serialize($next)) -ne ([Management.Automation.PSSerializer]::Serialize(@($w.SecondaryIcons)))){
-        $before=@($w.SecondaryIcons);$w.SecondaryIcons=$next
-        try{Save-DpState}catch{$w.SecondaryIcons=$before;throw}
-    }
+    if($script:DpState.Workspace.PrimaryOnly){$screens=@($screens | Where-Object Primary)}
+    if(-not $screens.Count){throw 'Page display unavailable; saved layouts preserved.'}
+    return $screens
 }
 function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
     $w=$script:DpState.Workspace
@@ -356,14 +339,13 @@ function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
     $screens=@(Get-DpMonitorGeometry);$primary=@($screens | Where-Object Primary | Select-Object -First 1)
     if($primary.Count -ne 1){throw 'Primary screen geometry unavailable; saved layouts preserved.'}
     $p=$primary[0];$map=@{};foreach($icon in $Saved){$map[[string]$icon.Key]=Copy-DpData $icon}
-    foreach($icon in @($w.SecondaryIcons | Where-Object {$null -ne $_})){$map[[string]$icon.Key]=Copy-DpData $icon}
     foreach($icon in $Current){if(-not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=Copy-DpData $icon}}
-    # Reserve in-bounds primary positions first, then fit ONLY off-screen/nonshared
-    # page icons onto Primary. Secondary positions always use the shared snapshot.
+    # Keep valid primary positions and fit displaced icons onto Primary only.
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop);$placed=[Collections.Generic.List[object]]::new();$outside=[Collections.Generic.List[object]]::new()
     foreach($icon in @($map.Values | Sort-Object Key)){
-        if(Test-DpSecondaryKey ([string]$icon.Key)){continue}
-        if($icon.X -ge $p.Left -and $icon.Y -ge $p.Top -and $icon.X+$spacing.X -le $p.Right -and $icon.Y+$spacing.Y -le $p.Bottom){$placed.Add($icon)}else{$outside.Add($icon)}
+        # Existing free-form positions belong to the user, even when closer
+        # than Explorer's grid spacing. Reserve them before fitting spillover.
+        if($icon.X -ge $p.Left -and $icon.Y -ge $p.Top -and $icon.X -lt $p.Right -and $icon.Y -lt $p.Bottom){$placed.Add($icon)}else{$outside.Add($icon)}
     }
     foreach($icon in $outside){$g=@($p.Left,$p.Top,$p.Left,$p.Top,$p.Right,$p.Bottom);$target=Resolve-DpNewItemPosition -Geometry $g -SpacingX $spacing.X -SpacingY $spacing.Y -Occupied $placed.ToArray()
         if($null -eq $target){throw 'Primary screen has insufficient space. Saved layouts were preserved.'};$icon.X=$target.X;$icon.Y=$target.Y;$placed.Add($icon)

@@ -116,7 +116,7 @@ function Complete-DpEdgeDrop {
         Write-DpAtomicXml -Path (Join-Path $script:DpLayoutStore ("page-$($drag.Current).xml")) -Value ([PSCustomObject]@{Page=$drag.Current;SavedAt=[DateTime]::UtcNow;Icons=$actual})
         if(Get-Command Save-DpDragUndo -ErrorAction SilentlyContinue){Save-DpDragUndo}else{Save-DpState}
         [IO.File]::Delete($journal)
-        if($script:hostReady){[DeskPagesHost]::FinishAnimation()}
+        Complete-DpPagePresentation
         Write-DpLog ('Edge drop committed: files='+$paths.Count+'; page='+$drag.Current+'; original group arrangement verified; actual Explorer positions accepted; original paths/content unchanged.')
     }catch{
         $failure=$_

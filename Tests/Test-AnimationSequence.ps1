@@ -17,7 +17,8 @@ public static class DeskPagesHost {
  public static List<string> Events=new List<string>();
  public static void BeginAnimation(int direction){Events.Add("source-picture");DeskPagesAnimation.IsVisible=true;}
  public static void ConfirmAnimationTarget(int count){Events.Add("confirmed:"+count);}
- public static void FinishAnimation(){Events.Add("play");DeskPagesAnimation.IsVisible=false;}
+ public static bool RejectFinish;
+ public static void FinishAnimation(){Events.Add("play");if(RejectFinish)throw new InvalidOperationException("Desktop-only capture source required Win32=0");DeskPagesAnimation.IsVisible=false;}
  public static void AbortAnimation(){Events.Add("abort");DeskPagesAnimation.IsVisible=false;}
 }
 '@
@@ -38,12 +39,13 @@ try {
     function Try-DpCachedPreview {param($Source,$Target,$Direction)
         if($script:previewHit){[DeskPagesHost]::Events.Add('cached-preview');[DeskPagesAnimation]::IsVisible=$true;return $true};return $false
     }
-    foreach($case in @('Populated','Empty','MixedRejected','CachedReady','CachedMiss','CachedRejected','CachedCheckpointRejected')){
+    foreach($case in @('Populated','Empty','MixedRejected','CachedReady','CachedMiss','CachedRejected','CachedCheckpointRejected','PresentationLost','CachedPresentationLost')){
         $script:DpStore=$root;$script:DpManifest=Join-Path $root 'pages.xml'
         $script:DpSuspended=$false;$script:hostReady=$true
         $script:DpState=[PSCustomObject]@{Current=1;Pages=@(1,2);Items=@()}
         $script:targetCount=3;if($case -eq 'Empty'){$script:targetCount=0}
-        $script:rejectSource=$case -eq 'CachedCheckpointRejected';$script:previewHit=$case -in @('CachedReady','CachedRejected','CachedCheckpointRejected');$script:rejectTarget=$case -in @('MixedRejected','CachedRejected')
+        $script:rejectSource=$case -eq 'CachedCheckpointRejected';$script:previewHit=$case -in @('CachedReady','CachedRejected','CachedCheckpointRejected','CachedPresentationLost');$script:rejectTarget=$case -in @('MixedRejected','CachedRejected')
+        [DeskPagesHost]::RejectFinish=$case -in @('PresentationLost','CachedPresentationLost')
         [DeskPagesHost]::Events.Clear();Save-DpState
         $failed=$false;try {Invoke-DpPageTransaction -Page 2} catch {$failed=$true}
         $events=@([DeskPagesHost]::Events)
@@ -52,7 +54,9 @@ try {
         }else{
             $expected=@('source-layout','visibility:1','source-picture','visibility:2','layout:2','verify-target',('confirmed:'+$script:targetCount),'play')
             if($script:previewHit){$expected=@('cached-preview','source-layout','visibility:1','visibility:2','layout:2','verify-target',('confirmed:'+$script:targetCount),'play')}
+            if([DeskPagesHost]::RejectFinish){$expected+=@('abort')}
             if($failed -or ($events -join '|') -ne ($expected -join '|') -or $script:DpState.Current -ne 2){throw ('Wrong sequence: '+($events -join '|'))}
+            if([DeskPagesHost]::RejectFinish -and ((Read-DpManifest $script:DpManifest).Current -ne 2 -or (Test-Path (Join-Path $root 'transition.xml')))){throw 'Presentation failure disturbed the committed page.'}
         }
         Write-Host ('PASS: animated transaction '+$case)
     }

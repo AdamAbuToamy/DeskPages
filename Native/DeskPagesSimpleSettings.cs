@@ -104,7 +104,7 @@ public sealed class DeskPagesSimpleSettings:Form {
         Surface.Add(2,L("Page capture","صور التنقل","לכידת דפים"),L("Reuse recent page images","اختر الصور المحفوظة أو الالتقاط المباشر","בחרו מטמון או לכידה חדשה"),captureMode);
         captureMode.SelectedIndexChanged+=delegate{if(loading || !ready)return;try{DeskPagesWorkspaceApi.Execute("capture-mode",(captureMode.SelectedIndex==1).ToString());Surface.SetStatus(L("Saved","تم الحفظ","נשמר"));}catch(Exception ex){loading=true;try{captureMode.SelectedIndex=bool.Parse(DeskPagesWorkspaceApi.Execute("capture-settings")[0])?1:0;}finally{loading=false;}Surface.SetStatus(ex.Message);}};
         Surface.Add(3,L("New files","الملفات الجديدة","קבצים חדשים"),L("Choose the page for incoming files","اختر الصفحة التي تستقبل الملفات","בחרו דף לקבלת קבצים חדשים"),inbox);
-        Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep other screens' icons in place","أبقِ أيقونات الشاشات الأخرى ثابتة","השאירו סמלים במסכים אחרים במקומם"),primaryOnly);
+        Surface.Add(3,L("Main display only","الشاشة الرئيسية فقط","מסך ראשי בלבד"),L("Keep every page icon on the main display","أبقِ جميع أيقونات الصفحات على الشاشة الرئيسية","השאירו את כל סמלי הדפים במסך הראשי"),primaryOnly);
         Surface.Pins.Click+=delegate{using(var dialog=new DeskPagesPinnedIcons())dialog.ShowDialog(this);};
         Surface.Updates.Click+=delegate{DeskPagesWorkspaceApi.CheckUpdates();};
         Surface.Replay.Click+=delegate{DeskPagesWorkspaceApi.StartTour();};
@@ -221,7 +221,7 @@ public sealed class DeskPagesMemoryMeter:Control {
             sample.Bytes=current.WorkingSet64;sample.Processes=1;
             string location=typeof(DeskPagesTheme).Assembly.Location;if(String.IsNullOrEmpty(location))return sample;
             string root=System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(location),".."));
-            foreach(string name in new[]{"DeskPagesStartup","DeskPagesDrag","DeskPagesRescue"})foreach(var helper in System.Diagnostics.Process.GetProcessesByName(name))using(helper){try{
+            foreach(string name in new[]{"DeskPagesStartup","DeskPagesDrag","DeskPagesRescue","DeskPagesGroups"})foreach(var helper in System.Diagnostics.Process.GetProcessesByName(name))using(helper){try{
                 if(helper.Id!=current.Id && helper.SessionId==current.SessionId && String.Equals(helper.MainModule.FileName,System.IO.Path.Combine(root,name+".exe"),StringComparison.OrdinalIgnoreCase)){sample.Bytes+=helper.WorkingSet64;sample.Processes++;}
             }catch(System.ComponentModel.Win32Exception){}catch(InvalidOperationException){}}
         }return sample;

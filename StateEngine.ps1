@@ -24,6 +24,7 @@ function Read-DpManifest {
 }
 function Save-DpVerifiedSourceLayout {
     param([int]$Page)
+    if((Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue) -and -not $script:DpMonitorSyncBusy){Sync-DpMonitorProfile}
     try{Save-DpPageLayout $Page}
     catch{
         if(-not $_.ToString().Contains('layout saving is blocked.')){throw}
@@ -32,6 +33,14 @@ function Save-DpVerifiedSourceLayout {
         Resume-DpCommittedPage
         Save-DpPageLayout $Page
     }
+}
+function Complete-DpPagePresentation {
+    if(-not $script:hostReady){return}
+    # The durable page is already committed. Optional rendering must never
+    # trigger a second Explorer refresh or a layout rollback.
+    try{[DeskPagesHost]::FinishAnimation()}
+    catch{try{[DeskPagesHost]::AbortAnimation()}catch{};Write-DpLog ('Page committed; animation skipped: '+$_)}
+    if(Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue){try{[DeskPagesHost]::EndNavigationSample($true)}catch{Write-DpLog ('Navigation sample skipped: '+$_)}}
 }
 function Invoke-DpPageTransaction {
     param([int]$Page,[bool]$Animate=$true,[ValidateRange(-1,1)][int]$Direction=0)
@@ -75,7 +84,7 @@ function Invoke-DpPageTransaction {
         Invoke-DpFaultPoint 'ManifestCommitted'
         [IO.File]::Delete($journal)
         Invoke-DpFaultPoint 'JournalRemoved'
-        if ($script:hostReady) {[DeskPagesHost]::FinishAnimation();if(Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue){[DeskPagesHost]::EndNavigationSample($true)}}
+        Complete-DpPagePresentation
     }
     catch {
         $failure=$_
