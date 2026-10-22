@@ -16,7 +16,7 @@ try {
     if($result.Errors.HasErrors){throw (($result.Errors | ForEach-Object {$_.ToString()}) -join "`n")}
     . (Join-Path $base 'PackageIntegrity.ps1')
     $null=Read-DpPortableExecutable -Path $parameters.OutputAssembly -Machine 0x8664 -Managed
-    Assert-DpManagedIdentity -Path $parameters.OutputAssembly -Name 'DeskPagesStartup' -Version ([Version]'0.8.26.0')
+    Assert-DpManagedIdentity -Path $parameters.OutputAssembly -Name 'DeskPagesStartup' -Version ([Version]'0.8.27.0')
     Move-Item -LiteralPath $parameters.OutputAssembly -Destination (Join-Path $base 'DeskPagesStartup.exe') -Force
     Write-Host 'PASS: valid startup guardian EXE built; PE architecture, CLR metadata and release identity verified.'
 }finally{$provider.Dispose();Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue}

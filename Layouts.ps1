@@ -193,7 +193,7 @@ function Assert-DpPageView {
 function Repair-DpPrimaryPlacement {param([int]$Page,[object[]]$Icons)
     if(-not $script:DpState.PSObject.Properties['Workspace'] -or -not $script:DpState.Workspace.PrimaryOnly){return $Icons}
     $p=@(Get-DpPageScreens)[0];$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
-    $outside=@($Icons | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X+$spacing.X -gt $p.Right -or $_.Y+$spacing.Y -gt $p.Bottom})
+    $outside=@($Icons | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X -ge $p.Right -or $_.Y -ge $p.Bottom})
     if(-not $outside.Count){return $Icons}
     $trusted=@{};$path=Join-Path $script:DpLayoutStore "page-$Page.xml"
     if(Test-Path -LiteralPath $path){foreach($icon in (Import-Clixml -LiteralPath $path).Icons){$trusted[[string]$icon.Key]=$icon}}
@@ -206,8 +206,14 @@ function Repair-DpPrimaryPlacement {param([int]$Page,[object[]]$Icons)
     $clock=[Diagnostics.Stopwatch]::StartNew()
     do{
         $actual=@(Read-DpVisibleIcons);Assert-DpPageView -Page $Page -Icons $actual
-        $outside=@($actual | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X+$spacing.X -gt $p.Right -or $_.Y+$spacing.Y -gt $p.Bottom})
-        if(-not $outside.Count){return $actual}
+        $outside=@($actual | Where-Object {$_.X -lt $p.Left -or $_.Y -lt $p.Top -or $_.X -ge $p.Right -or $_.Y -ge $p.Bottom})
+        $byId=@{};foreach($icon in $actual){$byId[$icon.Id]=$icon}
+        $positioned=$true
+        foreach($target in $targets){
+            $icon=$byId[$target.Id]
+            if($null -eq $icon -or [Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2){$positioned=$false;break}
+        }
+        if(-not $outside.Count -and $positioned){return $actual}
         Start-Sleep -Milliseconds 25
     }while($clock.ElapsedMilliseconds -lt 1200)
     throw 'Explorer has not retained the primary display layout; layout saving is blocked.'

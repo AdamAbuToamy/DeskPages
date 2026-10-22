@@ -69,6 +69,28 @@ try{
    $w=$script:DpState.Workspace
   }
  }
+ # A hand-arranged layout can be tighter than grid spacing. Neither repeated
+ # profile reuse nor restoration may relocate those existing coordinates.
+ $main=[PSCustomObject]@{Device='main';Left=0;Top=0;Right=1920;Bottom=1080;Primary=$true}
+ $second=[PSCustomObject]@{Device='second';Left=1920;Top=0;Right=3840;Bottom=1080;Primary=$false}
+ $script:screens=@($main,$second)
+ $dense=@([PSCustomObject]@{Key='z';X=17;Y=12},[PSCustomObject]@{Key='a';X=60;Y=62},[PSCustomObject]@{Key='m';X=100;Y=112},[PSCustomObject]@{Key='edge';X=1860;Y=1000})
+ $denseLayout=[PSCustomObject]@{Page=1;Icons=$dense}
+ for($repeat=0;$repeat -lt 10;$repeat++){
+   $converted=@(Convert-DpMonitorLayouts @($denseLayout) @($main) $script:screens 80 100)[0]
+   $scoped=@(Get-DpScopedLayoutIcons $converted.Icons @())
+   foreach($icon in $dense){$found=@($scoped | Where-Object Key -eq $icon.Key)[0];Assert ($found.X -eq $icon.X -and $found.Y -eq $icon.Y) 'An existing free-form icon was reflowed.'}
+   $denseLayout=$converted
+ }
+ $larger=[PSCustomObject]@{Device='main';Left=1920;Top=200;Right=4480;Bottom=1640;Primary=$true}
+ $translated=@(Convert-DpMonitorLayouts @($denseLayout) @($main) @($larger) 80 100)[0]
+ foreach($icon in $dense){$found=@($translated.Icons | Where-Object Key -eq $icon.Key)[0];Assert ($found.X -eq $icon.X+1920 -and $found.Y -eq $icon.Y+200) 'Origin/size change scaled a valid local offset.'}
+ # An early out-of-bounds icon must not steal a later valid icon's position.
+ $mixed=[PSCustomObject]@{Page=1;Icons=@([PSCustomObject]@{Key='off';X=-500;Y=-500},[PSCustomObject]@{Key='kept';X=0;Y=0})}
+ $reserved=@(Convert-DpMonitorLayouts @($mixed) @() @($main) 80 100)[0]
+ $kept=@($reserved.Icons | Where-Object Key -eq 'kept')[0]
+ Assert ($kept.X -eq 0 -and $kept.Y -eq 0) 'Spillover displaced a valid primary icon.'
+ Write-Host 'PASS: repeated free-form restore, close spacing, shifted origins, resized primary and spillover preserve valid coordinates exactly.'
  # Full Primary cannot fall back to an empty secondary screen.
  $script:screens=@([PSCustomObject]@{Device='tiny';Left=0;Top=0;Right=80;Bottom=100;Primary=$true},[PSCustomObject]@{Device='big';Left=80;Top=0;Right=2000;Bottom=1080;Primary=$false})
  $before=(Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash
@@ -97,6 +119,12 @@ try{
  [DeskPagesLayout]::Apply=[ScopeRestore]{param($ids,$xs,$ys)}
  $failed=$false;try{Save-DpPageLayout 1}catch{$failed=$true}
  Assert ($failed -and (Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash -eq $hashBefore) 'Explorer rejection overwrote trusted layout.'
+ # Being inside Primary is insufficient: reject a different arrangement too.
+ [DeskPagesLayout]::Apply=[ScopeRestore]{param($ids,$xs,$ys)
+   foreach($icon in [OriginalDesktopReader]::Icons){$icon.X=400;$icon.Y=400}
+ }
+ $failed=$false;try{Save-DpPageLayout 1}catch{$failed=$true}
+ Assert ($failed -and (Get-FileHash (Join-Path $script:DpLayoutStore 'page-1.xml')).Hash -eq $hashBefore) 'In-bounds shell rearrangement replaced trusted coordinates.'
  Write-Host 'PASS: real autosave repairs delayed spillover, retains trusted/unaffected coordinates, and preserves saved bytes if Explorer rejects placement.'
  Write-Host "PASS: $count primary page cases, five scales, both sides/shifted origins, real profile commits, unplug/replug/primary changes, legacy metadata, overflow preservation and user pins. Explorer adapter simulated."
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}

@@ -13,14 +13,23 @@ function Convert-DpMonitorLayouts {param([object[]]$Layouts,[object[]]$OldScreen
     if($NewScreens.Count -lt 1 -or $SpacingX -lt 16 -or $SpacingY -lt 16){throw 'Invalid monitor geometry.'}
     if($script:DpState.Workspace.PrimaryOnly){$NewScreens=@($NewScreens | Where-Object Primary);if($NewScreens.Count -ne 1){throw 'Primary display unavailable; saved layouts preserved.'}}
     foreach($layout in $Layouts){
-        $copy=Copy-DpData $layout;$placed=[Collections.Generic.List[object]]::new()
+        $copy=Copy-DpData $layout;$placed=[Collections.Generic.List[object]]::new();$displaced=[Collections.Generic.List[object]]::new()
         foreach($icon in @($copy.Icons)){
             $old=@($OldScreens | Where-Object {$icon.X -ge $_.Left -and $icon.X -lt $_.Right -and $icon.Y -ge $_.Top -and $icon.Y -lt $_.Bottom} | Select-Object -First 1)
             $screen=@($NewScreens | Where-Object {$old.Count -and $_.Device -eq $old[0].Device} | Select-Object -First 1)
             if(-not $screen.Count){$screen=@($NewScreens | Where-Object Primary | Select-Object -First 1)}
             if(-not $screen.Count){$screen=@($NewScreens[0])};$s=$screen[0]
             $x=[int]$icon.X;$y=[int]$icon.Y
-            if($old.Count){$o=$old[0];$x=[int]($s.Left+($icon.X-$o.Left)*($s.Right-$s.Left)/[Math]::Max(1,$o.Right-$o.Left));$y=[int]($s.Top+($icon.Y-$o.Top)*($s.Bottom-$s.Top)/[Math]::Max(1,$o.Bottom-$o.Top))}
+            # Adding a monitor or moving the desktop origin must not scale,
+            # snap or sort a hand-arranged page. Preserve its local offsets.
+            if($old.Count){$o=$old[0];$x=[int]($s.Left+$icon.X-$o.Left);$y=[int]($s.Top+$icon.Y-$o.Top)}
+            $icon.X=$x;$icon.Y=$y
+            if($x -ge $s.Left -and $y -ge $s.Top -and $x -lt $s.Right -and $y -lt $s.Bottom){$placed.Add($icon)}
+            else{$displaced.Add([PSCustomObject]@{Icon=$icon;Screen=$s})}
+        }
+        # Fit only out-of-bounds items after every valid position is reserved.
+        foreach($pending in $displaced){
+            $icon=$pending.Icon;$s=$pending.Screen;$x=[int]$icon.X;$y=[int]$icon.Y
             $g=@(($x+[int]($SpacingX/2)),($y+16),$s.Left,$s.Top,$s.Right,$s.Bottom)
             $target=Resolve-DpNewItemPosition -Geometry $g -SpacingX $SpacingX -SpacingY $SpacingY -Occupied $placed.ToArray()
             if($null -eq $target){

@@ -343,10 +343,9 @@ function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
     # Keep valid primary positions and fit displaced icons onto Primary only.
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop);$placed=[Collections.Generic.List[object]]::new();$outside=[Collections.Generic.List[object]]::new()
     foreach($icon in @($map.Values | Sort-Object Key)){
-        if($icon.X -ge $p.Left -and $icon.Y -ge $p.Top -and $icon.X+$spacing.X -le $p.Right -and $icon.Y+$spacing.Y -le $p.Bottom){
-            $overlap=@($placed | Where-Object {[Math]::Abs($_.X-$icon.X) -lt $spacing.X-2 -and [Math]::Abs($_.Y-$icon.Y) -lt $spacing.Y-2})
-            if($overlap.Count){$outside.Add($icon)}else{$placed.Add($icon)}
-        }else{$outside.Add($icon)}
+        # Existing free-form positions belong to the user, even when closer
+        # than Explorer's grid spacing. Reserve them before fitting spillover.
+        if($icon.X -ge $p.Left -and $icon.Y -ge $p.Top -and $icon.X -lt $p.Right -and $icon.Y -lt $p.Bottom){$placed.Add($icon)}else{$outside.Add($icon)}
     }
     foreach($icon in $outside){$g=@($p.Left,$p.Top,$p.Left,$p.Top,$p.Right,$p.Bottom);$target=Resolve-DpNewItemPosition -Geometry $g -SpacingX $spacing.X -SpacingY $spacing.Y -Occupied $placed.ToArray()
         if($null -eq $target){throw 'Primary screen has insufficient space. Saved layouts were preserved.'};$icon.X=$target.X;$icon.Y=$target.Y;$placed.Add($icon)
