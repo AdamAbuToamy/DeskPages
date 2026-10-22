@@ -20,11 +20,11 @@ internal sealed class GroupInputMap {
 }
 internal sealed class GroupDragGesture {
     public GroupDragSource Source;public TaskButton[] Groups;public Point Press,Release;public IntPtr Taskbar;
-    public long Epoch,Started,TransferredAt;public Point LastNative;public volatile bool NativeActive;public volatile string TargetAppId;public Rectangle TargetBounds;public volatile bool Cancelled,Released;
+    public long Epoch,Started,TransferredAt;public Point LastNative,LastPhysical;public volatile bool NativeActive;public volatile string TargetAppId;public Rectangle TargetBounds;public volatile bool Cancelled,Released;
 }
 internal static class GroupDragGeometry {
     public static Point? NativeEnd(GroupDragGesture gesture,int distance){
-        distance=Math.Max(4,distance);
+        distance=Math.Max(12,distance*2);
         if(Math.Abs(gesture.LastNative.X-gesture.Press.X)+Math.Abs(gesture.LastNative.Y-gesture.Press.Y)>=distance)return gesture.LastNative;
         // A direct jump from press to target must still cross Windows' drag
         // threshold within the source button, so completing it cannot be a click.
@@ -39,6 +39,7 @@ internal static class GroupDragGeometry {
 internal sealed class GroupDragGate {
     private GroupDragGesture active;private long epoch;
     public long Epoch{get{return Interlocked.Read(ref epoch);}}
+    public GroupDragGesture Current{get{return active;}}
     public bool Owned{get{return active!=null && !active.NativeActive;}}
     public bool Process(int kind,Point point,bool injected,bool modified,IntPtr root,GroupInputMap map,long now,Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action nativeEnd=null,Func<GroupDragGesture,Point,bool> take=null,Func<GroupDragGesture,Point,bool> resume=null,Action<Point> move=null){
         if(injected)return false;
@@ -49,7 +50,7 @@ internal sealed class GroupDragGate {
             return false;
         }
         if(kind==0x200 && active!=null){
-            var gesture=active;
+            var gesture=active;gesture.LastPhysical=point;
             if(gesture.Cancelled)return !gesture.NativeActive;
             bool moved=Math.Abs(point.X-gesture.Press.X)+Math.Abs(point.Y-gesture.Press.Y)>=map.DragDistance;
             var target=moved && map.Fresh(now) && map.Taskbar==gesture.Taskbar?TargetAt(map,gesture,point):null;
@@ -64,7 +65,7 @@ internal sealed class GroupDragGate {
             gesture.TargetAppId=null;if(move!=null)move(point);return true;
         }
         if(kind==0x202 && active!=null){
-            var gesture=active;active=null;gesture.Release=point;gesture.Released=true;
+            var gesture=active;active=null;gesture.Release=gesture.NativeActive?point:gesture.LastPhysical;gesture.Released=true;point=gesture.Release;
             if(gesture.NativeActive){if(nativeEnd!=null)nativeEnd();return false;}
             // A move may be coalesced with release: use the current target region.
             var target=map.Fresh(now)?TargetAt(map,gesture,point):null;

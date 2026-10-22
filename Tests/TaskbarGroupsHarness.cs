@@ -169,18 +169,19 @@ public static class TaskbarGroupsHarness {
                 form.MouseMove+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){var point=form.PointToScreen(e.Location);if(group.Bounds.Contains(point))leftMovesOnGroup++;if(Math.Abs(point.X-other.X)<4)leftMovesBetweenApps++;}};
                 using(var listener=new GroupDragInput(g=>System.Threading.Interlocked.Increment(ref begins),g=>{received=g;System.Threading.Interlocked.Increment(ref ends);})){
                     Func<GroupInputMap> map=()=>new GroupInputMap{Taskbar=form.Handle,Bounds=form.Bounds,Created=Clock(),Groups=new[]{group},Sources=new[]{new GroupDragSource{Button=button,Windows=new GroupWindow[0]}}};
+                    Action<string,Func<bool>> wait=(stage,done)=>{try{PumpUntil(done);}catch(Exception ex){throw new Exception(stage+"; downs="+nativeDowns+"; ups="+nativeUps+"; begins="+begins+"; ends="+ends+"; targetMoves="+leftMovesOnGroup+"; "+listener.Diagnostics,ex);}};
                     // Existing application movement is real native down/move/up.
-                    listener.Publish(map());SendFixtureInput(source,other);PumpUntil(delegate{return nativeUps==1;});
+                    listener.Publish(map());SendFixtureInput(source,other);wait("native ordinary release",delegate{return nativeUps==1;});
                     Check(nativeDowns==1 && begins==0 && ends==0 && leftMovesBetweenApps>0,"Ordinary reorder was captured instead of reaching the native window live");
-                    listener.Publish(map());SendFixtureInput(source,target);PumpUntil(delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
+                    listener.Publish(map());SendFixtureInput(source,target);wait("immediate target drop",delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
                     Check(begins==1 && nativeDowns==2 && leftMovesOnGroup==0 && received.Released && received.TargetAppId=="FixtureGroup","Native drag did not transfer only at group entry, or an immediate group release was lost");
                     // Leaving the target resumes native movement while still held.
-                    listener.Publish(map());SendFixturePart(source,2);SendFixturePart(target,0);PumpUntil(delegate{return begins==2 && nativeUps==3;});
-                    PumpFor(120);listener.Publish(map());SendFixturePart(other,0);PumpUntil(delegate{return ends==2 && nativeDowns==4;});
+                    listener.Publish(map());SendFixturePart(source,2);SendFixturePart(target,0);wait("second target entry",delegate{return begins==2 && nativeUps==3;});
+                    PumpFor(120);listener.Publish(map());SendFixturePart(other,0);wait("resume before release",delegate{return ends==2 && nativeDowns==4;});
                     Check(!received.Released && received.NativeActive,"Native resume waited for physical release");
-                    SendFixturePart(other,4);PumpUntil(delegate{return nativeUps==4;});
+                    SendFixturePart(other,4);wait("resumed native release",delegate{return nativeUps==4;});
                     Check(begins==2 && ends==2 && leftMovesOnGroup==0,"Own continuation recursively entered input or moved the native target");
-                    listener.Publish(map());SendFixtureInput(target,other);PumpUntil(delegate{return nativeUps==5;});
+                    listener.Publish(map());SendFixtureInput(target,other);wait("native group-source release",delegate{return nativeUps==5;});
                     Check(nativeDowns==5 && begins==2,"Dragging the numbered group itself was intercepted");
                 }
                 form.Close();
