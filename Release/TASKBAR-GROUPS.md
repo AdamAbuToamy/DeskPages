@@ -13,7 +13,7 @@ The normal-user helper changes only per-window Shell properties. The original Ap
 
 UI Automation resolves running buttons by exact AppID, and individual native thumbnails by an unambiguous window title. Unresolvable/ambiguous or privileged windows are rejected; the helper does not guess based on a program label. If a native taskbar button already represents several open windows, dropping that button assigns those currently resolved windows together.
 
-Only the add button is an overlay. When its near-weather rectangle is occupied by application buttons, it moves just above that rectangle. Auto-hidden taskbars and full-screen windows hide the add button. Groups themselves use Explorer's taskbar; there is no injected Explorer DLL, replacement taskbar or programmatic pinning.
+The add button, drag ghost and acceptance border are overlays. When its near-weather rectangle is occupied by application buttons, it moves just above that rectangle. Auto-hidden taskbars and full-screen windows hide the add button. Groups themselves use Explorer's taskbar; there is no injected Explorer DLL, replacement taskbar or programmatic pinning.
 
 ## Acceptance required on Windows 11
 
@@ -22,3 +22,9 @@ Test Chrome + Store and Terminal + VS Code. Verify numbered icons, reorder after
 Windows CI fixtures verify cross-process property changes, journal-based guardian restoration, exact restoration of unset values, stale process rejection, group cleanup and dwell rules. They do not certify physical Windows 11 taskbar gestures or every application's behavior.
 
 Classic process-only AppIDs may be resolved through a read-only mapping of installed Start menu/Desktop shortcut AppIDs to running executable paths. Shortcuts are not executed or modified.
+
+## 0.8.22 input ownership
+
+While numbered groups exist, an unmodified press on a resolved live app button is held by the helper before Explorer receives it. Pointer movement remains physical; the app icon follows the pointer and the target group stays in place. Group button presses are passed through, so groups retain native drag reordering. Ordinary app clicks and app reordering away from groups are replayed as a bounded SendInput batch on release after checking the source button, taskbar identity, current cursor and gesture generation. In this trial, ordinary app reorder motion therefore completes on release. Ctrl/Shift/Alt/Win gestures and closed pins pass through. Escape, a short group dwell or a cancelled gesture never replays an action into a group. A 30-second abandoned gesture cancels and requests fresh hooks/hit regions.
+
+The helper uses low-level mouse input and Escape monitoring on a dedicated thread; it does not log pointer events or typed text. UI Automation and process queries happen on worker threads, never inside the hook. Fresh hit regions are required for interception. A native taskbar gesture invalidates regions until the next read. Failure to resolve a live app leaves that press native rather than guessing its identity.

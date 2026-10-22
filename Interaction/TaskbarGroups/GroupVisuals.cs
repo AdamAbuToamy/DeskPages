@@ -21,14 +21,19 @@ internal static class GroupVisuals {
     [DllImport("user32.dll")]private static extern bool DestroyIcon(IntPtr icon);
 }
 internal sealed class GroupAnchor:Form {
-    private readonly Action open;private bool leaving;
+    private readonly Action open;private bool leaving,opening;
     public GroupAnchor(LiveGroup group,Action show){
         open=show;Text="DeskPages · "+group.Number.ToString("00");Icon=GroupVisuals.Number(group.Number);ShowInTaskbar=true;FormBorderStyle=FormBorderStyle.FixedSingle;StartPosition=FormStartPosition.Manual;Size=new Size(280,150);WindowState=FormWindowState.Minimized;
     }
     protected override bool ShowWithoutActivation{get{return true;}}
     protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle=(p.ExStyle & ~0x08000080)|0x00040000;return p;}}
-    protected override void OnActivated(EventArgs e){base.OnActivated(e);if(!leaving){WindowState=FormWindowState.Minimized;open();}}
-    protected override void WndProc(ref Message m){if(m.Msg==0x8031){open();return;}base.WndProc(ref m);}
+    protected override void OnActivated(EventArgs e){base.OnActivated(e);if(!leaving && WindowState!=FormWindowState.Minimized)WindowState=FormWindowState.Minimized;}
+    private void RequestOpen(){if(leaving || opening)return;opening=true;BeginInvoke((Action)delegate{opening=false;if(!leaving)open();});}
+    protected override void WndProc(ref Message m){
+        // Reject restoration before a normal application window can be displayed.
+        if(!leaving && (m.Msg==0x13 || m.Msg==0x8031 || (m.Msg==0x112 && (m.WParam.ToInt64()&0xFFF0)==0xF120))){RequestOpen();m.Result=IntPtr.Zero;return;}
+        base.WndProc(ref m);
+    }
     protected override void OnFormClosing(FormClosingEventArgs e){if(!leaving){e.Cancel=true;open();}base.OnFormClosing(e);}
     public void Finish(){if(leaving)return;leaving=true;var icon=Icon;Close();icon.Dispose();Dispose();}
 }
@@ -92,4 +97,19 @@ internal sealed class GroupDropCue:Form {
     protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x080000A0;return p;}}
     public void Present(Rectangle rect,bool accepted){if(rect.IsEmpty){Hide();return;}Bounds=rect;ready=accepted;if(!Visible)Show();Invalidate();}
     protected override void OnPaint(PaintEventArgs e){using(var p=new Pen(ready?Color.FromArgb(83,222,171):Color.FromArgb(145,181,244),3))e.Graphics.DrawRectangle(p,2,2,Width-5,Height-5);if(ready)using(var font=new Font("Segoe UI",10,FontStyle.Bold))TextRenderer.DrawText(e.Graphics,"✓",font,ClientRectangle,Color.FromArgb(83,222,171),TextFormatFlags.Right|TextFormatFlags.Top);}
+}
+
+internal sealed class GroupDragGhost:Form {
+    private Icon image;
+    public GroupDragGhost(){FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;Enabled=false;Size=new Size(36,36);BackColor=Color.Magenta;TransparencyKey=Color.Magenta;SetStyle(ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint,true);}
+    protected override bool ShowWithoutActivation{get{return true;}}
+    protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x080000A0;return p;}}
+    public void Begin(GroupDragSource source){
+        if(image!=null){image.Dispose();image=null;}
+        try{if(!string.IsNullOrEmpty(source.Windows[0].ImagePath))image=Icon.ExtractAssociatedIcon(source.Windows[0].ImagePath);}catch(Exception){}
+        if(image==null)image=(Icon)SystemIcons.Application.Clone();
+    }
+    public void Present(Point point){Location=new Point(point.X+12,point.Y-42);if(!Visible)Show();Invalidate();}
+    protected override void OnPaint(PaintEventArgs e){if(image!=null)e.Graphics.DrawIcon(image,new Rectangle(2,2,32,32));}
+    protected override void Dispose(bool disposing){if(disposing && image!=null){image.Dispose();image=null;}base.Dispose(disposing);}
 }

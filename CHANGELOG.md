@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.22 — taskbar groups device trial
+
+- Reject empty group window restoration before showing a normal client window.
+- Own live-app drags before Explorer reorders group targets; leave group drags native.
+- Add an app-icon drag ghost, bounded native click/reorder replay, stale-region rejection and cancellation checks.
+
 ## 0.8.21 — taskbar groups device trial
 
 - Make newly created numbered groups eligible for native taskbar buttons.

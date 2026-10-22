@@ -1,5 +1,5 @@
 DeskPages Privacy Notice
-Version 0.8.20 alpha | Effective 22 October 2026
+Version 0.8.22 alpha | Effective 22 October 2026
 Developer: Adam Abu Toamy
 
 DeskPages has no accounts, telemetry, analytics, advertising, or
@@ -89,3 +89,10 @@ keyboard text recording, screenshot capture or network requests. UI Automation
 runs off the UI thread. The RAM indicator includes the helper and its guardian.
 
 Classic process-only AppIDs may be resolved through a read-only mapping of installed Start menu/Desktop shortcut AppIDs to running executable paths. Shortcuts are not executed or modified.
+
+While taskbar groups are enabled, a dedicated input thread inspects mouse button
+presses and Escape to distinguish an app drop into a group from native group
+reordering. It does not log these events or typed text. Unmodified running-app
+clicks/drags may be consumed and replayed locally through Windows SendInput after
+release; group drags, modifier gestures and closed pins remain native. All
+window resolution and hit-region data remains in memory on this computer.
