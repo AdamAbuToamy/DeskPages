@@ -39,6 +39,7 @@ internal static class GroupDragGeometry {
 internal sealed class GroupDragGate {
     private GroupDragGesture active;private long epoch;
     public long Epoch{get{return Interlocked.Read(ref epoch);}}
+    public string Describe(){var g=active;return g==null?"idle":"source="+g.Source.Button.AppId+", native="+g.NativeActive+", cancelled="+g.Cancelled+", last="+g.LastPhysical;}
     public GroupDragGesture Current{get{return active;}}
     public bool Owned{get{return active!=null && !active.NativeActive;}}
     public bool Process(int kind,Point point,bool injected,bool modified,IntPtr root,GroupInputMap map,long now,Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action nativeEnd=null,Func<GroupDragGesture,Point,bool> take=null,Func<GroupDragGesture,Point,bool> resume=null,Action<Point> move=null){

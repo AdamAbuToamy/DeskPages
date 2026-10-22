@@ -15,7 +15,8 @@ internal sealed class GroupDragInput:IDisposable {
     private Hook mouse,key;private IntPtr mouseHandle,keyHandle;private uint threadId;
     private Exception error;private int disposed;
     internal const uint ReplayTag=0x44504752;private volatile string lastPress="No taskbar press observed";
-    public string Diagnostics{get{return lastPress;}}
+    private volatile string lastMotion="none",lastTransfer="none",lastNative="none";
+    public string Diagnostics{get{return lastPress+"; motion="+lastMotion+"; transfer="+lastTransfer+"; native="+lastNative;}}
     public GroupDragInput(Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action changed=null){
         started=begin;finished=end;refresh=changed??delegate{};sender=new Thread(SendNative){IsBackground=true,Name="DeskPages native drag continuation"};sender.Start();thread=new Thread(Run){IsBackground=true,Name="DeskPages taskbar input"};thread.SetApartmentState(ApartmentState.STA);thread.Start();
         if(!initialized.WaitOne(3000)){Dispose();throw new InvalidOperationException("Taskbar input could not start");}
@@ -36,7 +37,7 @@ internal sealed class GroupDragInput:IDisposable {
                     gate.Abort(FinishOrdered);Publish(new GroupInputMap());
                     if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);
                     mouseHandle=SetWindowsHookExW(14,mouse,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,key,GetModuleHandleW(null),0);refresh();
-                }else if(message.Message==0x8033){if(gate.Owned)ProcessGesture(0x200,Cursor.Position,IntPtr.Zero,map,false);}else{TranslateMessage(ref message);DispatchMessageW(ref message);}
+                }else if(message.Message==0x8033){if(gate.Owned && gate.Current!=null)ProcessGesture(0x200,gate.Current.LastPhysical,IntPtr.Zero,map,false);}else{TranslateMessage(ref message);DispatchMessageW(ref message);}
             }
         }catch(Exception ex){error=ex;initialized.Set();}
         finally{if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);}
@@ -59,7 +60,8 @@ internal sealed class GroupDragInput:IDisposable {
             IntPtr root=kind==0x201 && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Taskbar:actual;
             bool modified=kind==0x201 && ModifierDown();
             bool owned=ProcessGesture(kind,input.Point,root,current,modified);
-            if(kind==0x201 && current.Bounds.Contains(input.Point))lastPress="Owned="+owned+"; flags="+input.Flags+"; root="+WindowShell.Class(actual)+"; taskbarMatch="+(root==current.Taskbar)+"; source="+(current.Sources.FirstOrDefault(v=>v.Button.Bounds.Contains(input.Point))??new GroupDragSource{Button=new TaskButton{AppId="none"}}).Button.AppId+"; groups="+current.Groups.Length+"; sources="+current.Sources.Length+"; ageMs="+(Now-current.Created)+"; modified="+modified;
+            if(kind==0x200 && current.Groups.Any(g=>g.Bounds.Contains(input.Point)))lastMotion="point="+input.Point+", owned="+owned+", "+gate.Describe();
+            if(kind==0x201 && current.Bounds.Contains(input.Point))lastPress="Owned="+owned+"; flags="+input.Flags+"; root="+WindowShell.Class(actual)+"; taskbarMatch="+(root==current.Taskbar)+"; source="+(current.Sources.FirstOrDefault(v=>v.Button.Bounds.Contains(input.Point))??new GroupDragSource{Button=new TaskButton{AppId="none"}}).Button.AppId+"; groups="+current.Groups.Length+"; sources="+current.Sources.Length+"; ageMs="+(Now-current.Created)+"; modified="+modified+"; gate="+gate.Describe();
             if(owned)return new IntPtr(1);
         }catch(Exception){gate.Cancel();}
         return CallNextHookEx(IntPtr.Zero,code,message,data);
@@ -78,7 +80,7 @@ internal sealed class GroupDragInput:IDisposable {
     // Complete Explorer's drag at its last native point before forwarding a move
     // over the numbered target. From here only DeskPages receives the physical up.
     private bool TransferToGroup(GroupDragGesture gesture,Point point){
-        var safe=GroupDragGeometry.NativeEnd(gesture,SystemInformation.DragSize.Width);if(!safe.HasValue)return false;
+        var safe=GroupDragGeometry.NativeEnd(gesture,SystemInformation.DragSize.Width);lastTransfer="dragSize="+SystemInformation.DragSize.Width+", box="+gesture.Source.Button.Bounds+", safe="+(safe.HasValue?safe.Value.ToString():"none");if(!safe.HasValue)return false;
         var area=SystemInformation.VirtualScreen;
         return QueueNative(new[]{Move(safe.Value,area),Button(4),Move(point,area)},gesture,true);
     }
@@ -118,7 +120,7 @@ internal sealed class GroupDragInput:IDisposable {
         var record=new NativeBatch{Remaining=batch.Length,Resume=resume,Gesture=gesture};pending[token]=record;
         for(int i=0;i<batch.Length;i++){var mouse=batch[i].Mouse;mouse.Extra=new UIntPtr(token);batch[i].Mouse=mouse;}
         try{
-            uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));
+            lastNative="sending token="+token+", resume="+resume;uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));lastNative="sent="+sent+", remaining="+Volatile.Read(ref record.Remaining);
             if(sent==(uint)batch.Length && SpinWait.SpinUntil(delegate{return Volatile.Read(ref record.Remaining)==0;},1000))return true;
             SendInput(1,new[]{Button(4)},Marshal.SizeOf(typeof(Input)));return false;
         }finally{NativeBatch removed;pending.TryRemove(token,out removed);}
