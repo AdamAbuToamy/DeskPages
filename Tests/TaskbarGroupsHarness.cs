@@ -61,10 +61,22 @@ public static class TaskbarGroupsHarness {
             taskbar.Remove(anchor.Handle);anchor.Finish();
         }
         using(var normal=GroupAddButton.Surface(36,36,0,false))using(var pressed=GroupAddButton.Surface(36,36,1,true)){
-            var background=normal.GetPixel(8,8);Check(background.A>0 && background.A<255 && background.R==255,"Add background is not translucent white");
+            var background=normal.GetPixel(8,8);Check(background.A>0 && background.A<255 && background.R>=253 && background.R==background.G && background.G==background.B,"Add background is not translucent white: "+background);
             Check(normal.GetPixel(18,18).A==255,"Plus glyph lost its opaque contrast");
             Check(normal.GetPixel(2,18)!=pressed.GetPixel(2,18),"Press animation did not change the button shape");
         }
+        int clicks=0;
+        using(var button=new GroupAddButton(delegate{clicks++;})){
+            button.Show();Application.DoEvents();
+            var down=typeof(GroupAddButton).GetMethod("OnMouseDown",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
+            var up=typeof(GroupAddButton).GetMethod("OnMouseUp",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
+            var inside=new MouseEventArgs(MouseButtons.Left,1,16,16,0);var outside=new MouseEventArgs(MouseButtons.Left,1,-10,-10,0);
+            up.Invoke(button,new object[]{inside});Check(clicks==0,"Unarmed mouse-up added a group");
+            down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{outside});Check(clicks==0,"Release outside added a group");
+            down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{inside});Check(clicks==1,"Button press did not add exactly one group");
+            button.Hide();
+        }
+        Console.WriteLine("PASS: layered button show and click-once/cancel semantics.");
         Console.WriteLine("PASS: minimized unowned APPWINDOW anchor, pre-show AppID, native AddTab/RemoveTab; white per-pixel alpha and press surface.");
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;
         try{
