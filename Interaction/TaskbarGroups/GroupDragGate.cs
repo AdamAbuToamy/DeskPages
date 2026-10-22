@@ -66,7 +66,16 @@ internal sealed class GroupDragGate {
             gesture.TargetAppId=null;if(move!=null)move(point);return true;
         }
         if(kind==0x202 && active!=null){
-            var gesture=active;active=null;gesture.Release=gesture.NativeActive?point:gesture.LastPhysical;gesture.Released=true;point=gesture.Release;
+            var gesture=active;
+            // A coalesced/fast input batch can report release before its move.
+            // Recognize the intended target from release, before Explorer sees up.
+            if(gesture.NativeActive && !gesture.Cancelled && map.Fresh(now) && map.Taskbar==gesture.Taskbar && Math.Abs(point.X-gesture.Press.X)+Math.Abs(point.Y-gesture.Press.Y)>=map.DragDistance){
+                var releasedTarget=map.Groups.FirstOrDefault(g=>g.Bounds.Contains(point));
+                if(releasedTarget!=null && take!=null && take(gesture,point)){
+                    gesture.NativeActive=false;gesture.LastPhysical=point;gesture.TargetAppId=releasedTarget.AppId;gesture.TargetBounds=releasedTarget.Bounds;gesture.Started=now;gesture.TransferredAt=now;begin(gesture);
+                }
+            }
+            active=null;gesture.Release=gesture.NativeActive?point:gesture.LastPhysical;gesture.Released=true;point=gesture.Release;
             if(gesture.NativeActive){if(nativeEnd!=null)nativeEnd();return false;}
             // A move may be coalesced with release: use the current target region.
             var target=map.Fresh(now)?TargetAt(map,gesture,point):null;

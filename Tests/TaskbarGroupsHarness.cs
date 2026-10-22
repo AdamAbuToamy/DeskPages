@@ -67,6 +67,8 @@ public static class TaskbarGroupsHarness {
         Check(gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,121,begin,end,null,take,resume) && begun!=null && takes==1,"Target entry did not take ownership");
         Check(gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,122,begin,end) && ended==begun && ended.TargetAppId=="group" && ended.Released,"Immediate release lost its target");
         Check(!gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,123,begin,end),"Release consumed twice");
+        begun=null;ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,125,begin,end);
+        Check(gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,126,begin,end,null,take,resume) && begun!=null && ended==begun && ended.TargetAppId=="group","A coalesced release before its move lost the group target");
         begun=null;ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,130,begin,end);
         gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,131,begin,end,null,take,resume);
         Check(gate.Process(0x200,new Point(170,20),false,false,inputMap.Taskbar,inputMap,132,begin,end,null,take,resume) && resumes==1 && ended!=null && !ended.Released && ended.NativeActive,"Leaving a group did not resume native reordering before release");

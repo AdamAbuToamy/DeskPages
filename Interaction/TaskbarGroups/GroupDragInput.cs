@@ -13,7 +13,7 @@ internal sealed class GroupDragInput:IDisposable {
     private readonly ConcurrentDictionary<ulong,NativeBatch> pending=new ConcurrentDictionary<ulong,NativeBatch>();private int sequence;private readonly ManualResetEvent initialized=new ManualResetEvent(false);
     private GroupInputMap map=new GroupInputMap();private readonly GroupDragGate gate=new GroupDragGate();
     private Hook mouse,key;private IntPtr mouseHandle,keyHandle;private uint threadId;
-    private Exception error;private int disposed;
+    private Exception error;private int disposed,handoffs;private GroupDragGesture handingOff;
     internal const uint ReplayTag=0x44504752;private volatile string lastPress="No taskbar press observed";
     private volatile string lastMotion="none",lastTransfer="none",lastNative="none";
     public string Diagnostics{get{return lastPress+"; motion="+lastMotion+"; transfer="+lastTransfer+"; native="+lastNative;}}
@@ -59,7 +59,9 @@ internal sealed class GroupDragInput:IDisposable {
             var current=map;IntPtr actual=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
             IntPtr root=kind==0x201 && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Taskbar:actual;
             bool modified=kind==0x201 && ModifierDown();
+            bool pendingMove=kind==0x200 && Volatile.Read(ref handoffs)>0;
             bool owned=ProcessGesture(kind,input.Point,root,current,modified);
+            if(pendingMove && !owned){QueueNative(new[]{Move(input.Point,SystemInformation.VirtualScreen)},handingOff,false);owned=true;}
             if(kind==0x200 && current.Groups.Any(g=>g.Bounds.Contains(input.Point)))lastMotion="point="+input.Point+", owned="+owned+", "+gate.Describe();
             if(kind==0x201 && current.Bounds.Contains(input.Point))lastPress="Owned="+owned+"; flags="+input.Flags+"; root="+WindowShell.Class(actual)+"; taskbarMatch="+(root==current.Taskbar)+"; source="+(current.Sources.FirstOrDefault(v=>v.Button.Bounds.Contains(input.Point))??new GroupDragSource{Button=new TaskButton{AppId="none"}}).Button.AppId+"; groups="+current.Groups.Length+"; sources="+current.Sources.Length+"; ageMs="+(Now-current.Created)+"; modified="+modified+"; gate="+gate.Describe();
             if(owned)return new IntPtr(1);
@@ -82,7 +84,9 @@ internal sealed class GroupDragInput:IDisposable {
     private bool TransferToGroup(GroupDragGesture gesture,Point point){
         var safe=GroupDragGeometry.NativeEnd(gesture,SystemInformation.DragSize.Width);lastTransfer="dragSize="+SystemInformation.DragSize.Width+", box="+gesture.Source.Button.Bounds+", safe="+(safe.HasValue?safe.Value.ToString():"none");if(!safe.HasValue)return false;
         var area=SystemInformation.VirtualScreen;
-        return QueueNative(new[]{Move(safe.Value,area),Button(4),Move(point,area)},gesture,true);
+        handingOff=gesture;Interlocked.Increment(ref handoffs);
+        bool queued=QueueNative(new[]{Move(safe.Value,area),Button(4),Move(point,area)},gesture,true);
+        if(!queued)Interlocked.Decrement(ref handoffs);return queued;
     }
     private bool ResumeNative(GroupDragGesture gesture,Point point,GroupInputMap current){
         if(ModifierDown() || !current.Fresh(Now) || Now-current.Created>250 || current.Created<gesture.TransferredAt+80 || current.Taskbar!=gesture.Taskbar)return false;
@@ -99,12 +103,14 @@ internal sealed class GroupDragInput:IDisposable {
     private bool QueueNative(Input[] batch,GroupDragGesture gesture,bool finishNative,long observedAt=0){
         if(Interlocked.CompareExchange(ref disposed,0,0)!=0)return false;
         try{native.Add(delegate{
-            if(Interlocked.CompareExchange(ref disposed,0,0)!=0)return;
-            if(gesture!=null && gesture.Cancelled && !finishNative)return;
-            if(observedAt!=0 && gesture.Released)return;
-            if(observedAt!=0 && Now-observedAt>250){if(gesture!=null)gesture.Cancelled=true;Repair();return;}
-            var send=finishNative && gesture.Cancelled?batch.Take(2).ToArray():batch;
-            if(!Send(send,gesture,observedAt!=0)){if(gesture!=null)gesture.Cancelled=true;Repair();}
+            try{
+                if(Interlocked.CompareExchange(ref disposed,0,0)!=0)return;
+                if(gesture!=null && gesture.Cancelled && !finishNative)return;
+                if(observedAt!=0 && gesture.Released)return;
+                if(observedAt!=0 && Now-observedAt>250){if(gesture!=null)gesture.Cancelled=true;Repair();return;}
+                var send=finishNative && gesture.Cancelled?batch.Take(2).ToArray():batch;
+                if(!Send(send,gesture,observedAt!=0)){if(gesture!=null)gesture.Cancelled=true;Repair();}
+            }finally{if(finishNative)Interlocked.Decrement(ref handoffs);}
         });return true;}catch(InvalidOperationException){return false;}
     }
     private void BeginOrdered(GroupDragGesture gesture){
