@@ -16,8 +16,10 @@ public sealed class DeskPagesMonitorPages:Form {
         enabled.Text=L("Show a fixed page on each assigned display","عرض صفحة ثابتة على كل شاشة مخصصة","הצגת דף קבוע בכל מסך שהוקצה");enabled.Dock=DockStyle.Top;enabled.Padding=new Padding(16);enabled.Height=56;
         var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=54,Padding=new Padding(12),FlowDirection=FlowDirection.RightToLeft};
         buttons.Controls.Add(DeskPagesFluent.Button(L("Save","حفظ","שמירה"),Save,true));buttons.Controls.Add(DeskPagesFluent.Button(L("Refresh displays","تحديث الشاشات","רענון מסכים"),RefreshDisplays,false));
+        rows.Resize+=delegate{foreach(Control control in rows.Controls){var combo=control as ComboBox;if(combo!=null)combo.Width=Math.Max(120,Math.Min(450,rows.ClientSize.Width-40));var label=control as Label;if(label!=null)label.MaximumSize=new Size(Math.Max(120,rows.ClientSize.Width-40),0);}};
         Controls.Add(rows);Controls.Add(enabled);Controls.Add(status);Controls.Add(buttons);Shown+=delegate{RefreshDisplays();};
     }
+    protected override void OnShown(EventArgs e){base.OnShown(e);var area=Screen.FromControl(this).WorkingArea;MinimumSize=new Size(Math.Min(MinimumSize.Width,area.Width-48),Math.Min(MinimumSize.Height,area.Height-64));Size=new Size(Math.Min(Width,area.Width-48),Math.Min(Height,area.Height-64));Location=new Point(Math.Max(area.Left+16,Math.Min(Left,area.Right-Width-16)),Math.Max(area.Top+16,Math.Min(Top,area.Bottom-Height-16)));}
     private void RefreshDisplays(){try{
         var settings=DeskPagesWorkspaceApi.Execute("monitor-pages-settings");enabled.Checked=bool.Parse(settings[0]);choices.Clear();foreach(Control old in rows.Controls.Cast<Control>().ToArray()){rows.Controls.Remove(old);old.Dispose();}
         var pages=DeskPagesWorkspaceApi.Execute("pages").Select(v=>v.Split('\t')).Where(f=>f.Length==6 && f[3]!="True").ToArray();
@@ -25,7 +27,7 @@ public sealed class DeskPagesMonitorPages:Form {
         foreach(string line in settings.Skip(1)){
             var f=line.Split('\t');if(f.Length!=4)continue;
             var label=new Label{AutoSize=true,MaximumSize=new Size(490,0),Text=L("Display ","الشاشة ","מסך ")+(number++)+" · "+f[1]+" · "+f[3],Margin=new Padding(0,12,0,6)};
-            var combo=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Width=450,Margin=new Padding(0,0,0,12)};
+            var combo=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Width=Math.Max(120,Math.Min(450,rows.ClientSize.Width-40)),Margin=new Padding(0,0,0,12)};
             combo.Items.Add(new Choice{Id=0,Name=L("No assigned page","دون صفحة مخصصة","ללא דף מוקצה")});
             foreach(var page in pages)combo.Items.Add(new Choice{Id=int.Parse(page[0]),Name=page[1]});
             combo.SelectedIndex=0;for(int i=0;i<combo.Items.Count;i++)if(((Choice)combo.Items[i]).Id==int.Parse(f[2]))combo.SelectedIndex=i;
