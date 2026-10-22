@@ -46,7 +46,8 @@ internal static class TaskbarAccess {
     }
     internal static GroupWindow[] ResolveShortcut(TaskButton button,GroupWindow[] windows,IDictionary<string,HashSet<string>> aliases){
         HashSet<string> paths;if(!aliases.TryGetValue(button.AppId,out paths))return new GroupWindow[0];
-        return windows.Where(w=>string.IsNullOrEmpty(w.AppId) && w.ImagePath!=null && paths.Contains(w.ImagePath)).ToArray();
+        return windows.Where(w=>string.IsNullOrEmpty(w.AppId) && w.ImagePath!=null && paths.Contains(w.ImagePath)
+            && !aliases.Any(other=>!string.Equals(other.Key,button.AppId,StringComparison.OrdinalIgnoreCase) && other.Value.Contains(w.ImagePath))).ToArray();
     }
     private static Rectangle Box(System.Windows.Rect r){return r.IsEmpty || double.IsInfinity(r.X)?Rectangle.Empty:Rectangle.FromLTRB((int)r.Left,(int)r.Top,(int)r.Right,(int)r.Bottom);}
 }

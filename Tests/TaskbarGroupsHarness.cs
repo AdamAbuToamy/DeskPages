@@ -37,6 +37,8 @@ public static class TaskbarGroupsHarness {
         var aliases=new Dictionary<string,HashSet<string>>{{"Microsoft.VisualStudioCode",new HashSet<string>(StringComparer.OrdinalIgnoreCase){classic.ImagePath}}};
         Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==1,"Classic process-only AppID shortcut mapping failed");
         classic.AppId="Another.Profile";Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==0,"Shortcut alias overrode a distinct explicit window profile");
+        classic.AppId=null;aliases.Add("Another.Process.Profile",new HashSet<string>(StringComparer.OrdinalIgnoreCase){classic.ImagePath});
+        Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==0,"Ambiguous process-only shortcut profiles were combined");
     }
     private static void Native(){
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;
