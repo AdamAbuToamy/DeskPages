@@ -162,27 +162,27 @@ public static class TaskbarGroupsHarness {
         var original=Cursor.Position;
         try{
             using(var form=new Form{Text="DeskPages native drag fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),ClientSize=new Size(460,120),TopMost=true}){
-                int nativeDowns=0,nativeUps=0,begins=0,ends=0,leftMovesOnGroup=0,leftMovesBetweenApps=0;GroupDragGesture received=null;
+                int nativeDowns=0,nativeUps=0,begins=0,ends=0,leftMovesOnGroup=0,leftMovesBetweenApps=0,nativeGroupMoves=0;bool nativeDragging=false;var trace=new List<string>();GroupDragGesture received=null;
                 form.Show();form.Activate();Application.DoEvents();
                 Point source=form.PointToScreen(new Point(30,30)),other=form.PointToScreen(new Point(140,30)),target=form.PointToScreen(new Point(330,30));
                 var button=new TaskButton{AppId="FixtureApp",Bounds=new Rectangle(source.X-15,source.Y-15,40,40)};
                 var group=new TaskButton{AppId="FixtureGroup",Bounds=new Rectangle(target.X-20,target.Y-20,48,48)};
-                form.MouseDown+=delegate{nativeDowns++;};form.MouseUp+=delegate{nativeUps++;};
-                form.MouseMove+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){var point=form.PointToScreen(e.Location);if(group.Bounds.Contains(point))leftMovesOnGroup++;if(Math.Abs(point.X-other.X)<4)leftMovesBetweenApps++;}};
+                form.MouseDown+=delegate{nativeDowns++;nativeDragging=true;trace.Add("down");};form.MouseUp+=delegate{nativeUps++;nativeDragging=false;trace.Add("up");};
+                form.MouseMove+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){var point=form.PointToScreen(e.Location);if(group.Bounds.Contains(point)){leftMovesOnGroup++;trace.Add("groupMove:drag="+nativeDragging);if(nativeDragging)nativeGroupMoves++;}if(nativeDragging && Math.Abs(point.X-other.X)<4)leftMovesBetweenApps++;}};
                 using(var listener=new GroupDragInput(g=>System.Threading.Interlocked.Increment(ref begins),g=>{received=g;System.Threading.Interlocked.Increment(ref ends);})){
                     Func<GroupInputMap> map=()=>new GroupInputMap{Taskbar=form.Handle,Bounds=form.Bounds,Created=Clock(),Groups=new[]{group},Sources=new[]{new GroupDragSource{Button=button,Windows=new GroupWindow[0]}}};
-                    Action<string,Func<bool>> wait=(stage,done)=>{try{PumpUntil(done);}catch(Exception ex){throw new Exception(stage+"; downs="+nativeDowns+"; ups="+nativeUps+"; begins="+begins+"; ends="+ends+"; targetMoves="+leftMovesOnGroup+"; "+listener.Diagnostics,ex);}};
+                    Action<string,Func<bool>> wait=(stage,done)=>{try{PumpUntil(done);}catch(Exception ex){throw new Exception(stage+"; downs="+nativeDowns+"; ups="+nativeUps+"; begins="+begins+"; ends="+ends+"; targetMoves="+nativeGroupMoves+"; trace="+string.Join(",",trace)+"; "+listener.Diagnostics,ex);}};
                     // Existing application movement is real native down/move/up.
-                    listener.Publish(map());SendFixtureInput(source,other);wait("native ordinary release",delegate{return nativeUps==1;});
+                    listener.Publish(map());SendFixturePart(source,2);wait("native ordinary press",delegate{return nativeDowns==1;});SendFixturePart(other,0);wait("native ordinary motion",delegate{return leftMovesBetweenApps>0;});SendFixturePart(other,4);wait("native ordinary release",delegate{return nativeUps==1;});
                     Check(nativeDowns==1 && begins==0 && ends==0 && leftMovesBetweenApps>0,"Ordinary reorder was captured instead of reaching the native window live");
                     listener.Publish(map());SendFixtureInput(source,target);wait("immediate target drop",delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
-                    Check(begins==1 && nativeDowns==2 && leftMovesOnGroup==0 && received.Released && received.TargetAppId=="FixtureGroup","Native drag did not transfer only at group entry, or an immediate group release was lost");
+                    Check(begins==1 && nativeDowns==2 && nativeGroupMoves==0 && received.Released && received.TargetAppId=="FixtureGroup","Immediate target: downs="+nativeDowns+", ups="+nativeUps+", begins="+begins+", ends="+ends+", targetMoves="+nativeGroupMoves+", leftFlags="+leftMovesOnGroup+", trace="+string.Join(",",trace)+", released="+received.Released+", target="+received.TargetAppId+"; "+listener.Diagnostics);
                     // Leaving the target resumes native movement while still held.
                     listener.Publish(map());SendFixturePart(source,2);SendFixturePart(target,0);wait("second target entry",delegate{return begins==2 && nativeUps==3;});
                     PumpFor(120);listener.Publish(map());SendFixturePart(other,0);wait("resume before release",delegate{return ends==2 && nativeDowns==4;});
                     Check(!received.Released && received.NativeActive,"Native resume waited for physical release");
                     SendFixturePart(other,4);wait("resumed native release",delegate{return nativeUps==4;});
-                    Check(begins==2 && ends==2 && leftMovesOnGroup==0,"Own continuation recursively entered input or moved the native target");
+                    Check(begins==2 && ends==2 && nativeGroupMoves==0,"Own continuation recursively entered input or moved the native target");
                     listener.Publish(map());SendFixtureInput(target,other);wait("native group-source release",delegate{return nativeUps==5;});
                     Check(nativeDowns==5 && begins==2,"Dragging the numbered group itself was intercepted");
                 }

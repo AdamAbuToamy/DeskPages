@@ -45,6 +45,12 @@ internal static class WindowShell {
         // conventional child HWND. Require the real taskbar in its owner chain.
         for(int i=0;i<8 && hit!=IntPtr.Zero;i++){hit=GetWindow(hit,4);if(hit==taskbar)return true;}return false;
     }
+    [StructLayout(LayoutKind.Sequential)]private struct GuiThreadInfo {public uint Size,Flags;public IntPtr Active,Focus,Capture,Menu,Move,Caret;public Rect CaretRect;}
+    [DllImport("user32.dll")]private static extern bool GetGUIThreadInfo(uint thread,ref GuiThreadInfo info);
+    public static bool WaitForDragRelease(IntPtr taskbar){
+        uint pid;uint thread=GetWindowThreadProcessId(taskbar,out pid);if(thread==0)return false;
+        return System.Threading.SpinWait.SpinUntil(delegate{var info=new GuiThreadInfo{Size=(uint)Marshal.SizeOf(typeof(GuiThreadInfo))};return GetGUIThreadInfo(thread,ref info) && info.Capture==IntPtr.Zero;},500);
+    }
     public static bool Same(GroupWindow w){var h=new IntPtr(w.Handle);uint pid;if(!IsWindow(h))return false;GetWindowThreadProcessId(h,out pid);if(pid!=w.ProcessId)return false;try{using(var p=Process.GetProcessById(w.ProcessId))return p.StartTime.ToUniversalTime().Ticks==w.Started;}catch(ArgumentException){return false;}catch(System.ComponentModel.Win32Exception){return true;}}
     public static GroupWindow[] Windows(){
         var list=new List<GroupWindow>();int self=Process.GetCurrentProcess().Id;

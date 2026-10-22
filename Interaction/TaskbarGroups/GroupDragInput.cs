@@ -72,7 +72,7 @@ internal sealed class GroupDragInput:IDisposable {
         return gate.Process(kind,point,false,modified,root,current,Now,BeginOrdered,FinishOrdered,refresh,
             delegate(GroupDragGesture gesture,Point target){return TransferToGroup(gesture,target);},
             delegate(GroupDragGesture gesture,Point target){return ResumeNative(gesture,target,current);},
-            delegate(Point target){var gesture=gate.Current;QueueNative(new[]{Move(target,SystemInformation.VirtualScreen)},gesture,false);});
+            delegate(Point target){if(Cursor.Position!=target){var gesture=gate.Current;QueueNative(new[]{Move(target,SystemInformation.VirtualScreen)},gesture,false);}});
     }
     private IntPtr Key(int code,IntPtr message,IntPtr data){
         if(code>=0 && Marshal.ReadInt32(data)==0x1B){bool owned=gate.Owned;gate.Cancel();if(owned)return new IntPtr(1);}
@@ -108,8 +108,14 @@ internal sealed class GroupDragInput:IDisposable {
                 if(gesture!=null && gesture.Cancelled && !finishNative)return;
                 if(observedAt!=0 && gesture.Released)return;
                 if(observedAt!=0 && Now-observedAt>250){if(gesture!=null)gesture.Cancelled=true;Repair();return;}
-                var send=finishNative && gesture.Cancelled?batch.Take(2).ToArray():batch;
-                if(!Send(send,gesture,observedAt!=0)){if(gesture!=null)gesture.Cancelled=true;Repair();}
+                bool sent;
+                if(finishNative){
+                    // Mouse-up must reach the native UI and release its capture
+                    // before any pointer move is delivered over the group.
+                    sent=Send(batch.Take(2).ToArray(),gesture,false) && WindowShell.WaitForDragRelease(gesture.Taskbar);
+                    if(sent && !gesture.Cancelled)sent=Send(batch.Skip(2).ToArray(),gesture,false);
+                }else sent=Send(batch,gesture,observedAt!=0);
+                if(!sent){if(gesture!=null)gesture.Cancelled=true;Repair();}
             }finally{if(finishNative)Interlocked.Decrement(ref handoffs);}
         });return true;}catch(InvalidOperationException){return false;}
     }
