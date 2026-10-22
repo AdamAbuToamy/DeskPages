@@ -445,6 +445,7 @@ function Get-DpComposedLayoutIcons {param([int]$Page,[object[]]$Saved,[object[]]
     }finally{$script:DpMonitorPageContext=$previous}
 }
 function Save-DpMonitorPageLayouts {param([int]$Page,[object[]]$Icons)
+    $captureSignal=Get-DpDisplaySignal;$captureKey=Get-DpMonitorKey
     $previous=$script:DpMonitorPageContext
     $script:DpMonitorPageContext=New-DpMonitorPageContext
     try{
@@ -460,6 +461,7 @@ function Save-DpMonitorPageLayouts {param([int]$Page,[object[]]$Icons)
     })
     $changed=@(foreach($snapshot in $snapshots){$path=Join-Path $script:DpLayoutStore ("page-"+$snapshot.Page+'.xml');$old=@();if(Test-Path -LiteralPath $path){$old=@((Import-Clixml -LiteralPath $path).Icons)};$a=($snapshot.Icons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";$b=($old | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";if($a -cne $b){$snapshot}})
     if($changed.Count){
+        if((Get-DpDisplaySignal)[0] -ne $captureSignal[0] -or (Get-DpMonitorKey) -ne $captureKey){throw 'Display changed during composed layout capture; layout saving is blocked.'}
         $journal=Join-Path $script:DpWorkspaceRoot 'monitor-layout-checkpoint.xml'
         Write-DpAtomicXml $journal ([PSCustomObject]@{Revision=[string]$script:DpState.Revision;Layouts=$changed})
         foreach($snapshot in $changed){Write-DpAtomicXml (Join-Path $script:DpLayoutStore ("page-"+$snapshot.Page+'.xml')) $snapshot}

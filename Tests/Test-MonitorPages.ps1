@@ -57,6 +57,15 @@ try{
  $saved=Import-Clixml (Join-Path $script:DpLayoutStore 'page-2.xml')
  Assert (@($saved.Icons | Where-Object Id -eq '2')[0].X -eq 80) 'Secondary position was not saved in canonical page coordinates.'
  Assert (-not @((Import-Clixml (Join-Path $script:DpLayoutStore 'page-1.xml')).Icons | Where-Object Id -in @('2','3')).Count) 'Combined Explorer view contaminated main page.'
+ # A display change during canonical splitting must not write any page.
+ $beforeHashes=@{};foreach($file in Get-ChildItem $script:DpLayoutStore -Filter 'page-*.xml'){$beforeHashes[$file.FullName]=(Get-FileHash $file.FullName).Hash}
+ $signalReader=(Get-Command Get-DpDisplaySignal).ScriptBlock;$script:signalReads=0
+ function Get-DpDisplaySignal {$script:signalReads++;if($script:signalReads -eq 2){$script:signal[0]++};return $script:signal}
+ $two.X=2010;$rejected=$false
+ try{Save-DpMonitorPageLayouts 1 @([OriginalDesktopReader]::Icons)}catch{$rejected=$_.ToString().Contains('layout saving is blocked.')}finally{Set-Item Function:Get-DpDisplaySignal $signalReader}
+ Assert $rejected 'Composed checkpoint accepted a mid-capture display change.'
+ foreach($path in $beforeHashes.Keys){Assert ((Get-FileHash $path).Hash -eq $beforeHashes[$path]) 'Mid-capture display change rewrote a page layout.'}
+ $two.X=2000
  $script:DpState.Current=4;Resume-DpCommittedPage
  Assert (@([OriginalDesktopReader]::Icons | Where-Object Id -eq '2')[0].X -eq 2000 -and -not @([OriginalDesktopReader]::Icons | Where-Object Id -eq '1').Count) 'Main navigation moved a fixed page or retained previous membership.'
  $script:screens=@($main,$left)

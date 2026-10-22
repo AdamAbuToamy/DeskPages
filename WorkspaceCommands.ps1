@@ -231,10 +231,11 @@ function Invoke-DpWorkspaceRequest {
                 # Retain disconnected monitor choices; connected entries are replaced.
                 $connected=@($screens | Where-Object {-not $_.Primary} | ForEach-Object {Get-DpMonitorIdentity $_})
                 $assignments=@($w.MonitorPages | Where-Object {$_.Monitor -notin $connected})
-                $seen=@{}
+                $seen=@{};$requestedPages=@{}
                 foreach($argument in @($Arguments | Select-Object -Skip 1)){
                     $fields=$argument -split "`t";if($fields.Count -ne 2 -or $fields[0] -notin $connected -or $seen.ContainsKey($fields[0])){throw 'Displays changed. Refresh this window and try again.'}
                     $seen[$fields[0]]=$true;$page=[int]$fields[1]
+                    if($page -ne 0 -and $requestedPages.ContainsKey($page)){throw 'Choose a different page for each display.'};$requestedPages[$page]=$true
                     if($page -ne 0){$assignments=@($assignments | Where-Object {[int]$_.Page -ne $page})+@([PSCustomObject]@{Monitor=$fields[0];Page=$page})}
                 }
                 if($seen.Count -ne $connected.Count){throw 'Displays changed. Refresh this window and try again.'}
