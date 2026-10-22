@@ -98,7 +98,7 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
             for(int page=0;page<4;page++)for(int i=0;i<Pages[page].Count;i++){
                 var item=Pages[page][i];item.Action.Visible=page==Section;
                 if(page!=Section)continue;
-                float y=112+i*76,actionWidth=item.Action is ComboBox?164:50,actionHeight=item.Action is ComboBox?((ComboBox)item.Action).PreferredHeight/UiScale:36;
+                float y=112+i*76,actionWidth=item.Action is ComboBox?164:item.Action is Button?140:50,actionHeight=item.Action is ComboBox?((ComboBox)item.Action).PreferredHeight/UiScale:36;
                 item.RowBounds=R(contentX,y,contentWidth,76);
                 item.Action.Bounds=R(IsRtl?contentX+20:contentX+contentWidth-20-actionWidth,y+(76-actionHeight)/2,actionWidth,actionHeight);
                 var toggle=item.Action as DeskPagesModernToggle;if(toggle!=null){toggle.UiScale=UiScale;toggle.IsRtl=IsRtl;toggle.Invalidate();}
@@ -127,7 +127,7 @@ public sealed class DeskPagesModernSettingsSurface:Panel {
         DeskPagesModernStyle.Round(g,R(railX,20,rail,height-40),(int)(16*UiScale),Color.White,DeskPagesModernStyle.Line);
         var mark=R(railX+(rail-48)/2,32,48,48);if(brand!=null)g.DrawImage(brand,mark);
         Draw(g,"DeskPages",R(railX+8,84,rail-16,24),15,DeskPagesModernStyle.Ink,true,true);
-        Draw(g,"0.8.28 · Experiment",R(railX+8,height-67,rail-16,22),11,DeskPagesModernStyle.Muted,false,true);
+        Draw(g,"0.8.29 · Experiment",R(railX+8,height-67,rail-16,22),11,DeskPagesModernStyle.Muted,false,true);
         string[] titles={L("General","عام","כללי"),L("Navigation","التنقل","ניווט"),L("Appearance","المظهر","מראה"),L("Pages","الصفحات","דפים")};
         string[] notes={L("Make DeskPages feel like home.","خصص تجربة DeskPages كما تحب.","התאימו את DeskPages אליכם."),L("Choose how you move between pages.","اختر طريقتك للتنقل بين الصفحات.","בחרו כיצד לעבור בין דפים."),L("A calmer desktop, your way.","اضبط حركة الصفحات ومظهرها.","התאימו את תנועת הדפים והמראה."),L("Keep every file in the right place.","نظم ملفاتك واحفظ ترتيبك المفضل.","ארגנו קבצים ושמרו את הסידור." )};
         Draw(g,titles[Section],R(cx,30,cw,40),27,DeskPagesModernStyle.Ink,true,false);

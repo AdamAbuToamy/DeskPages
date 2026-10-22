@@ -23,7 +23,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly GroupAddButton plus;private readonly GroupDropCue cue=new GroupDropCue();
     private readonly GroupDragGhost ghost=new GroupDragGhost();private readonly GroupDragInput input;private readonly GroupPopup groupPopup;
     private GroupDragGesture captured;private int replayBusy,windowsBusy;private GroupDragSource[] resolvedSources=new GroupDragSource[0];private GroupWindowPicker picker;
-    private readonly NotifyIcon tray;private readonly Icon trayIcon;private readonly ToolTip hint=new ToolTip();
+    private readonly ToolTip hint=new ToolTip();
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=40};
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
@@ -34,16 +34,9 @@ internal sealed class GroupController:ApplicationContext {
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
     public GroupController(){
         model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);var uiHandle=plus.Handle;
-        groupPopup=new GroupPopup(plus,g=>model.Find(g.AppId)==g,DeleteEmptyGroup,WindowShell.Activate,BeginMemberDrag,ChooseOpenApps);
-        trayIcon=Icon.ExtractAssociatedIcon(executable)??(Icon)SystemIcons.Application.Clone();
-        tray=new NotifyIcon{Icon=trayIcon,Text="DeskPages · Taskbar groups",Visible=true};
-        var menu=new ContextMenuStrip();menu.Items.Add("Add group",null,delegate{AddGroup();});var chooseMenu=(ToolStripMenuItem)menu.Items.Add("Add open apps to group");chooseMenu.DropDownOpening+=delegate{
-            foreach(ToolStripItem old in chooseMenu.DropDownItems.Cast<ToolStripItem>().ToArray()){chooseMenu.DropDownItems.Remove(old);old.Dispose();}
-            foreach(var live in model.Groups){var destination=live;chooseMenu.DropDownItems.Add("Group "+live.Number.ToString("00"),null,delegate{plus.BeginInvoke((Action)delegate{ChooseOpenApps(destination);});});}
-            if(model.Groups.Length==0)chooseMenu.DropDownItems.Add("Create a group with + first").Enabled=false;
-        };menu.Items.Add("Copy taskbar diagnostics",null,delegate{Clipboard.SetText(input.Diagnostics+Environment.NewLine+"Native buttons="+snapshot.Buttons.Length+"; model groups="+model.Groups.Length+Environment.NewLine+string.Join(Environment.NewLine,snapshot.Buttons.Select(b=>b.AppId+" @ "+b.Bounds)));});menu.Items.Add("Restore apps and turn off",null,delegate{File.WriteAllText(EnabledPath,"off");plus.BeginInvoke((Action)ExitThread);});tray.ContextMenuStrip=menu;tray.DoubleClick+=delegate{AddGroup();};
-        Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));File.WriteAllText(EnabledPath,"on");
-        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);});snapshot=TaskbarAccess.ReadBounds();PlacePlus();timer.Tick+=delegate{Tick();};timer.Start();
+        groupPopup=new GroupPopup(plus,g=>model.Find(g.AppId)==g,DeleteGroup,WindowShell.Activate,BeginMemberDrag,ChooseOpenApps);
+        Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));stop.Reset();
+        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);},(id,point)=>Post(delegate{var group=model.Find(id);if(group!=null)groupPopup.Show(group,point);}));snapshot=TaskbarAccess.ReadBounds();PlacePlus();timer.Tick+=delegate{Tick();};timer.Start();
     }
     public static string EnabledPath{get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","TaskbarGroups","enabled.txt");}}
     private void StartGuardian(){
@@ -148,7 +141,7 @@ internal sealed class GroupController:ApplicationContext {
         if(Interlocked.CompareExchange(ref replayBusy,1,0)!=0)return;
         ThreadPool.QueueUserWorkItem(delegate{
             TaskbarSnapshot fresh=null;GroupWindow[] windows=null;
-            try{fresh=TaskbarAccess.Read();windows=TaskbarAccess.Resolve(gesture.Source.Button,WindowShell.Windows());}
+            try{fresh=TaskbarAccess.Read();windows=TaskbarAccess.Resolve(gesture.Source.Button,WindowShell.Windows(),fresh.Buttons.Select(b=>b.AppId).ToArray());}
             catch(Exception){}finally{Interlocked.Exchange(ref replayBusy,0);}
             Post(delegate{
                 if(disposed || request!=generation || !input.IsCurrent(gesture) || gesture.Cancelled || fresh==null || fresh.Handle!=gesture.Taskbar || model.Find(destination.AppId)!=destination)return;
@@ -173,7 +166,7 @@ internal sealed class GroupController:ApplicationContext {
             Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
             // Window/shortcut resolution cannot stall publication of hit regions.
             if(ids.Length>0 && Now-lastWindowRead>=750 && Interlocked.CompareExchange(ref windowsBusy,1,0)==0){lastWindowRead=Now;ThreadPool.QueueUserWorkItem(delegate{
-                try{var windows=WindowShell.Windows();var sources=next.Buttons.Select(b=>new GroupDragSource{Button=b,Windows=TaskbarAccess.Resolve(b,windows)}).ToArray();Interlocked.Exchange(ref resolvedSources,sources);}
+                try{var windows=WindowShell.Windows();var sources=next.Buttons.Select(b=>new GroupDragSource{Button=b,Windows=TaskbarAccess.Resolve(b,windows,next.Buttons.Select(v=>v.AppId).ToArray())}).ToArray();Interlocked.Exchange(ref resolvedSources,sources);}
                 catch(Exception){}finally{Interlocked.Exchange(ref windowsBusy,0);}
             });}
         });
@@ -188,7 +181,7 @@ internal sealed class GroupController:ApplicationContext {
         Rectangle area=Screen.PrimaryScreen.Bounds;
         var bar=snapshot.Bounds;
         if(!bar.IsEmpty && bar.Height>=10)area=Screen.FromRectangle(bar).Bounds;
-        var bounds=GroupLayoutPolicy.AddBounds(bar,snapshot.Weather,area,snapshot.Buttons.Select(b=>b.Bounds).ToArray(),snapshot.Accessible);
+        var bounds=GroupLayoutPolicy.AddBounds(bar,snapshot.Weather,area,snapshot.Occupied,snapshot.Accessible);
         plus.Bounds=bounds;if(!plus.Visible)plus.Show();
     }
     private void Assign(LiveGroup group,GroupWindow[] items){
@@ -211,7 +204,13 @@ internal sealed class GroupController:ApplicationContext {
     }
     private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
     private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
-    private void DeleteEmptyGroup(LiveGroup group){model.DeleteEmpty(group);RemoveAnchor(group);RefreshSoon();}
+    private void DeleteGroup(LiveGroup group){
+        // Restore durable ownership before removing the numbered anchor. A failed
+        // restore leaves that member and the group available for a safe retry.
+        foreach(var window in group.Windows.Values.ToArray()){recovery.Restore(window);if(!recovery.Owns(window))model.Remove(window);}
+        if(group.Windows.Count!=0)throw new InvalidOperationException("Some applications could not be restored. Retry deleting this group.");
+        model.DeleteEmpty(group);RemoveAnchor(group);RefreshSoon();
+    }
     private void BeginMemberDrag(GroupWindow window){CancelDrag();drag=new[]{window};press=Cursor.Position;held=true;}
     private void RefreshSoon(){lastRead=0;}
     private void CancelDrag(){generation++;drag=new GroupWindow[0];pressGroups=new TaskButton[0];sourceAppId=null;target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
@@ -219,7 +218,7 @@ internal sealed class GroupController:ApplicationContext {
     protected override void ExitThreadCore(){
         if(disposed)return;disposed=true;if(captured!=null)captured.Cancelled=true;input.Dispose();timer.Stop();timer.Dispose();
         try{recovery.RestoreAll();}catch(Exception){/* The independent guardian retries the durable journal after exit. */}
-        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);if(picker!=null && !picker.IsDisposed)picker.Close();groupPopup.Dispose();ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();tray.Visible=false;tray.ContextMenuStrip.Dispose();tray.Dispose();trayIcon.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
+        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);if(picker!=null && !picker.IsDisposed)picker.Close();groupPopup.Dispose();ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
         base.ExitThreadCore();
     }
 }

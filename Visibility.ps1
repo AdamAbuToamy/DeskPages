@@ -223,7 +223,7 @@ function Set-DpSystemIcons {
         foreach($entry in $script:DpState.SystemIconBackup) {
             $exists=$entry.Id -in @($key.GetValueNames())
             $shared=-not $Original -and $script:DpState.PSObject.Properties['Workspace'] -and ($entry.Id -in @($script:DpState.Workspace.SystemPinned) -or ((Get-Command Test-DpSecondarySystem -ErrorAction SilentlyContinue) -and (Test-DpSecondarySystem $entry.Id)))
-            $showSystem=$Page -eq 1 -or $shared
+            $showSystem=$Page -eq 1 -or $shared -or (-not $Original -and (Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and 1 -in @(Get-DpVisiblePages $Page))
             if($shared){
                 if(-not $exists -or $key.GetValue($entry.Id) -ne 0 -or $key.GetValueKind($entry.Id) -ne [Microsoft.Win32.RegistryValueKind]::DWord){$key.SetValue($entry.Id,0,[Microsoft.Win32.RegistryValueKind]::DWord);$changed=$true}
             } elseif(-not $showSystem) {

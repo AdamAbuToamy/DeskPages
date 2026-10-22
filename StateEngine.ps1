@@ -1,4 +1,5 @@
 ﻿function Test-DpFileVisible {param($Entry,[int]$Page)
+    if((Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and [int]$Entry.Page -in @(Get-DpVisiblePages $Page)){return $true}
     if(Get-Command Test-DpItemVisible -ErrorAction SilentlyContinue){return (Test-DpItemVisible $Entry $Page)}
     return ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned))
 }
@@ -47,6 +48,7 @@ function Invoke-DpPageTransaction {
     if ($script:DpSuspended) {throw 'DeskPages is suspended. Resume explicitly before switching.'}
     $source=[int]$script:DpState.Current
     if ($source -eq $Page) {return}
+    if((Get-Command Get-DpFixedMonitorPages -ErrorAction SilentlyContinue) -and $Page -in @((Get-DpFixedMonitorPages) | ForEach-Object {$_.Page})){throw 'This page is displayed on another monitor. Change its assignment in settings first.'}
     if ($Page -notin @($script:DpState.Pages)) {throw 'Unknown page.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Archived)){throw 'Restore this archived page before opening it.'}
     if($script:hostReady -and (Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue)){Start-DpNavigationSample}

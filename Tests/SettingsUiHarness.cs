@@ -8,6 +8,9 @@ public static class DeskPagesWorkspaceApi {
  public static string[] Execute(string command,params string[] args){
   if(command=="pinned-icons")return new[]{"file\t"+FilePinned+"\t1\tC:\\Desktop\\fixture.txt","file\tFalse\t1\tC:\\Desktop\\Demo App.lnk","system\t"+SystemPinned+"\t{645FF040-5081-101B-9F08-00AA002F954E}\tWindows"};
   if(command=="pins-save"){PinWrites++;foreach(string row in args){var f=row.Split('\t');if(f[0]=="file")FilePinned=bool.Parse(f[1]);else SystemPinned=bool.Parse(f[1]);}return new string[0];}
+  if(command=="groups-settings")return new[]{"True"};
+  if(command=="groups-enable")return new string[0];
+  if(command=="monitor-pages-settings")return new[]{"False"};
   if(command=="capture-settings")return new[]{CacheEnabled.ToString()};
   if(command=="capture-mode"){if(CacheDenied)throw new Exception("Injected capture failure");CacheEnabled=bool.Parse(args[0]);CacheWrites++;return new string[0];}
   if(command=="display-settings")return new[]{PrimaryOnly.ToString()};

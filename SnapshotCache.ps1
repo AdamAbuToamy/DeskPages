@@ -2,6 +2,7 @@
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return}
     $parts=@($script:DpState.Items | Sort-Object Path | ForEach-Object {"$($_.Path)|$($_.Page)|$($_.Pinned)|$($_.Secondary)"})
     if($script:DpState.PSObject.Properties['Workspace']){$parts+=@($script:DpState.Workspace.SystemPinned | Sort-Object);$parts+=@($script:DpState.Workspace.SecondaryIcons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}
+    if($script:DpState.Workspace.MonitorPagesEnabled){$parts+=@('MonitorPages', (Get-DpMonitorKey));foreach($fixed in @(Get-DpFixedMonitorPages)){$path=Join-Path $script:DpLayoutStore ("page-"+$fixed.Page+'.xml');if(Test-Path -LiteralPath $path){$parts+=@((Import-Clixml -LiteralPath $path).Icons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}}}
     $parts+=@($script:DpState.SystemIconBackup | Sort-Object Id | ForEach-Object {"$($_.Id)|$($_.Exists)|$($_.Value)"})
     [DeskPagesHost]::SnapshotSceneContext(($parts -join "`n"))
 }

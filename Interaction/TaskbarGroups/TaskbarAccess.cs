@@ -8,7 +8,7 @@ internal sealed class TaskButton {
     public string AppId,Name;public string[] Names=new string[0];public Rectangle Bounds;
 }
 internal sealed class TaskbarSnapshot {
-    public IntPtr Handle;public bool Accessible;public Rectangle Bounds,Weather;public TaskButton[] Buttons=new TaskButton[0];
+    public Rectangle[] Occupied=new Rectangle[0];public IntPtr Handle;public bool Accessible;public Rectangle Bounds,Weather;public TaskButton[] Buttons=new TaskButton[0];
     public TaskButton At(Point point){return Buttons.FirstOrDefault(b=>b.Bounds.Contains(point));}
 }
 internal static class TaskbarAccess {
@@ -29,14 +29,21 @@ internal static class TaskbarAccess {
     public static TaskbarSnapshot Read(){
         var result=ReadBounds();if(result.Handle==IntPtr.Zero)return result;
         try{
-            var root=AutomationElement.FromHandle(result.Handle);var list=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));var buttons=new List<TaskButton>();
+            var root=AutomationElement.FromHandle(result.Handle);var list=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));var buttons=new List<TaskButton>();var occupied=new List<Rectangle>();
             for(int i=0;i<list.Count;i++)try{
                 var info=list[i].Current;if(info.IsOffscreen)continue;var box=Box(info.BoundingRectangle);if(box.IsEmpty)continue;
-                string id=info.AutomationId??"";
+                occupied.Add(box);string id=info.AutomationId??"";
                 if(id=="WidgetsButton" || id=="AugmentedEntryPointButton")result.Weather=box;
                 if(id.StartsWith("Appid:",StringComparison.OrdinalIgnoreCase))buttons.Add(new TaskButton{AppId=id.Substring(6).Trim(),Name=info.Name,Bounds=box});
             }catch(ElementNotAvailableException){}catch(InvalidOperationException){}catch(System.Runtime.InteropServices.COMException){}
-            result.Buttons=buttons.ToArray();result.Accessible=true;
+            // Tray controls are not all Button elements. Reserve their native HWND
+            // rectangles as well, without reserving the full task-list container.
+            foreach(string name in new[]{"TrayNotifyWnd","TrayClockWClass"}){var h=WindowShell.FindWindowExW(result.Handle,IntPtr.Zero,name,null);var box=WindowShell.Bounds(h);if(!box.IsEmpty)occupied.Add(box);}
+            foreach(string id in new[]{"SystemTrayFrame","SystemTrayIcon","NotificationCenterButton","ShowDesktopButton"}){
+                var element=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,id));
+                if(element!=null && !element.Current.IsOffscreen){var box=Box(element.Current.BoundingRectangle);if(!box.IsEmpty)occupied.Add(box);}
+            }
+            result.Occupied=occupied.ToArray();result.Buttons=buttons.ToArray();result.Accessible=true;
         }catch(ElementNotAvailableException){}catch(InvalidOperationException){}catch(System.Runtime.InteropServices.COMException){}
         // Native taskbar geometry still places '+' while accessibility starts or
         // Explorer recreates its UI tree. Unknown app buttons never become targets.
@@ -54,21 +61,23 @@ internal static class TaskbarAccess {
         }
         return preview?new TaskButton{Names=names.ToArray(),Bounds=previewBounds}:null;
     }
-    public static GroupWindow[] Resolve(TaskButton button,GroupWindow[] windows){
+    public static GroupWindow[] Resolve(TaskButton button,GroupWindow[] windows,string[] liveIds=null){
         if(button==null)return new GroupWindow[0];
         if(!string.IsNullOrEmpty(button.AppId)){
             var direct=windows.Where(w=>!string.IsNullOrEmpty(w.AppId) && string.Equals(w.AppId,button.AppId,StringComparison.OrdinalIgnoreCase)).ToArray();
             if(direct.Length>0 || windows.Length==0)return direct;
             string path=ImplicitAppIdentity.PathFor(button.AppId);
             if(path!=null){var exact=windows.Where(w=>string.IsNullOrEmpty(w.AppId) && string.Equals(w.ImagePath,path,StringComparison.OrdinalIgnoreCase)).ToArray();if(exact.Length>0)return exact;}
-            return ResolveShortcut(button,windows,ShortcutIdentity.Map);
+            return ResolveShortcut(button,windows,ShortcutIdentity.Map,liveIds);
         }
         var titled=windows.Where(w=>w.Title==button.Name || button.Names.Contains(w.Title)).ToArray();return titled.Length==1?titled:new GroupWindow[0];
     }
-    internal static GroupWindow[] ResolveShortcut(TaskButton button,GroupWindow[] windows,IDictionary<string,HashSet<string>> aliases){
+    internal static GroupWindow[] ResolveShortcut(TaskButton button,GroupWindow[] windows,IDictionary<string,HashSet<string>> aliases,string[] liveIds=null){
         HashSet<string> paths;if(!aliases.TryGetValue(button.AppId,out paths))return new GroupWindow[0];
-        return windows.Where(w=>string.IsNullOrEmpty(w.AppId) && w.ImagePath!=null && paths.Contains(w.ImagePath)
-            && !aliases.Any(other=>!string.Equals(other.Key,button.AppId,StringComparison.OrdinalIgnoreCase) && other.Value.Contains(w.ImagePath))).ToArray();
+        return windows.Where(w=>w.ImagePath!=null && paths.Contains(w.ImagePath)
+            && (string.IsNullOrEmpty(w.AppId) || (liveIds!=null && aliases.ContainsKey(w.AppId) && aliases[w.AppId].Contains(w.ImagePath)))
+            && !aliases.Any(other=>!string.Equals(other.Key,button.AppId,StringComparison.OrdinalIgnoreCase) && other.Value.Contains(w.ImagePath)
+                && (liveIds==null || liveIds.Contains(other.Key,StringComparer.OrdinalIgnoreCase)))).ToArray();
     }
     private static Rectangle Box(System.Windows.Rect r){return r.IsEmpty || double.IsInfinity(r.X)?Rectangle.Empty:Rectangle.FromLTRB((int)r.Left,(int)r.Top,(int)r.Right,(int)r.Bottom);}
 }

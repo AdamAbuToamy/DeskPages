@@ -39,6 +39,8 @@ public static class TaskbarGroupsHarness {
         classic.AppId="Another.Profile";Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==0,"Shortcut alias overrode a distinct explicit window profile");
         classic.AppId=null;aliases.Add("Another.Process.Profile",new HashSet<string>(StringComparer.OrdinalIgnoreCase){classic.ImagePath});
         Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases).Length==0,"Ambiguous process-only shortcut profiles were combined");
+        Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases,new[]{"Microsoft.VisualStudioCode"}).Length==1,"Unused shortcut profiles blocked VS Code's live button");
+        Check(TaskbarAccess.ResolveShortcut(new TaskButton{AppId="Microsoft.VisualStudioCode"},new[]{classic},aliases,new[]{"Microsoft.VisualStudioCode","Another.Process.Profile"}).Length==0,"Two live profiles were merged");
         var original=new[]{new TaskButton{AppId="group",Bounds=new Rectangle(200,0,48,48)}};
         var shifted=new TaskbarSnapshot{Buttons=new[]{new TaskButton{AppId="Chrome",Bounds=new Rectangle(200,0,48,48)},new TaskButton{AppId="group",Bounds=new Rectangle(152,0,48,48)}}};
         Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"Chrome",id=>id=="group").AppId=="group","Explorer's native reorder lost the accepted group");
@@ -87,6 +89,11 @@ public static class TaskbarGroupsHarness {
         var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
         Check(!fallback.IsEmpty && fallback.Bottom<bar.Top,"Native taskbar fallback hid '+' or covered unknown app buttons before UIA was ready");
         Check(GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Left==128,"Weather-adjacent placement changed");
+        var controls=new[]{new Rectangle(0,1032,450,48),new Rectangle(450,1032,100,48),new Rectangle(1700,1032,220,48)};
+        var leftPlus=GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,48,48),monitor,controls,true);
+        Check(!controls.Any(b=>b.IntersectsWith(leftPlus)) && monitor.Contains(leftPlus),"Left-aligned Start/apps/tray overlap persistent +");
+        var fullPlus=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new[]{bar},true);
+        Check(fullPlus.Bottom<bar.Top && monitor.Contains(fullPlus),"Full taskbar did not move + into a safe visible fallback");
         Check(GroupLayoutPolicy.ShellSurface("Progman") && GroupLayoutPolicy.ShellSurface("WorkerW") && GroupLayoutPolicy.ShellSurface("Shell_TrayWnd") && !GroupLayoutPolicy.ShellSurface("CabinetWClass"),"Explorer taskbar grouping included a desktop/taskbar Shell surface");
     }
     private static void Native(){
@@ -230,11 +237,11 @@ public static class TaskbarGroupsHarness {
                     Check(!menu.IsDisposed && popup.Menu==menu,"Closing the group menu disposed it while WinForms still owned its events");
                 }
                 popup.Show(group,owner.PointToScreen(new Point(8,8)));Application.DoEvents();
-                menu.Items[1].PerformClick();Check(removed==0,"Group deletion ran inside the ToolStrip click handler");
+                menu.Items.Cast<ToolStripItem>().Single(i=>i.Text=="Delete group").PerformClick();Check(removed==0,"Group deletion ran inside the ToolStrip click handler");
                 menu.Close();PumpUntil(delegate{return removed==1;});
                 Check(anchor.IsDisposed && !menu.IsDisposed,"Deleting the anchor disposed its stable-owner popup");
-                var next=model.Add();popup.Show(next,owner.PointToScreen(new Point(8,8)));Application.DoEvents();menu.Close();Application.DoEvents();
-                Check(!menu.IsDisposed,"Popup could not be reused after deleting a group");
+                var next=model.Add();model.Put(next,new GroupWindow{Handle=1,ProcessId=2,Started=3,Title="Populated app"});popup.Show(next,owner.PointToScreen(new Point(8,8)));Application.DoEvents();menu.Close();Application.DoEvents();
+                Check(!menu.IsDisposed && menu.Items.Cast<ToolStripItem>().Any(i=>i.Text=="Delete group"),"Populated group lost its own Delete action");
             }
             owner.Close();
         }

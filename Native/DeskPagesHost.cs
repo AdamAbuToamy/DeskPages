@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -127,8 +127,7 @@ public sealed class DeskPagesHost : ApplicationContext
         menu=new ContextMenuStrip();
         var openEntry=menu.Items.Add("Open DeskPages",null,delegate{OpenPanel();});
         var settingsEntry=menu.Items.Add("Settings",null,delegate{DeskPagesWorkspaceApi.OpenSettings();});
-        var groupsEntry=menu.Items.Add("Taskbar groups · experimental",null,delegate{Enqueue(9760);});
-        menu.Opening+=delegate{groupsEntry.Text=DeskPagesWorkspaceApi.L("Taskbar groups · experimental","مجموعات التاسك بار · تجريبي","קבוצות בשורת המשימות · ניסיוני");};
+
         var common=new ToolStripMenuItem("Selected desktop icons");common.DropDownItems.Add("Show on every page",null,delegate{DeskPagesWorkspaceApi.PinSelected(true);});common.DropDownItems.Add("Show only on their page",null,delegate{DeskPagesWorkspaceApi.PinSelected(false);});menu.Items.Add(common);
         pagesMenu=new ToolStripMenuItem("Pages");menu.Items.Add(pagesMenu);
         var previousEntry=menu.Items.Add("Previous page",null,delegate{Enqueue(-1);});
@@ -335,7 +334,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.28\r\n"+active.hidStatus+
+        return "Build: 0.8.29\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -616,14 +615,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.28 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.29 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.28 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.29 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }

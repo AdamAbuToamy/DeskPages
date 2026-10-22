@@ -7,7 +7,7 @@ using System.Threading;
 using System.Windows.Forms;
 
 internal sealed class GroupDragInput:IDisposable {
-    private readonly Action<GroupDragGesture> started,finished;private readonly Action refresh;
+    private readonly Action<GroupDragGesture> started,finished;private readonly Action refresh;private readonly Action<string,Point> context;private TaskButton contextTarget;private Point contextPress;
     private readonly Thread thread,sender;private readonly BlockingCollection<Action> native=new BlockingCollection<Action>();
     private sealed class NativeBatch {public int Remaining;public long Expires;public bool Resume;public GroupDragGesture Gesture;}
     private readonly ConcurrentDictionary<ulong,NativeBatch> pending=new ConcurrentDictionary<ulong,NativeBatch>();private int sequence;private readonly ManualResetEvent initialized=new ManualResetEvent(false);
@@ -17,7 +17,8 @@ internal sealed class GroupDragInput:IDisposable {
     internal const uint ReplayTag=0x44504752;private volatile string lastPress="No taskbar press observed";
     private volatile string lastMotion="none",lastTransfer="none",lastNative="none";
     public string Diagnostics{get{return lastPress+"; motion="+lastMotion+"; transfer="+lastTransfer+"; native="+lastNative;}}
-    public GroupDragInput(Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action changed=null){
+    public GroupDragInput(Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action changed=null,Action<string,Point> menu=null){
+        context=menu;
         started=begin;finished=end;refresh=changed??delegate{};sender=new Thread(SendNative){IsBackground=true,Name="DeskPages native drag continuation"};sender.Start();thread=new Thread(Run){IsBackground=true,Name="DeskPages taskbar input"};thread.SetApartmentState(ApartmentState.STA);thread.Start();
         if(!initialized.WaitOne(3000)){Dispose();throw new InvalidOperationException("Taskbar input could not start");}
         if(error!=null){Dispose();throw new InvalidOperationException("Taskbar input could not start",error);}
@@ -56,7 +57,12 @@ internal sealed class GroupDragInput:IDisposable {
         }
         int kind=message.ToInt32();
         try{
-            var current=map;IntPtr actual=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
+            var current=map;
+            if(context!=null && (kind==0x204 || kind==0x205)){
+                if(kind==0x204){contextTarget=current.Fresh(Now) && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Groups.FirstOrDefault(g=>g.Bounds.Contains(input.Point)):null;contextPress=input.Point;if(contextTarget!=null)return new IntPtr(1);}
+                else if(contextTarget!=null){var selected=contextTarget;contextTarget=null;if(selected.Bounds.Contains(input.Point) && Math.Abs(contextPress.X-input.Point.X)+Math.Abs(contextPress.Y-input.Point.Y)<SystemInformation.DragSize.Width)context(selected.AppId,input.Point);return new IntPtr(1);}
+            }
+            IntPtr actual=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
             IntPtr root=kind==0x201 && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Taskbar:actual;
             bool modified=kind==0x201 && ModifierDown();
             bool pendingMove=kind==0x200 && Volatile.Read(ref handoffs)>0;
