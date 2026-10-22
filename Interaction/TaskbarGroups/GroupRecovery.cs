@@ -70,7 +70,13 @@ internal sealed class GroupRecovery {
     public static int Watch(string session,int pid,long started){
         var recovery=new GroupRecovery(session);File.WriteAllText(Path.Combine(recovery.folder,"watch-ready"),"ready");
         while(OwnerAlive(pid,started))Thread.Sleep(300);
-        try{foreach(var lease in recovery.Read())recovery.leases[lease.Window.Key]=lease;for(int attempt=0;attempt<5 && !recovery.Empty;attempt++){recovery.RestoreAll();if(!recovery.Empty)Thread.Sleep(200);}return recovery.Empty?0:1;}catch(Exception){return 1;}
+        try{
+            GroupLease[] entries=null;
+            for(int attempt=0;attempt<5 && entries==null;attempt++)try{entries=recovery.Read();}catch(IOException){Thread.Sleep(200);}
+            if(entries==null)return 1;
+            foreach(var lease in entries)recovery.leases[lease.Window.Key]=lease;
+            for(int attempt=0;attempt<5 && !recovery.Empty;attempt++){recovery.RestoreAll();if(!recovery.Empty)Thread.Sleep(200);}return recovery.Empty?0:1;
+        }catch(Exception){return 1;}
     }
     private static bool OwnerAlive(int pid,long started){try{using(var p=Process.GetProcessById(pid))return !p.HasExited && p.StartTime.ToUniversalTime().Ticks==started;}catch(ArgumentException){return false;}catch(System.ComponentModel.Win32Exception){return true;}}
     public static void RecoverOrphans(){
@@ -82,8 +88,8 @@ internal sealed class GroupRecovery {
                 if(owner.Length!=2 || !int.TryParse(owner[0],out pid) || !long.TryParse(owner[1],out started) || OwnerAlive(pid,started))continue;
                 var recovery=new GroupRecovery(token.ToString("N"));foreach(var lease in recovery.Read())recovery.leases[lease.Window.Key]=lease;recovery.RestoreAll();
                 if(!recovery.Empty)throw new InvalidOperationException("Some previous taskbar groups could not be restored");
-                Directory.Delete(directory,true);
-            }catch(FileNotFoundException){ }catch(IOException){ }
+                try{Directory.Delete(directory,true);}catch(IOException){ }
+            }catch(FileNotFoundException){ }catch(IOException ex){throw new InvalidOperationException("Previous taskbar groups are still being restored. Retry in a moment.",ex);}
         }
     }
 }
