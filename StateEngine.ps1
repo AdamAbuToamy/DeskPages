@@ -1,5 +1,5 @@
 ﻿function Test-DpFileVisible {param($Entry,[int]$Page)
-    if((Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and [int]$Entry.Page -in @(Get-DpVisiblePages $Page)){return $true}
+    if((Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and [int]$Entry.Page -in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){return $true}
     if(Get-Command Test-DpItemVisible -ErrorAction SilentlyContinue){return (Test-DpItemVisible $Entry $Page)}
     return ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned))
 }

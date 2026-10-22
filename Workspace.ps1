@@ -376,6 +376,7 @@ function Get-DpMonitorIdentity {param($Screen)
 }
 function Get-DpFixedMonitorPages {param($State=$script:DpState,[object[]]$Screens=$null)
     if(-not $State.Workspace.MonitorPagesEnabled){return @()}
+    if($null -eq $Screens -and $script:DpMonitorPageContext -and [object]::ReferenceEquals($State,$script:DpMonitorPageContext.State)){return $script:DpMonitorPageContext.Fixed}
     if($null -eq $Screens){$Screens=@(Get-DpMonitorGeometry)}
     $used=@{}
     foreach($screen in @($Screens | Where-Object {-not $_.Primary})){
@@ -391,8 +392,8 @@ function Get-DpNavigationPages {
     $fixed=@(Get-DpFixedMonitorPages | ForEach-Object {$_.Page})
     @(Get-DpActivePages | Where-Object {$_ -notin $fixed})
 }
-function Get-DpVisiblePages {param([int]$Page)
-    @($Page)+@(Get-DpFixedMonitorPages | ForEach-Object {$_.Page}) | Select-Object -Unique
+function Get-DpVisiblePages {param([int]$Page,[object[]]$Screens=$null)
+    @($Page)+@(Get-DpFixedMonitorPages -Screens $Screens | ForEach-Object {$_.Page}) | Select-Object -Unique
 }
 function Set-DpMonitorCurrent {param($State,[object[]]$Screens)
     $fixed=@(Get-DpFixedMonitorPages $State $Screens | ForEach-Object {$_.Page})
@@ -403,7 +404,7 @@ function Set-DpMonitorCurrent {param($State,[object[]]$Screens)
     }
 }
 function Get-DpIconOwnerPage {param($Icon,[int]$Page)
-    $entry=@($script:DpState.Items | Where-Object {$_.Path -eq $Icon.Key} | Select-Object -First 1)
+    $entry=@();if($script:DpMonitorPageContext){if($script:DpMonitorPageContext.Items.ContainsKey([string]$Icon.Key)){$entry=@($script:DpMonitorPageContext.Items[[string]$Icon.Key])}}else{$entry=@($script:DpState.Items | Where-Object {$_.Path -eq $Icon.Key} | Select-Object -First 1)}
     if($entry.Count){if($entry[0].PSObject.Properties['Pinned'] -and $entry[0].Pinned){return $Page};return [int]$entry[0].Page}
     foreach($system in @($script:DpState.SystemIconBackup)){
         $aliases=@([string]$system.Id);if($system.Id -eq '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'){$aliases+='{26EE0668-A00A-44D7-9371-BEB064C98683}'}
@@ -415,12 +416,16 @@ function Get-DpIconScreen {param($Icon,[int]$Page)
     $owner=Get-DpIconOwnerPage $Icon $Page
     $fixed=@(Get-DpFixedMonitorPages | Where-Object {$_.Page -eq $owner})
     if($fixed.Count){return $fixed[0].Screen}
+    if($script:DpMonitorPageContext){return $script:DpMonitorPageContext.Primary}
     return @(Get-DpMonitorGeometry | Where-Object Primary)[0]
 }
 function Test-DpPointInScreen {param($Icon,$Screen)
     return $null -ne $Screen -and $Icon.X -ge $Screen.Left -and $Icon.Y -ge $Screen.Top -and $Icon.X -lt $Screen.Right -and $Icon.Y -lt $Screen.Bottom
 }
 function Get-DpComposedLayoutIcons {param([int]$Page,[object[]]$Saved,[object[]]$Current,[object[]]$Layouts=$null)
+    $previous=$script:DpMonitorPageContext
+    $script:DpMonitorPageContext=New-DpMonitorPageContext
+    try{
     $primary=@(Get-DpMonitorGeometry | Where-Object Primary)[0]
     if($null -eq $primary){throw 'Primary display unavailable; saved layouts preserved.'}
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
@@ -437,8 +442,12 @@ function Get-DpComposedLayoutIcons {param([int]$Page,[object[]]$Saved,[object[]]
         foreach($icon in $outside){$g=@($screen.Left,$screen.Top,$screen.Left,$screen.Top,$screen.Right,$screen.Bottom);$target=Resolve-DpNewItemPosition $g $spacing.X $spacing.Y $placed.ToArray();if($null -eq $target){throw 'Assigned display has insufficient space. Saved page layouts were preserved.'};$icon.X=$target.X;$icon.Y=$target.Y;$placed.Add($icon)}
         $placed.ToArray()
     }
+    }finally{$script:DpMonitorPageContext=$previous}
 }
 function Save-DpMonitorPageLayouts {param([int]$Page,[object[]]$Icons)
+    $previous=$script:DpMonitorPageContext
+    $script:DpMonitorPageContext=New-DpMonitorPageContext
+    try{
     $primary=@(Get-DpMonitorGeometry | Where-Object Primary)[0]
     $snapshots=@(foreach($visible in @(Get-DpVisiblePages $Page)){
         $path=Join-Path $script:DpLayoutStore "page-$visible.xml"
@@ -458,6 +467,7 @@ function Save-DpMonitorPageLayouts {param([int]$Page,[object[]]$Icons)
     }
     if(-not $script:DpLastLayoutSignature){$script:DpLastLayoutSignature=@{}}
     $script:DpLastLayoutSignature[$Page]=($Icons | Sort-Object -Property @('Key','Name') | ForEach-Object {"$($_.Key)|$($_.Name)|$($_.X)|$($_.Y)"}) -join "`n"
+    }finally{$script:DpMonitorPageContext=$previous}
 }
 function Get-DpGroupsEnabled {
     $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
@@ -487,4 +497,10 @@ function Repair-DpMonitorLayoutCheckpoint {
         foreach($layout in $pending.Layouts){Write-DpAtomicXml (Join-Path $script:DpLayoutStore ("page-"+$layout.Page+'.xml')) $layout}
     }
     [IO.File]::Delete($path)
+}
+
+function New-DpMonitorPageContext {
+    $screens=@(Get-DpMonitorGeometry);$items=@{}
+    foreach($entry in $script:DpState.Items){$items[[string]$entry.Path]=$entry}
+    [PSCustomObject]@{State=$script:DpState;Items=$items;Fixed=@(Get-DpFixedMonitorPages -Screens $screens);Primary=@($screens | Where-Object Primary)[0]}
 }
