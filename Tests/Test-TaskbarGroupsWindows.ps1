@@ -8,7 +8,7 @@ try{
  $sources=@((Join-Path $PSScriptRoot 'TaskbarGroupsHarness.cs'),(Join-Path $root 'Native/DeskPagesDragProtocol.cs'))+@(Get-ChildItem (Join-Path $root 'Interaction/TaskbarGroups') -Filter '*.cs' | ForEach-Object {$_.FullName})
  $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe';$exe=Join-Path $temp 'GroupsTest.exe'
  $references=@([Windows.Forms.Form].Assembly.Location,[Drawing.Bitmap].Assembly.Location,[Windows.Automation.AutomationElement].Assembly.Location,[Windows.Automation.ControlType].Assembly.Location,[Windows.Point].Assembly.Location) | ForEach-Object {'/r:'+$_}
- & $compiler /nologo /target:exe /platform:x64 /main:TaskbarGroupsHarness "/out:$exe" @references @sources
+ & $compiler /noconfig /nologo /target:exe /platform:x64 /r:System.dll /r:System.Core.dll /main:TaskbarGroupsHarness "/out:$exe" @references @sources
  if($LASTEXITCODE -ne 0){throw 'Group regression harness did not compile.'}
  & $exe
  if($LASTEXITCODE -ne 0){throw 'Open-window group or recovery regression failed.'}
