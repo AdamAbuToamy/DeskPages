@@ -21,7 +21,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly Dictionary<int,GroupAnchor> anchors=new Dictionary<int,GroupAnchor>();
     private readonly GroupTaskbar taskbar=new GroupTaskbar();
     private readonly GroupAddButton plus;private readonly GroupDropCue cue=new GroupDropCue();
-    private readonly NotifyIcon tray;private readonly ToolTip hint=new ToolTip();
+    private readonly NotifyIcon tray;private readonly Icon trayIcon;private readonly ToolTip hint=new ToolTip();
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=40};
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
@@ -32,7 +32,8 @@ internal sealed class GroupController:ApplicationContext {
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
     public GroupController(){
         model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);plus.Show();plus.Hide();
-        tray=new NotifyIcon{Icon=SystemIcons.Application,Text="DeskPages · Taskbar groups",Visible=true};
+        trayIcon=Icon.ExtractAssociatedIcon(executable)??(Icon)SystemIcons.Application.Clone();
+        tray=new NotifyIcon{Icon=trayIcon,Text="DeskPages · Taskbar groups",Visible=true};
         var menu=new ContextMenuStrip();menu.Items.Add("Add group",null,delegate{AddGroup();});menu.Items.Add("Restore apps and turn off",null,delegate{File.WriteAllText(EnabledPath,"off");ExitThread();});tray.ContextMenuStrip=menu;tray.DoubleClick+=delegate{AddGroup();};
         Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));File.WriteAllText(EnabledPath,"on");
         StartGuardian();timer.Tick+=delegate{Tick();};timer.Start();
@@ -125,8 +126,8 @@ internal sealed class GroupController:ApplicationContext {
         var bounds=new Rectangle(x,snapshot.Bounds.Top+(snapshot.Bounds.Height-size)/2,size,size);
         // A crowded/left-aligned taskbar must not have its app buttons covered.
         if(snapshot.Buttons.Any(b=>b.Bounds.IntersectsWith(bounds)))bounds.Y=snapshot.Bounds.Top-size-6;
-        var foreground=WindowShell.Bounds(GetForegroundWindow());
-        bool fullscreen=foreground.Width>=area.Width && foreground.Height>=area.Height;
+        var foregroundWindow=GetForegroundWindow();var foreground=WindowShell.Bounds(foregroundWindow);
+        bool fullscreen=GroupLayoutPolicy.Fullscreen(foreground,area,WindowShell.Class(foregroundWindow));
         if(fullscreen){plus.Hide();return;}
         plus.Bounds=bounds;if(!plus.Visible)plus.Show();
     }
@@ -162,7 +163,7 @@ internal sealed class GroupController:ApplicationContext {
     protected override void ExitThreadCore(){
         if(disposed)return;disposed=true;timer.Stop();timer.Dispose();
         try{recovery.RestoreAll();}catch(Exception){/* The independent guardian retries the durable journal after exit. */}
-        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);cue.Dispose();plus.Dispose();hint.Dispose();tray.Visible=false;tray.ContextMenuStrip.Dispose();tray.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
+        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);cue.Dispose();plus.Dispose();hint.Dispose();tray.Visible=false;tray.ContextMenuStrip.Dispose();tray.Dispose();trayIcon.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
         base.ExitThreadCore();
     }
     [DllImport("user32.dll")]private static extern IntPtr GetForegroundWindow();

@@ -44,6 +44,9 @@ public static class TaskbarGroupsHarness {
         Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"Chrome",id=>id=="group").AppId=="group","Explorer's native reorder lost the accepted group");
         Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"AnotherApp",id=>id=="group")==null,"An unrelated app at the old position was accepted");
         shifted.Buttons[1].Bounds=new Rectangle(0,0,48,48);Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"Chrome",id=>id=="group")==null,"A far-away group was accepted after rearrangement");
+        var screen=new Rectangle(0,0,1920,1080);Check(!GroupLayoutPolicy.Fullscreen(screen,screen,"Progman"),"Desktop focus hid the add button");
+        Check(GroupLayoutPolicy.Fullscreen(screen,screen,"Chrome_WidgetWin_1"),"Real full-screen application did not hide the overlay");
+        Check(!GroupLayoutPolicy.Fullscreen(new Rectangle(0,0,1920,1032),screen,"Chrome_WidgetWin_1"),"Ordinary maximized app hid the add button");
     }
     private static void Native(){
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;

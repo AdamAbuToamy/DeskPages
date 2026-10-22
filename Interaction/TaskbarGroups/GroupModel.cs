@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Drawing;
 
 // Session-only membership: a process restart or reused HWND is never a member.
 internal sealed class GroupWindow {
@@ -29,4 +30,10 @@ internal sealed class GroupDropDwell {
     private string target;private long since;
     public bool Observe(string next,long now){if(next!=target){target=next;since=now;}return target!=null && now-since>=Hold;}
     public void Reset(){target=null;since=0;}
+}
+internal static class GroupLayoutPolicy {
+    public static bool Fullscreen(Rectangle window,Rectangle display,string windowClass){
+        if(windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="SHELLDLL_DefView" || windowClass=="SysListView32" || windowClass=="Shell_TrayWnd")return false;
+        return !window.IsEmpty && window.Width>=display.Width && window.Height>=display.Height;
+    }
 }
