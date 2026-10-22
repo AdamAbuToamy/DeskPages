@@ -1,12 +1,16 @@
 ﻿function Save-DpPageLayout {
     param([int]$Page)
     if ($script:DpSuspended) {return}
+    if($script:DpMonitorProtection -and (Get-DpDisplaySignal)[3] -eq 1){return}
     if (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml')) {throw 'Cannot save a layout during an incomplete transition.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Locked) -and (Test-Path -LiteralPath (Join-Path $script:DpLayoutStore "page-$Page.xml"))){Restore-DpPageLayout $Page}
     if((Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue) -and -not $script:DpMonitorSyncBusy){Sync-DpMonitorProfile}
+    $displaySignal=$null
+    if(Get-Command Get-DpDisplaySignal -ErrorAction SilentlyContinue){$displaySignal=Get-DpDisplaySignal}
     Connect-DpDesktop
     $icons = @([OriginalDesktopReader]::Read($script:originalDesktop))
     Assert-DpPageView -Page $Page -Icons $icons
+    if(Get-Command Protect-DpMonitorArrangement -ErrorAction SilentlyContinue){$icons=@(Protect-DpMonitorArrangement -Page $Page -Icons $icons)}
     if(Get-Command Repair-DpPrimaryPlacement -ErrorAction SilentlyContinue){$icons=@(Repair-DpPrimaryPlacement -Page $Page -Icons $icons)}
     if((Get-Command Sync-DpSecondaryIcons -ErrorAction SilentlyContinue) -and -not(Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){Sync-DpSecondaryIcons $icons}
     if (-not $script:DpLastLayoutSignature) {$script:DpLastLayoutSignature=@{}}
@@ -19,6 +23,7 @@
         if((Get-DpMonitorKey) -ne $script:DpState.Workspace.MonitorKey){throw 'Display geometry changed; layout saving is blocked.'}
     }
     $snapshot = [PSCustomObject]@{Page=$Page; SavedAt=[DateTime]::UtcNow; Icons=$icons}
+    if($null -ne $displaySignal -and (Get-DpDisplaySignal)[0] -ne $displaySignal[0]){throw 'Display changed during layout capture; layout saving is blocked.'}
     $history=Join-Path $script:DpLayoutStore 'History'
     New-Item -ItemType Directory -Path $history -Force | Out-Null
     if (Test-Path -LiteralPath $path) {
@@ -26,6 +31,29 @@
     }
     Write-DpAtomicXml -Path $path -Value $snapshot
     $script:DpLastLayoutSignature[$Page]=$signature
+}
+
+function Protect-DpMonitorArrangement {param([int]$Page,[object[]]$Icons)
+    if($null -eq $script:DpMonitorProtection){return $Icons}
+    $signal=Get-DpDisplaySignal
+    if($signal[0] -ne $script:DpMonitorProtection.Revision){throw 'Display changed during layout capture; layout saving is blocked.'}
+    if($signal[1] -ne $script:DpMonitorProtection.EditRevision -and $signal[2] -ge 1000){
+        $script:DpMonitorProtection=$null;Set-DpMonitorWatch $false;return $Icons
+    }
+    $path=Join-Path $script:DpLayoutStore "page-$Page.xml"
+    if(-not(Test-Path -LiteralPath $path)){return $Icons}
+    $saved=@((Import-Clixml -LiteralPath $path).Icons)
+    $targets=@(Resolve-DpLayoutTargets -Saved $saved -Current $Icons)
+    $byId=@{};foreach($icon in $Icons){$byId[$icon.Id]=$icon}
+    foreach($target in $targets){
+        $icon=$byId[$target.Id]
+        if([Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2){
+            Restore-DpPageLayout $Page
+            $actual=@([OriginalDesktopReader]::Read($script:originalDesktop));Assert-DpPageView -Page $Page -Icons $actual
+            return $actual
+        }
+    }
+    return $Icons
 }
 
 function Resolve-DpLayoutTargets {

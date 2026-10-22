@@ -1,3 +1,11 @@
+# 0.8.28 monitor attachment arrangement protection trial
+
+Primary-only pages retain their current arrangement instead of loading a stale layout from a prior monitor configuration. Display broadcasts are tracked separately from monitor geometry so fast unplug/replug cycles with identical final geometry are detected. Geometry settles before conversion.
+
+After display changes the saved page remains authoritative, including delayed Explorer rearrangements inside the primary display. A lightweight reconciliation check repairs these changes without saving them as user edits. A completed desktop drag or deliberate desktop context action releases protection so manual arrangement remains available. Held drags are neither restored nor saved. Display changes during layout capture block that write.
+
+Validation includes stale profile reuse, long-delayed in-bounds reflow, shifted origins, same-key display roundtrips, held/completed manual drags, and display events during capture. Fixtures simulate Explorer and input; physical monitor behavior still requires device testing. Trial only.
+
 # 0.8.27 icon arrangement preservation trial
 
 Preserves valid hand-arranged icon positions during page restoration and display changes, including close spacing and shifted desktop origins. Only out-of-bounds icons are fitted after reserving all existing positions. Verifies repaired coordinates before saving.
