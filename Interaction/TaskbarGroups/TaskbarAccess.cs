@@ -59,6 +59,8 @@ internal static class TaskbarAccess {
         if(!string.IsNullOrEmpty(button.AppId)){
             var direct=windows.Where(w=>!string.IsNullOrEmpty(w.AppId) && string.Equals(w.AppId,button.AppId,StringComparison.OrdinalIgnoreCase)).ToArray();
             if(direct.Length>0 || windows.Length==0)return direct;
+            string path=ImplicitAppIdentity.PathFor(button.AppId);
+            if(path!=null){var exact=windows.Where(w=>string.IsNullOrEmpty(w.AppId) && string.Equals(w.ImagePath,path,StringComparison.OrdinalIgnoreCase)).ToArray();if(exact.Length>0)return exact;}
             return ResolveShortcut(button,windows,ShortcutIdentity.Map);
         }
         var titled=windows.Where(w=>w.Title==button.Name || button.Names.Contains(w.Title)).ToArray();return titled.Length==1?titled:new GroupWindow[0];

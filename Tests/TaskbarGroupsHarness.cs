@@ -29,8 +29,7 @@ public static class TaskbarGroupsHarness {
         Check(model.Prune(w=>true).Single()==first,"Previously populated empty group was not removed");
         var reused=new GroupWindow{Handle=10,ProcessId=20,Started=31};Check(model.Owner(reused)==null,"A restarted process inherited membership");
         model.Remove(window);Check(model.Prune(w=>true).Single()==second,"Drag-out did not remove the empty group");
-        var dwell=new GroupDropDwell();Check(!dwell.Observe("a",0) && !dwell.Observe("a",1199) && dwell.Observe("a",1200),"Dwell accepted an early drop");
-        Check(!dwell.Observe("b",1201),"Moving over another group reused the old dwell");dwell.Reset();Check(!dwell.Observe("b",5000),"Cancelled drag reused acceptance");
+        var dwell=new GroupDropDwell();Check(dwell.Observe("a",0) && dwell.Observe("b",1),"Dropping on a group still requires a dwell");dwell.Reset();Check(!dwell.Observe(null,2),"No target was accepted");
         Check(TaskbarAccess.Resolve(new TaskButton{AppId="Chrome"},new GroupWindow[0]).Length==0,"Closed pinned button was accepted");
         Check(TaskbarAccess.Resolve(new TaskButton{AppId="Chrome"},new[]{window}).Length==1,"Exact native AppID was not resolved");
         Check(TaskbarAccess.Resolve(new TaskButton{Name="Work"},new[]{window,new GroupWindow{Title="Work"}}).Length==0,"Ambiguous thumbnail selected an arbitrary window");
@@ -46,27 +45,40 @@ public static class TaskbarGroupsHarness {
         Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"AnotherApp",id=>id=="group")==null,"An unrelated app at the old position was accepted");
         shifted.Buttons[1].Bounds=new Rectangle(0,0,48,48);Check(TaskbarAccess.DropTarget(shifted,original,new Point(220,20),"Chrome",id=>id=="group")==null,"A far-away group was accepted after rearrangement");
         var source=new GroupDragSource{Button=new TaskButton{AppId="Chrome",Bounds=new Rectangle(100,0,48,48)},Windows=new[]{window}};
+        var directEnd=GroupDragGeometry.NativeEnd(new GroupDragGesture{Source=source,Groups=original,Press=new Point(120,20),LastNative=new Point(120,20)},4);
+        Check(directEnd.HasValue && source.Button.Bounds.Contains(directEnd.Value) && Math.Abs(directEnd.Value.X-120)+Math.Abs(directEnd.Value.Y-20)>4,"Direct source-to-group movement could complete as an application click");
         var inputMap=new GroupInputMap{Taskbar=new IntPtr(123),Created=100,Groups=original,Sources=new[]{source}};
-        var gate=new GroupDragGate();GroupDragGesture begun=null,ended=null;Action<GroupDragGesture> begin=g=>begun=g,end=g=>ended=g;
-        Check(!gate.Process(0x201,new Point(220,20),false,false,inputMap.Taskbar,inputMap,101,begin,end),"Dragging the numbered group was intercepted instead of native reorder");
-        Check(!gate.Process(0x201,new Point(120,20),true,false,inputMap.Taskbar,inputMap,101,begin,end),"Injected/native replay input was intercepted");
-        Check(!gate.Process(0x201,new Point(120,20),false,true,inputMap.Taskbar,inputMap,101,begin,end),"Modified taskbar click was intercepted");
-        Check(!gate.Process(0x201,new Point(120,20),false,false,new IntPtr(999),inputMap,101,begin,end),"Overlapping non-taskbar window was intercepted");
-        Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,3101,begin,end),"Expired taskbar coordinates were used");
-        Check(gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,101,begin,end) && begun!=null,"Live-app drag was not owned before Explorer button-down");
-        Check(!gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,102,begin,end),"Pointer motion was blocked");
-        Check(original[0].Bounds==new Rectangle(200,0,48,48),"The original group target moved");
-        Check(gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,103,begin,end) && ended==begun && ended.Released,"Owned release leaked into Explorer or lost the gesture");
-        Check(!gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,104,begin,end),"Release was consumed twice");
-        begun=null;ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,105,begin,end);gate.Cancel();
-        gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,106,begin,end);Check(ended!=null && ended.Cancelled,"Escape/cancel lost cancellation before release");
-        begun=null;ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,107,begin,end);gate.Abort(end);
-        Check(ended!=null && ended.Cancelled && ended.Released,"Abandoned drag was not cleared");
-        Check(gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,108,begin,end),"Abandoned drag blocked the next source press");gate.Abort(end);
-        int refreshes=0;gate.Process(0x201,new Point(220,20),false,false,inputMap.Taskbar,inputMap,109,begin,end);
-        Check(!gate.Process(0x202,new Point(120,20),false,false,inputMap.Taskbar,inputMap,110,begin,end,delegate{refreshes++;}) && refreshes==1,"Native group reorder did not invalidate old input regions");
-        source.Windows=new GroupWindow[0];
-        Check(inputMap.SourceAt(new Point(120,20),120)!=null,"Unresolved window metadata let Explorer reorder groups before a drag could be owned");
+        var gate=new GroupDragGate();GroupDragGesture begun=null,ended=null;int takes=0,resumes=0,refreshes=0;
+        Action<GroupDragGesture> begin=g=>begun=g,end=g=>ended=g;
+        Func<GroupDragGesture,Point,bool> take=(g,p)=>{takes++;return true;},resume=(g,p)=>{resumes++;return true;};
+        Check(!gate.Process(0x201,new Point(220,20),false,false,inputMap.Taskbar,inputMap,101,begin,end),"Group press was intercepted");
+        gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,102,begin,end);
+        Check(!gate.Process(0x201,new Point(120,20),true,false,inputMap.Taskbar,inputMap,103,begin,end),"Own injected replay was observed as a source");
+        Check(!gate.Process(0x201,new Point(120,20),false,true,inputMap.Taskbar,inputMap,104,begin,end),"Modified source press intercepted");
+        Check(!gate.Process(0x201,new Point(120,20),false,false,new IntPtr(999),inputMap,105,begin,end),"Foreign root observed as taskbar");
+        Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,3101,begin,end),"Stale regions intercepted a press");
+        // Normal reordering is native from press through release, with no replay.
+        Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,110,begin,end),"Source down no longer reaches Explorer");
+        Check(!gate.Process(0x200,new Point(170,20),false,false,inputMap.Taskbar,inputMap,111,begin,end,null,take,resume),"Ordinary reorder motion was suppressed");
+        Check(!gate.Process(0x202,new Point(170,20),false,false,inputMap.Taskbar,inputMap,112,begin,end,()=>refreshes++),"Ordinary reorder release suppressed");
+        Check(begun==null && ended==null && takes==0 && refreshes==1,"Normal reorder used a captured/replayed gesture");
+        // Group entry owns only the final segment. Release has no dwell.
+        gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,120,begin,end);
+        Check(gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,121,begin,end,null,take,resume) && begun!=null && takes==1,"Target entry did not take ownership");
+        Check(gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,122,begin,end) && ended==begun && ended.TargetAppId=="group" && ended.Released,"Immediate release lost its target");
+        Check(!gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,123,begin,end),"Release consumed twice");
+        begun=null;ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,130,begin,end);
+        gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,131,begin,end,null,take,resume);
+        Check(gate.Process(0x200,new Point(170,20),false,false,inputMap.Taskbar,inputMap,132,begin,end,null,take,resume) && resumes==1 && ended!=null && !ended.Released && ended.NativeActive,"Leaving a group did not resume native reordering before release");
+        Check(!gate.Process(0x202,new Point(170,20),false,false,inputMap.Taskbar,inputMap,133,begin,end),"Resumed native release suppressed");
+        // A transient inability to resume must keep ownership, never press a guessed source.
+        ended=null;gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,140,begin,end);
+        gate.Process(0x200,new Point(220,20),false,false,inputMap.Taskbar,inputMap,141,begin,end,null,take,resume);
+        Check(gate.Process(0x200,new Point(170,20),false,false,inputMap.Taskbar,inputMap,142,begin,end,null,take,(g,p)=>false) && ended==null,"Failed resume leaked a native drag");
+        gate.Cancel();gate.Process(0x202,new Point(220,20),false,false,inputMap.Taskbar,inputMap,143,begin,end);Check(ended.Cancelled,"Escape lost cancellation");
+        gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,150,begin,end);gate.Abort(end);
+        Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,151,begin,end),"Aborted native drag blocked another press");gate.Abort(end);
+        source.Windows=new GroupWindow[0];Check(inputMap.SourceAt(new Point(120,20),160)!=null,"Unresolved metadata blocked normal native dragging");
         var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
         Check(!GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar hid persistent '+'");
         Check(!GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hide/fullscreen hid persistent '+'");
@@ -101,7 +113,6 @@ public static class TaskbarGroupsHarness {
         Console.WriteLine("PASS: input hook thread installs/uninstalls; native group restore is rejected before showing a client window.");
         HookOwnershipFixture();
         PopupLifecycle();
-        ReplayNativeFixture();
         int clicks=0;
         using(var button=new GroupAddButton(delegate{clicks++;})){
             button.Show();Application.DoEvents();
@@ -148,29 +159,42 @@ public static class TaskbarGroupsHarness {
     private static void HookOwnershipFixture(){
         var original=Cursor.Position;
         try{
-            using(var form=new Form{Text="DeskPages hook fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),ClientSize=new Size(380,100),TopMost=true}){
-                int nativeDowns=0,begins=0,ends=0;GroupDragGesture received=null;
-                form.MouseDown+=delegate{nativeDowns++;};form.Show();form.Activate();Application.DoEvents();
-                Point source=form.PointToScreen(new Point(30,30)),target=form.PointToScreen(new Point(230,30));
-                var button=new TaskButton{AppId="FixtureApp",Bounds=new Rectangle(source.X-10,source.Y-10,40,40)};
-                var group=new TaskButton{AppId="FixtureGroup",Bounds=new Rectangle(target.X-10,target.Y-10,40,40)};
+            using(var form=new Form{Text="DeskPages native drag fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),ClientSize=new Size(460,120),TopMost=true}){
+                int nativeDowns=0,nativeUps=0,begins=0,ends=0,leftMovesOnGroup=0,leftMovesBetweenApps=0;GroupDragGesture received=null;
+                form.Show();form.Activate();Application.DoEvents();
+                Point source=form.PointToScreen(new Point(30,30)),other=form.PointToScreen(new Point(140,30)),target=form.PointToScreen(new Point(330,30));
+                var button=new TaskButton{AppId="FixtureApp",Bounds=new Rectangle(source.X-15,source.Y-15,40,40)};
+                var group=new TaskButton{AppId="FixtureGroup",Bounds=new Rectangle(target.X-20,target.Y-20,48,48)};
+                form.MouseDown+=delegate{nativeDowns++;};form.MouseUp+=delegate{nativeUps++;};
+                form.MouseMove+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){var point=form.PointToScreen(e.Location);if(group.Bounds.Contains(point))leftMovesOnGroup++;if(Math.Abs(point.X-other.X)<4)leftMovesBetweenApps++;}};
                 using(var listener=new GroupDragInput(g=>System.Threading.Interlocked.Increment(ref begins),g=>{received=g;System.Threading.Interlocked.Increment(ref ends);})){
-                    Func<GroupInputMap> map=()=>new GroupInputMap{Taskbar=form.Handle,Bounds=form.Bounds,Created=(long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency),Groups=new[]{group},Sources=new[]{new GroupDragSource{Button=button,Windows=new GroupWindow[0]}}};
-                    listener.Publish(map());
-                    SendFixtureInput(source,target);PumpUntil(delegate{return System.Threading.Interlocked.CompareExchange(ref ends,0,0)==1;});Application.DoEvents();
-                    Check(begins==1 && nativeDowns==0 && received.Source.Windows.Length==0 && Math.Abs(received.Release.X-target.X)<=1 && Math.Abs(received.Release.Y-target.Y)<=1,"Real low-level hook did not consume source press/release before metadata resolved");
-                    Check(group.Bounds.Contains(target),"Group target moved during an owned drag");
-                    listener.Publish(map());SendFixtureInput(target,target);PumpUntil(delegate{return nativeDowns==1;});
-                    Check(begins==1,"Dragging/clicking a group itself was captured");
-                    listener.Publish(map());Cursor.Position=source;Application.DoEvents();
-                    var gesture=new GroupDragGesture{Taskbar=form.Handle,Source=new GroupDragSource{Button=button,Windows=new GroupWindow[0]},Press=source,Release=source};
-                    Check(GroupDragInput.Replay(gesture,new TaskbarSnapshot{Handle=form.Handle,Buttons=new[]{button,group}}),"Own tagged replay failed");
-                    PumpUntil(delegate{return nativeDowns==2;});Check(begins==1 && ends==1,"Our own replay recursively entered the drag hook");
+                    Func<GroupInputMap> map=()=>new GroupInputMap{Taskbar=form.Handle,Bounds=form.Bounds,Created=Clock(),Groups=new[]{group},Sources=new[]{new GroupDragSource{Button=button,Windows=new GroupWindow[0]}}};
+                    // Existing application movement is real native down/move/up.
+                    listener.Publish(map());SendFixtureInput(source,other);PumpUntil(delegate{return nativeUps==1;});
+                    Check(nativeDowns==1 && begins==0 && ends==0 && leftMovesBetweenApps>0,"Ordinary reorder was captured instead of reaching the native window live");
+                    listener.Publish(map());SendFixtureInput(source,target);PumpUntil(delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
+                    Check(begins==1 && nativeDowns==2 && leftMovesOnGroup==0 && received.Released && received.TargetAppId=="FixtureGroup","Native drag did not transfer only at group entry, or an immediate group release was lost");
+                    // Leaving the target resumes native movement while still held.
+                    listener.Publish(map());SendFixturePart(source,2);SendFixturePart(target,0);PumpUntil(delegate{return begins==2 && nativeUps==3;});
+                    PumpFor(120);listener.Publish(map());SendFixturePart(other,0);PumpUntil(delegate{return ends==2 && nativeDowns==4;});
+                    Check(!received.Released && received.NativeActive,"Native resume waited for physical release");
+                    SendFixturePart(other,4);PumpUntil(delegate{return nativeUps==4;});
+                    Check(begins==2 && ends==2 && leftMovesOnGroup==0,"Own continuation recursively entered input or moved the native target");
+                    listener.Publish(map());SendFixtureInput(target,other);PumpUntil(delegate{return nativeUps==5;});
+                    Check(nativeDowns==5 && begins==2,"Dragging the numbered group itself was intercepted");
                 }
                 form.Close();
             }
-            Console.WriteLine("PASS: real low-level hook owns externally generated press/move/release with unresolved metadata, leaves target fixed and group-source native; own replay tag bypasses capture. Owned fixture, not physical Win11 taskbar.");
+            Console.WriteLine("PASS: actual low-level hook passes ordinary down/move/up live, transfers only at group entry, accepts immediate release, resumes native drag on exit while held, and leaves group-source dragging native. Owned fixture, not physical Win11 taskbar.");
         }finally{Cursor.Position=original;}
+    }
+    private static long Clock(){return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}
+    private static void PumpFor(int milliseconds){var watch=Stopwatch.StartNew();while(watch.ElapsedMilliseconds<milliseconds){Application.DoEvents();System.Threading.Thread.Sleep(5);}}
+    private static void SendFixturePart(Point point,uint button){
+        var screen=SystemInformation.VirtualScreen;
+        var move=new FixtureInput{Mouse=new FixtureMouse{X=(int)Math.Round((point.X-screen.Left)*65535.0/(screen.Width-1)),Y=(int)Math.Round((point.Y-screen.Top)*65535.0/(screen.Height-1)),Flags=0xE001}};
+        var batch=button==0?new[]{move}:new[]{move,new FixtureInput{Mouse=new FixtureMouse{Flags=button}}};
+        Check(SendInput((uint)batch.Length,batch,40)==batch.Length,"Fixture native input failed");
     }
     private static void SendFixtureInput(Point start,Point finish){
         var screen=SystemInformation.VirtualScreen;
@@ -213,28 +237,6 @@ public static class TaskbarGroupsHarness {
         }
         if(!anchor.IsDisposed)anchor.Finish();
         Console.WriteLine("PASS: actual popup show/close repeated 40 times; delete deferred outside click; anchor disposed; stable popup reused; no disposed-menu access.");
-    }
-    private static void ReplayNativeFixture(){
-        Point original=Cursor.Position;
-        try{
-            using(var form=new Form{Text="DeskPages native replay fixture",StartPosition=FormStartPosition.Manual,Location=new Point(200,200),ClientSize=new Size(320,120),TopMost=true}){
-                int downs=0,ups=0;Point lastDown=Point.Empty,lastUp=Point.Empty;
-                form.MouseDown+=delegate(object sender,MouseEventArgs e){downs++;lastDown=e.Location;};form.MouseUp+=delegate(object sender,MouseEventArgs e){ups++;lastUp=e.Location;};
-                form.Show();form.Activate();Application.DoEvents();
-                Point start=form.PointToScreen(new Point(30,30)),finish=form.PointToScreen(new Point(180,30));
-                var button=new TaskButton{AppId="Fixture",Bounds=new Rectangle(start.X-10,start.Y-10,40,40)};
-                var source=new GroupDragSource{Button=button,Windows=new GroupWindow[0]};
-                var snapshot=new TaskbarSnapshot{Handle=form.Handle,Buttons=new[]{button,new TaskButton{AppId="OtherFixture",Bounds=new Rectangle(finish.X-10,finish.Y-10,40,40)}}};
-                Cursor.Position=start;Application.DoEvents();
-                Check(GroupDragInput.Replay(new GroupDragGesture{Source=source,Press=start,Release=start,Taskbar=form.Handle},snapshot),"Native click replay batch was rejected");
-                PumpUntil(delegate{return ups==1;});Check(downs==1 && ups==1,"Native replay did not deliver exactly one press/release");
-                Cursor.Position=finish;Application.DoEvents();
-                Check(GroupDragInput.Replay(new GroupDragGesture{Source=source,Press=start,Release=finish,Taskbar=form.Handle},snapshot),"Native drag replay batch was rejected");
-                PumpUntil(delegate{return ups==2;});Check(downs==2 && ups==2 && Math.Abs(lastDown.X-30)<=1 && Math.Abs(lastUp.X-180)<=1,"Native drag replay changed its source/release coordinates");
-                form.Close();
-            }
-            Console.WriteLine("PASS: actual SendInput click/drag batches deliver one down/up and original coordinates to an owned fixture window; not a Windows 11 taskbar gesture test.");
-        }finally{Cursor.Position=original;}
     }
     private static void PumpUntil(Func<bool> complete){var watch=Stopwatch.StartNew();while(!complete() && watch.ElapsedMilliseconds<2000){Application.DoEvents();System.Threading.Thread.Sleep(5);}Check(complete(),"Native input fixture timed out");}
     [DllImport("user32.dll")]private static extern IntPtr SendMessageW(IntPtr h,uint message,IntPtr w,IntPtr l);

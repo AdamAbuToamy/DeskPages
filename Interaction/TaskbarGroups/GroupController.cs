@@ -28,7 +28,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
     private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
-    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastRaise;
+    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastRaise,lastWindowRead;
     private LiveGroup target;private Process guardian;private int resolveBusy;
     private TaskButton[] pressGroups=new TaskButton[0];private string sourceAppId;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
@@ -62,7 +62,7 @@ internal sealed class GroupController:ApplicationContext {
             // Set the window identity before Explorer sees its first visible state.
             WindowShell.Set(anchor.Handle,5,group.AppId);anchors.Add(group.Number,anchor);
             anchor.Show();taskbar.Add(anchor.Handle);
-            hint.Show("Drag a running taskbar icon over the numbered group. Wait for the green border, then release.",plus,0,-70,5000);RefreshSoon();
+            hint.Show("Drag an open app normally. Drop it on the numbered group to add it.",plus,0,-70,5000);RefreshSoon();
         }catch(Exception ex){
             if(anchor!=null){try{taskbar.Remove(anchor.Handle);}catch(Exception){}anchor.Finish();}
             if(group!=null){anchors.Remove(group.Number);model.DeleteEmpty(group);}
@@ -74,7 +74,7 @@ internal sealed class GroupController:ApplicationContext {
         if(stop.WaitOne(0)){ExitThread();return;}
         try{
             if(Now-lastRaise>=250){lastRaise=Now;plus.KeepAbove();}
-            if(Now-lastRead>=(held?350:(model.Groups.Length>0?750:2000)) && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
+            if(Now-lastRead>=(held?80:(model.Groups.Length>0?750:2000)) && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
             if(captured!=null){if(Now-captured.Started>30000){captured.Cancelled=true;input.Repair();EndCaptured(captured);}else UpdateCaptured(Cursor.Position);return;}
             bool down=(WindowShell.GetAsyncKeyState(1)&0x8000)!=0;Point point=Cursor.Position;
             if((WindowShell.GetAsyncKeyState(0x1B)&0x8000)!=0){CancelDrag();held=down;return;}
@@ -133,54 +133,49 @@ internal sealed class GroupController:ApplicationContext {
         moved=moved || Math.Abs(point.X-press.X)+Math.Abs(point.Y-press.Y)>SystemInformation.DragSize.Width;
         if(!moved)return;
         ghost.Present(point);
-        // Explorer never receives the app's button-down, so it cannot reorder
-        // the numbered targets underneath this gesture. Native group drags pass through.
-        var button=snapshot.At(point);target=button==null?null:model.Find(button.AppId);
-        ready=dwell.Observe(target==null?null:target.AppId,Now);
-        if(target!=null)cue.Present(button.Bounds,ready);else cue.Hide();
+        // Input stays native until the pointer enters a numbered target.
+        target=model.Find(captured.TargetAppId);ready=target!=null;
+        if(target!=null)cue.Present(captured.TargetBounds,true);else cue.Hide();
     }
     private void EndCaptured(GroupDragGesture gesture){
         if(captured!=gesture)return;
-        UpdateCaptured(gesture.Release);
-        var destination=target;bool accepted=moved && ready && destination!=null && !gesture.Cancelled;
-        bool groupDrop=moved && destination!=null;
-        captured=null;held=false;ghost.Hide();CancelDrag();int request=generation;
-        if(gesture.Cancelled)return;
-        if(groupDrop && !accepted){hint.Show("Hold over the group until its border turns green, then release.",plus,0,-50,3000);return;}
+        var destination=gesture.TargetAppId==null?null:model.Find(gesture.TargetAppId);
+        captured=null;held=!gesture.Released;ghost.Hide();CancelDrag();int request=generation;
+        // Leaving the target resumes Explorer immediately; there is no delayed
+        // click/reorder replay when the user releases elsewhere on the taskbar.
+        if(!gesture.Released){RefreshSoon();return;}
+        if(gesture.Cancelled || destination==null)return;
         if(Interlocked.CompareExchange(ref replayBusy,1,0)!=0)return;
         ThreadPool.QueueUserWorkItem(delegate{
             TaskbarSnapshot fresh=null;GroupWindow[] windows=null;
-            try{fresh=TaskbarAccess.Read();if(accepted)windows=TaskbarAccess.Resolve(fresh.At(gesture.Press),WindowShell.Windows());}
+            try{fresh=TaskbarAccess.Read();windows=TaskbarAccess.Resolve(gesture.Source.Button,WindowShell.Windows());}
             catch(Exception){}finally{Interlocked.Exchange(ref replayBusy,0);}
             Post(delegate{
-                if(disposed || request!=generation || !input.IsCurrent(gesture) || gesture.Cancelled || fresh==null)return;
-                if(accepted){
-                    var hit=fresh.At(gesture.Release);var source=fresh.At(gesture.Press);
-                    if(model.Find(destination.AppId)!=destination || hit==null || hit.AppId!=destination.AppId || source==null || source.AppId!=gesture.Source.Button.AppId || !WindowShell.OnTaskbar(gesture.Release,fresh.Handle))return;
-                    if(gesture.Source.Windows.Length==0 || windows==null || windows.Length==0){ChooseOpenApps(destination);return;}
-                    // Re-resolve at commit, refusing changes to the selected live window set.
-                    if(!windows.Select(w=>w.Key).OrderBy(k=>k).SequenceEqual(gesture.Source.Windows.Select(w=>w.Key).OrderBy(k=>k)))return;
-                    Assign(destination,windows);
-                }else if(!fresh.Buttons.Any(b=>model.Find(b.AppId)!=null && b.Bounds.Contains(gesture.Release))){GroupDragInput.Replay(gesture,fresh);}
-                RefreshSoon();
+                if(disposed || request!=generation || !input.IsCurrent(gesture) || gesture.Cancelled || fresh==null || fresh.Handle!=gesture.Taskbar || model.Find(destination.AppId)!=destination)return;
+                var approved=new[]{new TaskButton{AppId=destination.AppId,Bounds=gesture.TargetBounds}};
+                var hit=TaskbarAccess.DropTarget(fresh,approved,gesture.Release,gesture.Source.Button.AppId,id=>id==destination.AppId);
+                if(hit==null || hit.AppId!=destination.AppId || !WindowShell.OnTaskbar(gesture.Release,fresh.Handle))return;
+                if(windows==null || windows.Length==0){hint.Show("This taskbar button could not be matched to a running window. No application was changed.",plus,0,-50,4000);return;}
+                if(gesture.Source.Windows.Length>0 && !windows.Select(w=>w.Key).OrderBy(k=>k).SequenceEqual(gesture.Source.Windows.Select(w=>w.Key).OrderBy(k=>k)))return;
+                Assign(destination,windows);RefreshSoon();
             });
         });
     }
     private void ReadSnapshot(){
         var ids=model.Groups.Select(g=>g.AppId).ToArray();
         ThreadPool.QueueUserWorkItem(delegate{
-            TaskbarSnapshot next=null;
+            long observedAt=Now;TaskbarSnapshot next=null;
             try{next=TaskbarAccess.Read();}catch(Exception){}finally{Interlocked.Exchange(ref readBusy,0);}
             if(next==null)return;
             var cache=Interlocked.CompareExchange(ref resolvedSources,null,null);
-            var regions=new GroupInputMap{Created=Now,Taskbar=next.Handle,Bounds=next.Bounds,Groups=next.Buttons.Where(b=>ids.Contains(b.AppId)).ToArray(),Sources=next.Buttons.Where(b=>!ids.Contains(b.AppId)).Select(b=>new GroupDragSource{Button=b,Windows=(cache.FirstOrDefault(c=>c.Button.AppId==b.AppId)??new GroupDragSource{Windows=new GroupWindow[0]}).Windows}).ToArray()};
+            var regions=new GroupInputMap{Created=observedAt,DragDistance=SystemInformation.DragSize.Width,Taskbar=next.Handle,Bounds=next.Bounds,Groups=next.Buttons.Where(b=>ids.Contains(b.AppId)).ToArray(),Sources=next.Buttons.Where(b=>!ids.Contains(b.AppId)).Select(b=>new GroupDragSource{Button=b,Windows=(cache.FirstOrDefault(c=>c.Button.AppId==b.AppId)??new GroupDragSource{Windows=new GroupWindow[0]}).Windows}).ToArray()};
             input.Publish(regions);
             Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
             // Window/shortcut resolution cannot stall publication of hit regions.
-            if(ids.Length>0 && Interlocked.CompareExchange(ref windowsBusy,1,0)==0)ThreadPool.QueueUserWorkItem(delegate{
+            if(ids.Length>0 && Now-lastWindowRead>=750 && Interlocked.CompareExchange(ref windowsBusy,1,0)==0){lastWindowRead=Now;ThreadPool.QueueUserWorkItem(delegate{
                 try{var windows=WindowShell.Windows();var sources=next.Buttons.Select(b=>new GroupDragSource{Button=b,Windows=TaskbarAccess.Resolve(b,windows)}).ToArray();Interlocked.Exchange(ref resolvedSources,sources);}
                 catch(Exception){}finally{Interlocked.Exchange(ref windowsBusy,0);}
-            });
+            });}
         });
     }
     private void ChooseOpenApps(LiveGroup group){

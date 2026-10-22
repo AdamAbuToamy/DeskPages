@@ -5,8 +5,8 @@ using System.Reflection;
 using System.Windows.Forms;
 [assembly:AssemblyTitle("DeskPages Rescue")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.25.0")]
-[assembly:AssemblyFileVersion("0.8.25.0")]
+[assembly:AssemblyVersion("0.8.26.0")]
+[assembly:AssemblyFileVersion("0.8.26.0")]
 internal static class RescueLauncher {
     [STAThread]private static int Main(){try{
         string root=Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);

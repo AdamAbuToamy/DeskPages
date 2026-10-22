@@ -1,5 +1,5 @@
 DeskPages Privacy Notice
-Version 0.8.25 alpha | Effective 22 October 2026
+Version 0.8.26 alpha | Effective 22 October 2026
 Developer: Adam Abu Toamy
 
 DeskPages has no accounts, telemetry, analytics, advertising, or
@@ -69,7 +69,7 @@ this notice. No private support email address is configured for this preview.
 
 Local recovery history stores page membership, icon coordinates, file identities
 and preferences. Display profiles store display identifiers and geometry; the
-Main display only option also stores stationary secondary-icon positions. These
+Main display only option confines page layouts to the primary display. These
 are metadata, not screenshots or document contents. Older organization metadata
 is retained for compatibility even when its tools are absent from the daily UI.
 Rescue operates independently of the main agent/input hooks/animation renderer.
@@ -84,18 +84,20 @@ DeskPages\TaskbarGroups stores HWND/process/start identities and original Shell
 properties, which can include app identifiers, executable commands and icon paths.
 A separate normal-user guardian restores those properties if the group helper
 exits. Group membership is session-only; closing a window removes its membership.
-The helper uses mouse-button state and pointer location for drag dwell, with no
+The helper uses mouse-button state and pointer location for drag/drop, with no
 keyboard text recording, screenshot capture or network requests. UI Automation
 runs off the UI thread. The RAM indicator includes the helper and its guardian.
 
 Classic process-only AppIDs may be resolved through a read-only mapping of installed Start menu/Desktop shortcut AppIDs to running executable paths. Shortcuts are not executed or modified.
 
 While taskbar groups are enabled, a dedicated input thread inspects mouse button
-presses and Escape to distinguish an app drop into a group from native group
-reordering. It does not log these events or typed text. Unmodified taskbar app-button
-clicks/drags may be consumed and replayed locally through Windows SendInput after
-release; group drags and modifier gestures remain native. Closed pins are never
-automatically assigned; an unmatched drop requires an explicit open-window
-selection. Optional Copy taskbar diagnostics copies the most recent taskbar
-press decision, button IDs, input flags and geometry to the local clipboard. All
-window resolution and hit-region data remains in memory on this computer.
+presses and Escape to distinguish a numbered-target drop from native taskbar
+reordering. It does not log typed text. Ordinary app clicks, app reordering and
+group dragging remain native. Entry into a numbered group can complete the native
+drag locally through tagged Windows SendInput events; leaving the target resumes
+the same source from fresh hit regions. Dropping into a group has no hold timer
+and never automatically opens a window picker. Unresolved or closed sources are
+not assigned. An optional open-app picker is available only as an explicit menu
+command. Copy taskbar diagnostics copies the most recent taskbar press decision,
+button IDs, input flags and geometry to the local clipboard. All window resolution
+and hit-region data remains on this computer.

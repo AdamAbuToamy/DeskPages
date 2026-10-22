@@ -3,7 +3,7 @@
 Enable **Taskbar groups - experimental** from the DeskPages tray menu. Windows taskbar combine should be **Always** for one collapsed group button. The helper runs with Explorer's normal user token.
 
 1. Click **+** near Widgets/weather to create a numbered native taskbar group.
-2. Drag a running application button from the taskbar onto the group. Hold for 1.2 seconds; a green border/check confirms readiness. Release to commit.
+2. Drag a running application button from the taskbar onto the group. Release on the group to commit immediately. There is no hold timer or automatic selection window.
 3. Move numbered groups with the usual native taskbar drag. This gesture does not change membership.
 4. Hover a populated group to see native window previews. Drag a uniquely identified member preview away from the group and release to restore its original taskbar identity, or drag it to another group.
 5. Previously populated groups disappear when their last member closes/leaves. A new empty group stays until its first assignment, or can be deleted through its menu.
@@ -17,16 +17,20 @@ The add button, drag ghost and acceptance border are overlays. When its near-wea
 
 ## Acceptance required on Windows 11
 
-Test Chrome + Store and Terminal + VS Code. Verify numbered icons, reorder after grouping, hover previews, extraction from a preview, moving a member between groups, closing the final window, Escape/short dwell, mouse and touchpad, multiple Chrome windows, display/DPI changes, auto-hide, Explorer restart, disable, forced helper exit and reinstall. Check that target windows remain visible and original properties/icons return.
+Test Chrome + Store and Terminal + VS Code. Verify numbered icons, reorder after grouping, hover previews, extraction from a preview, moving a member between groups, closing the final window, Escape/immediate release, mouse and touchpad, multiple Chrome windows, display/DPI changes, auto-hide, Explorer restart, disable, forced helper exit and reinstall. Check that target windows remain visible and original properties/icons return.
 
-Windows CI fixtures verify cross-process property changes, journal-based guardian restoration, exact restoration of unset values, stale process rejection, group cleanup and dwell rules. They do not certify physical Windows 11 taskbar gestures or every application's behavior.
+Windows CI fixtures verify cross-process property changes, journal-based guardian restoration, exact restoration of unset values, stale process rejection, group cleanup and immediate target acceptance. They do not certify physical Windows 11 taskbar gestures or every application's behavior.
 
 Classic process-only AppIDs may be resolved through a read-only mapping of installed Start menu/Desktop shortcut AppIDs to running executable paths. Shortcuts are not executed or modified.
 
-## Current input ownership and direct addition
+## Native taskbar dragging
 
-Press a numbered group and choose **Add open apps…**, check one or more currently open windows and choose **Add selected**. Only selected, still-live HWND/process identities are assigned. App names/icons and window titles are shown; paths are not shown. This also provides an explicit selection when a dragged taskbar button cannot be matched to a live window. Closed pinned apps are never automatically added.
+App clicks and movement between ordinary taskbar buttons pass to Explorer immediately, from mouse-down through mouse-up. There is no deferred click/reorder replay. Dragging a numbered group itself also remains native.
 
-While numbered groups exist, unmodified app-button presses are owned before Explorer receives button-down, regardless of whether window metadata has finished resolving. Pointer movement stays physical; a ghost follows the pointer while group targets remain stationary. Numbered-group presses are passed through for native reordering. Ordinary clicks/reordering between app buttons replay the completed gesture after release. Only DeskPages' own replay marker is ignored; other promoted/device-generated mouse events can reach the same gate. Fresh taskbar hit regions are published separately from slower process/shortcut resolution. Native taskbar gestures invalidate cached positions until refreshed. Expired/unknown hit regions still fail open; Copy taskbar diagnostics identifies whether a taskbar press was owned, the hit-region age, source/group counts, input flags and taskbar root match without recording typed text.
+Only entry into a numbered target transfers the final drag segment to DeskPages. The helper completes Explorer's drag at the last point before the group and shows its own target cue/ghost. Release assigns the exact live windows associated with the original dragged AppID immediately; source identity is not looked up at its old screen position. No automatic picker opens. If a source cannot be identified unambiguously, nothing is assigned and a brief message explains the failure.
 
-Escape and a short group dwell cancel. A 30-second abandoned gesture cancels and requests fresh hooks/regions. The '+' control remains visible over apps and fullscreen windows. Physical Windows 11 button/drag behavior and touchpad input remain device acceptance. The actual low-level-hook fixture tests generated events on a controlled window, not a physical taskbar gesture.
+Leaving the numbered target resumes Explorer while the button is held, after a fresh post-transfer hit map identifies the same source AppID. Source rectangles are never guessed from stale positions. The helper tags only its own continuation events so they cannot recursively start a new drag. Fresh hit regions are published independently from slower window/shortcut resolution. Escape cancels; an abandoned transfer has a 30-second recovery watchdog. The + button stays visible over applications and fullscreen windows.
+
+The optional **Add open apps…** menu remains an explicitly invoked command. It never opens because a dragged app was released. Closed pinned apps are not automatically grouped. Classic Shell IDs that contain an executable path, including known-folder GUID prefixes, can be matched to the exact running executable without program-label guessing.
+
+Windows fixtures verify ordinary live native input, transfer only on group entry, immediate release, continuation when leaving a group while held, and untouched group-source dragging on an owned fixture window. Physical Windows 11 taskbar/trackpad behavior still requires device testing.

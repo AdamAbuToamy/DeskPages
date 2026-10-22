@@ -26,7 +26,7 @@ internal sealed class GroupModel {
     public void DeleteEmpty(LiveGroup group){if(group.Windows.Count!=0)throw new InvalidOperationException("Group is not empty");groups.Remove(group);}
 }
 internal sealed class GroupDropDwell {
-    public const int Hold=1200;
+    public const int Hold=0;
     private string target;private long since;
     public bool Observe(string next,long now){if(next!=target){target=next;since=now;}return target!=null && now-since>=Hold;}
     public void Reset(){target=null;since=0;}

@@ -5,45 +5,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-// Immutable, pre-resolved hit regions. The input thread never calls UI Automation,
-// reads files or waits for the UI thread inside a low-level hook.
-internal sealed class GroupDragSource {
-    public TaskButton Button;public GroupWindow[] Windows;
-}
-internal sealed class GroupInputMap {
-    public long Created;public IntPtr Taskbar;public Rectangle Bounds;public GroupDragSource[] Sources=new GroupDragSource[0];
-    public TaskButton[] Groups=new TaskButton[0];
-    public GroupDragSource SourceAt(Point point,long now){
-        if(now-Created<0 || now-Created>3000 || Groups.Length==0)return null;
-        if(Groups.Any(g=>g.Bounds.Contains(point)))return null; // Native group reordering.
-        return Sources.FirstOrDefault(s=>s.Button.Bounds.Contains(point));
-    }
-}
-internal sealed class GroupDragGesture {
-    public GroupDragSource Source;public TaskButton[] Groups;public Point Press,Release;public IntPtr Taskbar;
-    public long Epoch,Started;public volatile bool Cancelled,Released;
-}
-// Deterministic ownership state: only an unmodified press on a cached live-app
-// button is consumed. Mouse motion and presses on groups remain native.
-internal sealed class GroupDragGate {
-    private GroupDragGesture active;private long epoch;private bool nativePress;
-    public long Epoch{get{return Interlocked.Read(ref epoch);}}
-    public bool Process(int kind,Point point,bool injected,bool modified,IntPtr root,GroupInputMap map,long now,Action<GroupDragGesture> begin,Action<GroupDragGesture> end,Action nativeEnd=null){
-        if(injected)return false;
-        if(kind==0x201){
-            long current=Interlocked.Increment(ref epoch);
-            if(active!=null){active.Cancelled=true;return true;}
-            nativePress=root==map.Taskbar;var source=map.SourceAt(point,now);
-            if(source!=null && !modified && root==map.Taskbar){active=new GroupDragGesture{Source=source,Groups=map.Groups,Press=point,Taskbar=map.Taskbar,Epoch=current,Started=now};nativePress=false;begin(active);return true;}
-        }
-        if(kind==0x202 && active!=null){var completed=active;active=null;completed.Release=point;completed.Released=true;end(completed);return true;}
-        if(kind==0x202 && nativePress){nativePress=false;if(nativeEnd!=null)nativeEnd();}
-        if((kind==0x204 || kind==0x207 || kind==0x20B) && active!=null)Cancel();
-        return false;
-    }
-    public void Cancel(){if(active!=null)active.Cancelled=true;}
-    public void Abort(Action<GroupDragGesture> end){var abandoned=active;active=null;nativePress=false;Interlocked.Increment(ref epoch);if(abandoned!=null){abandoned.Cancelled=true;abandoned.Released=true;end(abandoned);}}
-}
 internal sealed class GroupDragInput:IDisposable {
     private readonly Action<GroupDragGesture> started,finished;private readonly Action refresh;
     private readonly Thread thread;private readonly ManualResetEvent initialized=new ManualResetEvent(false);
@@ -57,7 +18,7 @@ internal sealed class GroupDragInput:IDisposable {
         if(!initialized.WaitOne(3000)){Dispose();throw new InvalidOperationException("Taskbar input could not start");}
         if(error!=null){Dispose();throw new InvalidOperationException("Taskbar input could not start",error);}
     }
-    public void Publish(GroupInputMap next){Interlocked.Exchange(ref map,next);}
+    public void Publish(GroupInputMap next){Interlocked.Exchange(ref map,next);if(threadId!=0)PostThreadMessageW(threadId,0x8033,IntPtr.Zero,IntPtr.Zero);}
     public void Repair(){PostThreadMessageW(threadId,0x8032,IntPtr.Zero,IntPtr.Zero);}
     public bool IsCurrent(GroupDragGesture gesture){return gate.Epoch==gesture.Epoch;}
     private static long Now{get{return (long)(System.Diagnostics.Stopwatch.GetTimestamp()*1000.0/System.Diagnostics.Stopwatch.Frequency);}}
@@ -72,7 +33,7 @@ internal sealed class GroupDragInput:IDisposable {
                     gate.Abort(finished);Publish(new GroupInputMap());
                     if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);
                     mouseHandle=SetWindowsHookExW(14,mouse,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,key,GetModuleHandleW(null),0);refresh();
-                }else{TranslateMessage(ref message);DispatchMessageW(ref message);}
+                }else if(message.Message==0x8033){if(gate.Owned)ProcessGesture(0x200,Cursor.Position,IntPtr.Zero,map,false);}else{TranslateMessage(ref message);DispatchMessageW(ref message);}
             }
         }catch(Exception ex){error=ex;initialized.Set();}
         finally{if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);}
@@ -86,31 +47,43 @@ internal sealed class GroupDragInput:IDisposable {
             var current=map;IntPtr actual=kind==0x201?WindowShell.GetAncestor(WindowShell.WindowFromPoint(input.Point),2):IntPtr.Zero;
             IntPtr root=kind==0x201 && WindowShell.OnTaskbar(input.Point,current.Taskbar)?current.Taskbar:actual;
             bool modified=kind==0x201 && ModifierDown();
-            bool owned=gate.Process(kind,input.Point,false,modified,root,current,Now,started,finished,delegate{Publish(new GroupInputMap());refresh();});
+            bool owned=ProcessGesture(kind,input.Point,root,current,modified);
             if(kind==0x201 && current.Bounds.Contains(input.Point))lastPress="Owned="+owned+"; flags="+input.Flags+"; root="+WindowShell.Class(actual)+"; taskbarMatch="+(root==current.Taskbar)+"; source="+(current.Sources.FirstOrDefault(v=>v.Button.Bounds.Contains(input.Point))??new GroupDragSource{Button=new TaskButton{AppId="none"}}).Button.AppId+"; groups="+current.Groups.Length+"; sources="+current.Sources.Length+"; ageMs="+(Now-current.Created)+"; modified="+modified;
             if(owned)return new IntPtr(1);
         }catch(Exception){gate.Cancel();}
         return CallNextHookEx(IntPtr.Zero,code,message,data);
     }
+    private bool ProcessGesture(int kind,Point point,IntPtr root,GroupInputMap current,bool modified){
+        return gate.Process(kind,point,false,modified,root,current,Now,started,finished,refresh,
+            delegate(GroupDragGesture gesture,Point target){return TransferToGroup(gesture,target);},
+            delegate(GroupDragGesture gesture,Point target){return ResumeNative(gesture,target,current);},
+            delegate(Point target){Send(new[]{Move(target,SystemInformation.VirtualScreen)});});
+    }
     private IntPtr Key(int code,IntPtr message,IntPtr data){
-        if(code>=0 && Marshal.ReadInt32(data)==0x1B)gate.Cancel();
+        if(code>=0 && Marshal.ReadInt32(data)==0x1B){bool owned=gate.Owned;gate.Cancel();if(owned)return new IntPtr(1);}
         return CallNextHookEx(IntPtr.Zero,code,message,data);
     }
     private static bool ModifierDown(){return (WindowShell.GetAsyncKeyState(0x10)&0x8000)!=0 || (WindowShell.GetAsyncKeyState(0x11)&0x8000)!=0 || (WindowShell.GetAsyncKeyState(0x12)&0x8000)!=0 || (WindowShell.GetAsyncKeyState(0x5B)&0x8000)!=0 || (WindowShell.GetAsyncKeyState(0x5C)&0x8000)!=0;}
-    // A cancelled/short group drop is consumed. Ordinary clicks and drops between
-    // other app buttons replay the user's gesture as one bounded native batch.
-    internal static bool Replay(GroupDragGesture gesture,TaskbarSnapshot fresh){
-        if(gesture.Cancelled || fresh.Handle!=gesture.Taskbar || !WindowShell.OnTaskbar(gesture.Release,fresh.Handle))return false;
-        var source=fresh.At(gesture.Press);if(source==null || source.AppId!=gesture.Source.Button.AppId)return false;
-        if(Math.Abs(Cursor.Position.X-gesture.Release.X)+Math.Abs(Cursor.Position.Y-gesture.Release.Y)>4)return false;
-        if((WindowShell.GetAsyncKeyState(1)&0x8000)!=0 || ModifierDown())return false;
-        var end=fresh.At(gesture.Release);if(end==null)return false;
+    // Complete Explorer's drag at its last native point before forwarding a move
+    // over the numbered target. From here only DeskPages receives the physical up.
+    private static bool TransferToGroup(GroupDragGesture gesture,Point point){
+        var safe=GroupDragGeometry.NativeEnd(gesture,SystemInformation.DragSize.Width);if(!safe.HasValue)return false;
         var area=SystemInformation.VirtualScreen;
-        bool moved=Math.Abs(gesture.Release.X-gesture.Press.X)+Math.Abs(gesture.Release.Y-gesture.Press.Y)>SystemInformation.DragSize.Width;
-        Point origin=moved?gesture.Press:gesture.Release;
-        var batch=moved?new[]{Move(origin,area),Button(2),Move(new Point(origin.X+(gesture.Release.X-origin.X)/2,origin.Y+(gesture.Release.Y-origin.Y)/2),area),Move(gesture.Release,area),Button(4)}:new[]{Move(origin,area),Button(2),Button(4)};
+        return Send(new[]{Move(safe.Value,area),Button(4),Move(point,area)});
+    }
+    private static bool ResumeNative(GroupDragGesture gesture,Point point,GroupInputMap current){
+        if(ModifierDown() || !current.Fresh(Now) || Now-current.Created>250 || current.Created<gesture.TransferredAt+80 || current.Taskbar!=gesture.Taskbar)return false;
+        var source=current.Sources.FirstOrDefault(s=>s.Button.AppId==gesture.Source.Button.AppId);
+        if(source==null)return false;
+        var box=source.Button.Bounds;var origin=new Point(box.Left+box.Width/2,box.Top+box.Height/2);
+        if(!WindowShell.OnTaskbar(origin,current.Taskbar))return false;
+        var area=SystemInformation.VirtualScreen;
+        return Send(new[]{Move(origin,area),Button(2),Move(point,area)});
+    }
+    private static bool Send(Input[] batch){
         uint sent=SendInput((uint)batch.Length,batch,Marshal.SizeOf(typeof(Input)));
-        if(sent!=(uint)batch.Length){var release=new[]{Button(4)};SendInput(1,release,Marshal.SizeOf(typeof(Input)));return false;}return true;
+        if(sent==(uint)batch.Length)return true;
+        SendInput(1,new[]{Button(4)},Marshal.SizeOf(typeof(Input)));return false;
     }
     private static Input Move(Point point,Rectangle area){return new Input{Type=0,Mouse=new MouseInput{X=(int)Math.Round((point.X-area.Left)*65535.0/Math.Max(1,area.Width-1)),Y=(int)Math.Round((point.Y-area.Top)*65535.0/Math.Max(1,area.Height-1)),Flags=0xE001,Extra=new UIntPtr(ReplayTag)}};}
     private static Input Button(uint flag){return new Input{Type=0,Mouse=new MouseInput{Flags=flag,Extra=new UIntPtr(ReplayTag)}};}
