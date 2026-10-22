@@ -175,15 +175,15 @@ public static class TaskbarGroupsHarness {
                     // Existing application movement is real native down/move/up.
                     listener.Publish(map());SendFixturePart(source,2);wait("native ordinary press",delegate{return nativeDowns==1;});SendFixturePart(other,0);wait("native ordinary motion",delegate{return leftMovesBetweenApps>0;});SendFixturePart(other,4);wait("native ordinary release",delegate{return nativeUps==1;});
                     Check(nativeDowns==1 && begins==0 && ends==0 && leftMovesBetweenApps>0,"Ordinary reorder was captured instead of reaching the native window live");
-                    listener.Publish(map());SendFixtureInput(source,target);wait("immediate target drop",delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
+                    listener.Publish(map());SendFixturePart(source,2);wait("second native press",delegate{return nativeDowns==2;});SendFixturePart(target,4);wait("immediate target drop",delegate{return ends==1 && nativeUps==2;});Application.DoEvents();
                     Check(begins==1 && nativeDowns==2 && nativeGroupMoves==0 && received.Released && received.TargetAppId=="FixtureGroup","Immediate target: downs="+nativeDowns+", ups="+nativeUps+", begins="+begins+", ends="+ends+", targetMoves="+nativeGroupMoves+", leftFlags="+leftMovesOnGroup+", trace="+string.Join(",",trace)+", released="+received.Released+", target="+received.TargetAppId+"; "+listener.Diagnostics);
                     // Leaving the target resumes native movement while still held.
-                    listener.Publish(map());SendFixturePart(source,2);SendFixturePart(target,0);wait("second target entry",delegate{return begins==2 && nativeUps==3;});
+                    listener.Publish(map());SendFixturePart(source,2);wait("third native press",delegate{return nativeDowns==3;});SendFixturePart(target,0);wait("second target entry",delegate{return begins==2 && nativeUps==3;});
                     PumpFor(120);listener.Publish(map());SendFixturePart(other,0);wait("resume before release",delegate{return ends==2 && nativeDowns==4;});
                     Check(!received.Released && received.NativeActive,"Native resume waited for physical release");
                     SendFixturePart(other,4);wait("resumed native release",delegate{return nativeUps==4;});
                     Check(begins==2 && ends==2 && nativeGroupMoves==0,"Own continuation recursively entered input or moved the native target");
-                    listener.Publish(map());SendFixtureInput(target,other);wait("native group-source release",delegate{return nativeUps==5;});
+                    listener.Publish(map());SendFixturePart(target,2);wait("native group-source press",delegate{return nativeDowns==5;});SendFixturePart(other,4);wait("native group-source release",delegate{return nativeUps==5;});
                     Check(nativeDowns==5 && begins==2,"Dragging the numbered group itself was intercepted");
                 }
                 form.Close();
