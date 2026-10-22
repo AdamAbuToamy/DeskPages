@@ -8,7 +8,7 @@ internal sealed class TaskButton {
     public string AppId,Name;public string[] Names=new string[0];public Rectangle Bounds;
 }
 internal sealed class TaskbarSnapshot {
-    public IntPtr Handle;public Rectangle Bounds,Weather;public TaskButton[] Buttons=new TaskButton[0];
+    public IntPtr Handle;public bool Accessible;public Rectangle Bounds,Weather;public TaskButton[] Buttons=new TaskButton[0];
     public TaskButton At(Point point){return Buttons.FirstOrDefault(b=>b.Bounds.Contains(point));}
 }
 internal static class TaskbarAccess {
@@ -23,16 +23,24 @@ internal static class TaskbarAccess {
         var now=current.Buttons.FirstOrDefault(b=>b.AppId==prior.AppId);if(now==null)return null;
         return Math.Abs(now.Bounds.Left-prior.Bounds.Left)<=2*Math.Max(now.Bounds.Width,prior.Bounds.Width) && Math.Abs(now.Bounds.Top-prior.Bounds.Top)<8?now:null;
     }
+    public static TaskbarSnapshot ReadBounds(){
+        IntPtr handle=WindowShell.FindWindowW("Shell_TrayWnd",null);return new TaskbarSnapshot{Handle=handle,Bounds=WindowShell.Bounds(handle)};
+    }
     public static TaskbarSnapshot Read(){
-        IntPtr h=WindowShell.FindWindowW("Shell_TrayWnd",null);var result=new TaskbarSnapshot{Handle=h,Bounds=WindowShell.Bounds(h)};if(h==IntPtr.Zero)return result;
-        var root=AutomationElement.FromHandle(h);var list=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));var buttons=new List<TaskButton>();
-        for(int i=0;i<list.Count;i++){
-            var info=list[i].Current;if(info.IsOffscreen)continue;var box=Box(info.BoundingRectangle);if(box.IsEmpty)continue;
-            string id=info.AutomationId??"";
-            if(id=="WidgetsButton" || id=="AugmentedEntryPointButton")result.Weather=box;
-            if(id.StartsWith("Appid:",StringComparison.OrdinalIgnoreCase))buttons.Add(new TaskButton{AppId=id.Substring(6).Trim(),Name=info.Name,Bounds=box});
-        }
-        result.Buttons=buttons.ToArray();return result;
+        var result=ReadBounds();if(result.Handle==IntPtr.Zero)return result;
+        try{
+            var root=AutomationElement.FromHandle(result.Handle);var list=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));var buttons=new List<TaskButton>();
+            for(int i=0;i<list.Count;i++)try{
+                var info=list[i].Current;if(info.IsOffscreen)continue;var box=Box(info.BoundingRectangle);if(box.IsEmpty)continue;
+                string id=info.AutomationId??"";
+                if(id=="WidgetsButton" || id=="AugmentedEntryPointButton")result.Weather=box;
+                if(id.StartsWith("Appid:",StringComparison.OrdinalIgnoreCase))buttons.Add(new TaskButton{AppId=id.Substring(6).Trim(),Name=info.Name,Bounds=box});
+            }catch(ElementNotAvailableException){}catch(InvalidOperationException){}catch(System.Runtime.InteropServices.COMException){}
+            result.Buttons=buttons.ToArray();result.Accessible=true;
+        }catch(ElementNotAvailableException){}catch(InvalidOperationException){}catch(System.Runtime.InteropServices.COMException){}
+        // Native taskbar geometry still places '+' while accessibility starts or
+        // Explorer recreates its UI tree. Unknown app buttons never become targets.
+        return result;
     }
     public static TaskButton Hit(Point point){
         var element=AutomationElement.FromPoint(new System.Windows.Point(point.X,point.Y));

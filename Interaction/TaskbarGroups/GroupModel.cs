@@ -33,6 +33,13 @@ internal sealed class GroupDropDwell {
 }
 internal static class GroupLayoutPolicy {
     public static bool ShellSurface(string windowClass){return windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="Shell_TrayWnd" || windowClass=="Shell_SecondaryTrayWnd";}
+    public static Rectangle AddBounds(Rectangle taskbar,Rectangle weather,Rectangle area,Rectangle[] apps,bool accessible){
+        if(taskbar.IsEmpty || taskbar.Height<10 || taskbar.Top>=area.Bottom-2 || taskbar.Bottom<=area.Top+2)return Rectangle.Empty;
+        int size=Math.Max(28,Math.Min(36,taskbar.Height-8)),x=weather.IsEmpty?area.Left+160:weather.Right+8;
+        var result=new Rectangle(x,taskbar.Top+(taskbar.Height-size)/2,size,size);
+        if(!accessible || apps.Any(b=>b.IntersectsWith(result)))result.Y=taskbar.Top-size-6;
+        return result;
+    }
     public static bool Fullscreen(Rectangle window,Rectangle display,string windowClass){
         if(ShellSurface(windowClass) || windowClass=="SHELLDLL_DefView" || windowClass=="SysListView32")return false;
         return !window.IsEmpty && window.Width>=display.Width && window.Height>=display.Height;

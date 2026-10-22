@@ -11,6 +11,7 @@ public static class TaskbarGroupsHarness {
     private static void Check(bool value,string message){if(!value)throw new Exception(message);}
     [STAThread]public static int Main(string[] args){
         try{
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             if(args.Length==1 && args[0]=="--window"){
                 using(var f=new Form{Text="DeskPages grouping fixture",Size=new Size(320,180)}){
                     WindowShell.Set(f.Handle,5,"DeskPages.Fixture.Original");f.Shown+=delegate{Console.WriteLine(f.Handle.ToInt64());Console.Out.Flush();};Application.Run(f);
@@ -64,6 +65,10 @@ public static class TaskbarGroupsHarness {
         Check(gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,108,begin,end),"Abandoned drag blocked the next source press");gate.Abort(end);
         int refreshes=0;gate.Process(0x201,new Point(220,20),false,false,inputMap.Taskbar,inputMap,109,begin,end);
         Check(!gate.Process(0x202,new Point(120,20),false,false,inputMap.Taskbar,inputMap,110,begin,end,delegate{refreshes++;}) && refreshes==1,"Native group reorder did not invalidate old input regions");
+        var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
+        var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
+        Check(!fallback.IsEmpty && fallback.Bottom<bar.Top,"Native taskbar fallback hid '+' or covered unknown app buttons before UIA was ready");
+        Check(GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Left==128,"Weather-adjacent placement changed");
         var screen=new Rectangle(0,0,1920,1080);Check(!GroupLayoutPolicy.Fullscreen(screen,screen,"Progman"),"Desktop focus hid the add button");
         Check(GroupLayoutPolicy.ShellSurface("Progman") && GroupLayoutPolicy.ShellSurface("WorkerW") && GroupLayoutPolicy.ShellSurface("Shell_TrayWnd") && !GroupLayoutPolicy.ShellSurface("CabinetWClass"),"Explorer taskbar grouping included a desktop/taskbar Shell surface");
         Check(GroupLayoutPolicy.Fullscreen(screen,screen,"Chrome_WidgetWin_1"),"Real full-screen application did not hide the overlay");
@@ -93,6 +98,7 @@ public static class TaskbarGroupsHarness {
             listener.Publish(new GroupInputMap());
         }
         Console.WriteLine("PASS: input hook thread installs/uninstalls; native group restore is rejected before showing a client window.");
+        PopupLifecycle();
         ReplayNativeFixture();
         int clicks=0;
         using(var button=new GroupAddButton(delegate{clicks++;})){
@@ -103,6 +109,8 @@ public static class TaskbarGroupsHarness {
             up.Invoke(button,new object[]{inside});Check(clicks==0,"Unarmed mouse-up added a group");
             down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{outside});Check(clicks==0,"Release outside added a group");
             down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{inside});Check(clicks==1,"Button press did not add exactly one group");
+            button.Hide();button.Size=new Size(36,36);button.Location=new Point(150,150);button.Show();Application.DoEvents();
+            Check(WindowShell.IsWindowVisible(button.Handle),"Layered add button did not redraw after hidden resize/show");
             button.Hide();
         }
         Console.WriteLine("PASS: layered button show and click-once/cancel semantics.");
@@ -133,6 +141,29 @@ public static class TaskbarGroupsHarness {
             if(recovery!=null){recovery.RestoreAll();Directory.Delete(recovery.Folder,true);}
             if(child!=null){if(!child.HasExited){PostMessageW(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);if(!child.WaitForExit(5000))child.Kill();}child.Dispose();}
         }
+    }
+    private static void PopupLifecycle(){
+        var model=new GroupModel(Guid.NewGuid().ToString("N"));var group=model.Add();int removed=0;var anchor=new GroupAnchor(group,delegate{});anchor.Show();
+        using(var owner=new Form{Text="DeskPages popup fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),Size=new Size(200,100),TopMost=true}){
+            owner.Show();owner.Activate();var handle=owner.Handle;
+            using(var popup=new GroupPopup(owner,g=>model.Find(g.AppId)==g,g=>{model.DeleteEmpty(g);anchor.Finish();removed++;},delegate{},delegate{})){
+                var menu=popup.Menu;
+                for(int i=0;i<40;i++){
+                    popup.Show(group,owner.PointToScreen(new Point(8,8)));Application.DoEvents();
+                    popup.Menu.Close();Application.DoEvents();
+                    Check(!menu.IsDisposed && popup.Menu==menu,"Closing the group menu disposed it while WinForms still owned its events");
+                }
+                popup.Show(group,owner.PointToScreen(new Point(8,8)));Application.DoEvents();
+                menu.Items[1].PerformClick();Check(removed==0,"Group deletion ran inside the ToolStrip click handler");
+                menu.Close();PumpUntil(delegate{return removed==1;});
+                Check(anchor.IsDisposed && !menu.IsDisposed,"Deleting the anchor disposed its stable-owner popup");
+                var next=model.Add();popup.Show(next,owner.PointToScreen(new Point(8,8)));Application.DoEvents();menu.Close();Application.DoEvents();
+                Check(!menu.IsDisposed,"Popup could not be reused after deleting a group");
+            }
+            owner.Close();
+        }
+        if(!anchor.IsDisposed)anchor.Finish();
+        Console.WriteLine("PASS: actual popup show/close repeated 40 times; delete deferred outside click; anchor disposed; stable popup reused; no disposed-menu access.");
     }
     private static void ReplayNativeFixture(){
         Point original=Cursor.Position;

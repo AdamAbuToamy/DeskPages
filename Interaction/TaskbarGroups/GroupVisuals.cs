@@ -49,7 +49,7 @@ internal sealed class GroupAddButton:Form {
     }
     protected override bool ShowWithoutActivation{get{return true;}}
     protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x08080080;return p;}}
-    protected override void OnShown(EventArgs e){base.OnShown(e);Render();}
+    protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);Render();}
     protected override void OnLocationChanged(EventArgs e){base.OnLocationChanged(e);Render();}
     protected override void OnSizeChanged(EventArgs e){base.OnSizeChanged(e);Render();}
     protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);hover=true;Render();}

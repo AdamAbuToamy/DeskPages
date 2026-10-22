@@ -32,7 +32,7 @@ try {
     }
     foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll') -and $_.FullName -notlike ($OutputDirectory+'\*')}){Sign-ReleaseFile $file.FullName}
     . (Join-Path $root 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $root -Version ([Version]'0.8.22.0')
+    Assert-DpPackage -Root $root -Version ([Version]'0.8.23.0')
     $payload=Join-Path $work 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem

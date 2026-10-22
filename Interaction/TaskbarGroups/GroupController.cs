@@ -21,7 +21,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly Dictionary<int,GroupAnchor> anchors=new Dictionary<int,GroupAnchor>();
     private readonly GroupTaskbar taskbar=new GroupTaskbar();
     private readonly GroupAddButton plus;private readonly GroupDropCue cue=new GroupDropCue();
-    private readonly GroupDragGhost ghost=new GroupDragGhost();private readonly GroupDragInput input;
+    private readonly GroupDragGhost ghost=new GroupDragGhost();private readonly GroupDragInput input;private readonly GroupPopup groupPopup;
     private GroupDragGesture captured;private int replayBusy;
     private readonly NotifyIcon tray;private readonly Icon trayIcon;private readonly ToolTip hint=new ToolTip();
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=40};
@@ -33,12 +33,13 @@ internal sealed class GroupController:ApplicationContext {
     private TaskButton[] pressGroups=new TaskButton[0];private string sourceAppId;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
     public GroupController(){
-        model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);plus.Show();plus.Hide();
+        model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);var uiHandle=plus.Handle;
+        groupPopup=new GroupPopup(plus,g=>model.Find(g.AppId)==g,DeleteEmptyGroup,WindowShell.Activate,BeginMemberDrag);
         trayIcon=Icon.ExtractAssociatedIcon(executable)??(Icon)SystemIcons.Application.Clone();
         tray=new NotifyIcon{Icon=trayIcon,Text="DeskPages · Taskbar groups",Visible=true};
-        var menu=new ContextMenuStrip();menu.Items.Add("Add group",null,delegate{AddGroup();});menu.Items.Add("Restore apps and turn off",null,delegate{File.WriteAllText(EnabledPath,"off");ExitThread();});tray.ContextMenuStrip=menu;tray.DoubleClick+=delegate{AddGroup();};
+        var menu=new ContextMenuStrip();menu.Items.Add("Add group",null,delegate{AddGroup();});menu.Items.Add("Restore apps and turn off",null,delegate{File.WriteAllText(EnabledPath,"off");plus.BeginInvoke((Action)ExitThread);});tray.ContextMenuStrip=menu;tray.DoubleClick+=delegate{AddGroup();};
         Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));File.WriteAllText(EnabledPath,"on");
-        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);});timer.Tick+=delegate{Tick();};timer.Start();
+        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);});snapshot=TaskbarAccess.ReadBounds();PlacePlus();timer.Tick+=delegate{Tick();};timer.Start();
     }
     public static string EnabledPath{get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","TaskbarGroups","enabled.txt");}}
     private void StartGuardian(){
@@ -174,12 +175,7 @@ internal sealed class GroupController:ApplicationContext {
         if(snapshot.Bounds.IsEmpty || snapshot.Bounds.Height<10){plus.Hide();return;}
         var area=Screen.FromRectangle(snapshot.Bounds).Bounds;
         if(snapshot.Bounds.Top>=area.Bottom-2 || snapshot.Bounds.Bottom<=area.Top+2){plus.Hide();return;}
-        // Only '+' is overlaid. Groups are real, movable Explorer taskbar buttons.
-        int x=snapshot.Weather.IsEmpty?area.Left+160:snapshot.Weather.Right+8;
-        int size=Math.Max(28,Math.Min(36,snapshot.Bounds.Height-8));
-        var bounds=new Rectangle(x,snapshot.Bounds.Top+(snapshot.Bounds.Height-size)/2,size,size);
-        // A crowded/left-aligned taskbar must not have its app buttons covered.
-        if(snapshot.Buttons.Any(b=>b.Bounds.IntersectsWith(bounds)))bounds.Y=snapshot.Bounds.Top-size-6;
+        var bounds=GroupLayoutPolicy.AddBounds(snapshot.Bounds,snapshot.Weather,area,snapshot.Buttons.Select(b=>b.Bounds).ToArray(),snapshot.Accessible);
         var foregroundWindow=GetForegroundWindow();var foreground=WindowShell.Bounds(foregroundWindow);
         bool fullscreen=GroupLayoutPolicy.Fullscreen(foreground,area,WindowShell.Class(foregroundWindow));
         if(fullscreen){plus.Hide();return;}
@@ -204,20 +200,16 @@ internal sealed class GroupController:ApplicationContext {
         foreach(var empty in model.Prune(WindowShell.Same))RemoveAnchor(empty);
     }
     private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
-    private void OpenGroup(LiveGroup group){
-        var popup=new ContextMenuStrip();
-        foreach(var w in group.Windows.Values){var item=popup.Items.Add(w.Title);item.Click+=delegate{WindowShell.Activate(w);};
-            item.MouseDown+=delegate(object s,MouseEventArgs e){if(e.Button==MouseButtons.Left){CancelDrag();drag=new[]{w};press=Cursor.Position;held=true;}};}
-        if(group.Windows.Count==0){popup.Items.Add("Drag an open taskbar app here").Enabled=false;popup.Items.Add("Delete empty group",null,delegate{model.DeleteEmpty(group);RemoveAnchor(group);RefreshSoon();});}
-        popup.Closed+=delegate{popup.Dispose();};popup.Show(Cursor.Position);
-    }
+    private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
+    private void DeleteEmptyGroup(LiveGroup group){model.DeleteEmpty(group);RemoveAnchor(group);RefreshSoon();}
+    private void BeginMemberDrag(GroupWindow window){CancelDrag();drag=new[]{window};press=Cursor.Position;held=true;}
     private void RefreshSoon(){lastRead=0;}
     private void CancelDrag(){generation++;drag=new GroupWindow[0];pressGroups=new TaskButton[0];sourceAppId=null;target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
     private void Post(Action action){if(disposed)return;try{plus.BeginInvoke((Action)delegate{if(!disposed)try{action();}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}});}catch(InvalidOperationException){ }}
     protected override void ExitThreadCore(){
         if(disposed)return;disposed=true;if(captured!=null)captured.Cancelled=true;input.Dispose();timer.Stop();timer.Dispose();
         try{recovery.RestoreAll();}catch(Exception){/* The independent guardian retries the durable journal after exit. */}
-        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();tray.Visible=false;tray.ContextMenuStrip.Dispose();tray.Dispose();trayIcon.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
+        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);groupPopup.Dispose();ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();tray.Visible=false;tray.ContextMenuStrip.Dispose();tray.Dispose();trayIcon.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
         base.ExitThreadCore();
     }
     [DllImport("user32.dll")]private static extern IntPtr GetForegroundWindow();

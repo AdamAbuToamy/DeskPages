@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.23 — taskbar groups device trial
+
+- Fix disposed context-menu access during group deletion and helper shutdown.
+- Show '+' from native taskbar geometry while accessibility starts; redraw on reshow.
+- Retain valid taskbar geometry when a UIA control disappears.
+
 ## 0.8.22 — taskbar groups device trial
 
 - Reject empty group window restoration before showing a normal client window.
