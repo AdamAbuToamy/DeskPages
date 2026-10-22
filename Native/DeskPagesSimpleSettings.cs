@@ -221,7 +221,7 @@ public sealed class DeskPagesMemoryMeter:Control {
             sample.Bytes=current.WorkingSet64;sample.Processes=1;
             string location=typeof(DeskPagesTheme).Assembly.Location;if(String.IsNullOrEmpty(location))return sample;
             string root=System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(location),".."));
-            foreach(string name in new[]{"DeskPagesStartup","DeskPagesDrag","DeskPagesRescue"})foreach(var helper in System.Diagnostics.Process.GetProcessesByName(name))using(helper){try{
+            foreach(string name in new[]{"DeskPagesStartup","DeskPagesDrag","DeskPagesRescue","DeskPagesGroups"})foreach(var helper in System.Diagnostics.Process.GetProcessesByName(name))using(helper){try{
                 if(helper.Id!=current.Id && helper.SessionId==current.SessionId && String.Equals(helper.MainModule.FileName,System.IO.Path.Combine(root,name+".exe"),StringComparison.OrdinalIgnoreCase)){sample.Bytes+=helper.WorkingSet64;sample.Processes++;}
             }catch(System.ComponentModel.Win32Exception){}catch(InvalidOperationException){}}
         }return sample;

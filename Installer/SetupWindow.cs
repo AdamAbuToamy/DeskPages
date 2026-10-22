@@ -38,7 +38,7 @@ internal sealed class SetupWindow:Form {
         var tagline=TextLabel("More room.\r\nSame desktop.",18,Color.FromArgb(190,211,244),FontStyle.Regular);tagline.Margin=new Padding(0,20,0,12);side.Controls.Add(tagline,0,2);
         var creatorTitle=TextLabel("CREATED BY",9,Color.FromArgb(143,163,194),FontStyle.Bold);side.Controls.Add(creatorTitle,0,4);
         var creator=TextLabel("Adam Abu Toamy",11,Color.White,FontStyle.Bold);side.Controls.Add(creator,0,5);
-        var version=TextLabel("Version 0.8.19",9,Color.FromArgb(143,163,194),FontStyle.Regular);version.Margin=new Padding(0,12,0,0);side.Controls.Add(version,0,6);
+        var version=TextLabel("Version 0.8.20",9,Color.FromArgb(143,163,194),FontStyle.Regular);version.Margin=new Padding(0,12,0,0);side.Controls.Add(version,0,6);
         side.SizeChanged+=delegate {int width=Math.Max(100,side.ClientSize.Width-side.Padding.Horizontal);foreach(Control child in side.Controls)if(child is Label)child.MaximumSize=new Size(width,0);};
         root.Controls.Add(side,0,0);
         var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty,Padding=Padding.Empty};

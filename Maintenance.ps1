@@ -91,6 +91,7 @@ function Stop-DpKnownAgents {
 
 function Stop-DpDragBroker {
     param([Parameter(Mandatory=$true)][string]$Directory)
+    Stop-DpTaskbarGroups -Directory $Directory
     $expected=Join-Path ([IO.Path]::GetFullPath($Directory)) 'DeskPagesDrag.exe'
     $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     foreach($process in @(Get-CimInstance Win32_Process -Filter "Name='DeskPagesDrag.exe'")){
@@ -103,5 +104,21 @@ function Stop-DpDragBroker {
         if($still.ExecutablePath -ine $expected -or $still.CreationDate -ne $process.CreationDate -or $stillOwner.Sid -ne $sid){throw 'Drag helper identity changed; upgrade stopped.'}
         Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
         Wait-Process -Id $process.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-DpTaskbarGroups {
+    param([Parameter(Mandatory=$true)][string]$Directory)
+    $expected=Join-Path ([IO.Path]::GetFullPath($Directory)) 'DeskPagesGroups.exe'
+    $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $owned=@(Get-CimInstance Win32_Process -Filter "Name='DeskPagesGroups.exe'" | Where-Object {$_.ExecutablePath -ieq $expected} | Where-Object {(Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $sid})
+    if(-not $owned.Count){return}
+    try{$event=[Threading.EventWaitHandle]::OpenExisting('Local\DeskPagesTaskbarGroupsStop-'+$sid);try{$null=$event.Set()}finally{$event.Dispose()}}catch [Threading.WaitHandleCannotBeOpenedException]{}
+    foreach($process in $owned){
+        $still=Get-CimInstance Win32_Process -Filter ('ProcessId='+$process.ProcessId)
+        if($null -eq $still -or $still.CreationDate -ne $process.CreationDate){continue}
+        Wait-Process -Id $process.ProcessId -Timeout 8 -ErrorAction SilentlyContinue
+        $remaining=Get-CimInstance Win32_Process -Filter ('ProcessId='+$process.ProcessId)
+        if($remaining -and $remaining.CreationDate -eq $process.CreationDate){throw 'Taskbar groups are still restoring their windows. Close them from their tray menu, then retry.'}
     }
 }

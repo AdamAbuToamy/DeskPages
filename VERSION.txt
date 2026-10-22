@@ -1,1 +1,1 @@
-DeskPages 0.8.19
+DeskPages 0.8.20

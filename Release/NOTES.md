@@ -1,7 +1,8 @@
-# DeskPages 0.8.19 Alpha
+# DeskPages 0.8.20 Alpha - taskbar groups experiment
 
-- Fix edge dragging becoming unavailable for the rest of the session after an agent reply takes more than eight seconds. Keep the original request ID until acknowledgement, then safely cancel the obsolete drag without replaying navigation.
-- Move minimal mouse/Escape hooks off the OLE/UI thread and recover missed mouse presses by polling. Real Explorer OLE file data and agent validation still gate all page and membership changes.
-- Preserve 0.8.18 name-only pin labels, Windows Shell icons, the live memory indicator and automatic update notifications.
+- Add optional live-window taskbar groups from the DeskPages tray menu. Only the add button is placed near Widgets/weather; numbered groups use native Explorer taskbar grouping and can be reordered like other taskbar buttons.
+- Drag a resolvable running app button onto a numbered group, dwell for 1.2 seconds until the green cue, then release. Native hover previews show member windows. Drag an individually identified member thumbnail outside the group to restore its original Shell identity.
+- Remove a previously populated group after its last window closes or leaves; keep newly created empty groups available for the first drop. Closed pinned apps are excluded.
+- Restore original window properties on disable/exit, maintain a local recovery journal and an independent normal-user guardian, and include both helper processes in the RAM indicator.
 
-Windows fixtures exercise the actual drag broker with a delayed navigation reply, one acknowledgement, cancellation and a subsequent drag request. Physical Explorer/touchpad testing remains separate from these automated fixtures.
+This is a device-test build. Native Windows 11 taskbar accessibility IDs, numbered icons, drag behavior, Chrome and Store compatibility require testing on the target Windows 11 build. Windows fixtures cover model rules and cross-process Shell property/guardian restoration, not physical taskbar interaction. Native collapse/hover depends on Windows taskbar combine settings. When the '+' position is occupied, it moves just above that position to avoid covering an app button.

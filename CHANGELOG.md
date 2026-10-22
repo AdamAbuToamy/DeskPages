@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.20 Alpha - taskbar groups experiment
+
+- Optional native numbered taskbar groups for currently running windows, with a separate add button near weather.
+- Dwell before drop, native preview member extraction, automatic removal of previously populated empty groups, and exact original property restoration.
+- Independent journal guardian and new Windows cross-process recovery fixtures; hardware taskbar acceptance remains pending.
+
 ## 0.8.19 Alpha
 
 - Keep the drag helper alive when an agent acknowledgement takes more than eight seconds; cancel the obsolete drag after its reply without replaying the command.
