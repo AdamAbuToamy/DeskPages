@@ -19,7 +19,7 @@ try {
         exit $process.ExitCode
     }
     . (Join-Path $PSScriptRoot 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $PSScriptRoot -Version ([Version]'0.8.31.0')
+    Assert-DpPackage -Root $PSScriptRoot -Version ([Version]'0.8.32.0')
     & $powershell -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Tests\Test-PowerShell51.ps1') -RequireNative
     if($LASTEXITCODE -ne 0){throw 'Windows PowerShell 5.1 compatibility preflight failed. Startup configuration was not changed.'}
     # Verify the new visibility adapter on temporary Windows files before installation.
@@ -44,7 +44,7 @@ try {
     if ($LASTEXITCODE -ne 0) {throw 'Preflight failed. Startup configuration was not changed.'}
     if(-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'DeskPagesStartup.exe'))){throw 'Startup guardian EXE missing. Extract the complete package.'}
     $guardianIdentity=[Reflection.AssemblyName]::GetAssemblyName((Join-Path $PSScriptRoot 'DeskPagesStartup.exe'))
-    if($guardianIdentity.Name -ne 'DeskPagesStartup' -or $guardianIdentity.Version -lt [Version]'0.8.31.0'){throw 'Incorrect startup guardian build.'}
+    if($guardianIdentity.Name -ne 'DeskPagesStartup' -or $guardianIdentity.Version -lt [Version]'0.8.32.0'){throw 'Incorrect startup guardian build.'}
 
     $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Confirm-DpSetupContinue

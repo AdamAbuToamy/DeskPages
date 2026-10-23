@@ -34,6 +34,19 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Release/Build-Windows.ps1
+      - name: Scan the new installer with current Defender and verify cloud connectivity
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+        shell: powershell
+        run: |
+          $version=([IO.File]::ReadAllText('VERSION.txt') -replace '^DeskPages\s+','').Trim()
+          ./Release/Scan-Installer.ps1 -Installer (Join-Path 'dist' ("DeskPages-Setup-"+$version+'.exe')) -ReportDirectory 'security-report'
+      - name: Retain installer security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-security-report
+          path: security-report/
+          if-no-files-found: warn
       - name: Stress test durable workspace operations
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell

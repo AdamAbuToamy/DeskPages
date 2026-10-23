@@ -1,8 +1,8 @@
-# DeskPages 0.8.31 · Trial
+# DeskPages 0.8.32 · Trial
 
-- Primary-only transitions capture and animate only the primary working area. Stationary secondary displays stay live; disconnecting or reconnecting them no longer changes primary snapshot dimensions or the display scope.
-- Primary page keys exclude fixed secondary-page icons. Saved canonical checkpoints and live target views use the same primary key, including when Page 2 returns to main navigation after its monitor disconnects.
-- Native snapshot validity takes priority over remembered script keys. A fixed page edited on another screen cannot reuse an older main-display image after unplugging.
-- Actual primary geometry, DPI, wallpaper, membership and Desktop file changes continue to invalidate stale images. All-display mode retains topology-dependent frames.
+- Retains the 0.8.31 primary snapshot/cache changes and 0.8.30 Desktop restoration/secondary arrangement fixes.
+- Installer packaging now accepts reviewed Git source plus explicitly named runtime outputs. Build objects, untracked scripts/binaries, CI workflows and unexpected generated files are excluded. Every payload file has a SHA-256 inventory. This packaging correction is not a confirmed explanation for the reported 0.8.31 Defender alert.
+- New builds are scanned with updated Microsoft Defender, real-time protection enabled and cloud connectivity checked. Automatic sample submission stays disabled, respecting the user's instruction not to submit the executable to Microsoft. A successful isolated scan does not guarantee the user's browser/cloud verdict.
+- The previous 0.8.31 setup was reported as Trojan:Win32/MalUri.A!cl on Windows 11. Its reviewed text files match the committed source, and its separate local-only Defender scan found no detection; the cause remains unconfirmed.
 
-Includes the unreleased 0.8.30 original Desktop exit restoration and fixed-page arrangement protection. Validation adds 50 secondary disconnect/reconnect cycles with production PowerShell functions and native bounds/scope selector fixtures. These use simulated geometry, not physical monitor hotplug. User acceptance is required before public release.
+Trial only. Do not publish without user acceptance.

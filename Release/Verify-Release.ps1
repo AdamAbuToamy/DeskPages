@@ -14,7 +14,7 @@ function Assert-ReleaseSignature([string]$Path){
     if(-not $signature.TimeStamperCertificate){throw ('Missing trusted timestamp: '+$Path)}
 }
 $null=Read-DpPortableExecutable -Path $Installer -Machine 0x8664 -Managed
-Assert-DpManagedIdentity -Path $Installer -Name 'DeskPages-Setup' -Version ([Version]'0.8.31.0')
+Assert-DpManagedIdentity -Path $Installer -Name 'DeskPages-Setup' -Version ([Version]'0.8.32.0')
 Assert-ReleaseSignature $Installer
 $assembly=[Reflection.Assembly]::LoadFile($Installer)
 $stream=$assembly.GetManifestResourceStream('DeskPages.Payload')
@@ -31,7 +31,7 @@ try{
         $input=$entry.Open();$output=[IO.File]::Create($target)
         try{$input.CopyTo($output)}finally{$input.Dispose();$output.Dispose()}
     }
-    Assert-DpPackage -Root $temp -Version ([Version]'0.8.31.0')
+    Assert-DpPackage -Root $temp -Version ([Version]'0.8.32.0')
     foreach($file in Get-ChildItem -LiteralPath $temp -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll')}){Assert-ReleaseSignature $file.FullName}
     foreach($required in @('PRIVACY.txt','LICENSE.txt','THIRD-PARTY-NOTICES.md','ExportSettings.ps1','Native/DeskPagesPanel.cs','Native/DeskPagesPageNames.cs')){if(-not(Test-Path -LiteralPath (Join-Path $temp $required) -PathType Leaf)){throw ('Missing release document/source: '+$required)}}
 }finally{$zip.Dispose();$stream.Dispose();Remove-Item -LiteralPath $temp -Recurse -Force}
