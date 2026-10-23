@@ -14,6 +14,12 @@ public static class DpOriginalViewRefresh
         int Refresh();
     }
 
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)]
+    private static extern void SHChangeNotify(uint eventId,uint flags,string item1,IntPtr item2);
+    public static void NotifyAttributes(string[] paths){
+        if(paths==null)return;
+        foreach(string path in paths)if(!string.IsNullOrEmpty(path))SHChangeNotify(0x800,0x1005,path,IntPtr.Zero); // ATTRIBUTES | PATHW | FLUSH
+    }
     public static void Run(object view)
     {
         Marshal.ThrowExceptionForHR(((IShellView)view).Refresh());

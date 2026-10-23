@@ -29,7 +29,8 @@ try {
     function Save-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('source-layout');if($script:rejectSource){throw 'Injected source checkpoint failure'}}
     function Set-DpFilePage {param($Page,$Commit,$RegisterNew) [DeskPagesHost]::Events.Add('visibility:'+ $Page)}
     function Set-DpSystemIcons {param($Page) return $false}
-    function Refresh-DpDesktop {}
+    function Refresh-DpDesktop {throw 'Page transactions must use the verified page update adapter.'}
+    function Update-DpPageView {param($Page,$SystemChanged) if(-not [DeskPagesAnimation]::IsVisible){throw 'Explorer update exposed without a source cover.'}}
     function Restore-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('layout:'+ $Page)}
     function Confirm-DpAnimationView {param($Page)
         [DeskPagesHost]::Events.Add('verify-target')

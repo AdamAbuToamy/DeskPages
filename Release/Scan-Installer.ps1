@@ -30,7 +30,11 @@ try{
  $previous=$ErrorActionPreference
  try{
   $ErrorActionPreference='Continue'
-  $connection=(& $scanner -ValidateMapsConnection 2>&1 | Out-String);$connectionCode=$LASTEXITCODE
+  $connection='';$connectionCode=-1
+  for($attempt=0;$attempt -lt 3;$attempt++){
+   $connection+=(& $scanner -ValidateMapsConnection 2>&1 | Out-String);$connectionCode=$LASTEXITCODE
+   if($connectionCode -eq 0){break};if($attempt -lt 2){Start-Sleep -Milliseconds 500}
+  }
   $connection | Set-Content (Join-Path $ReportDirectory 'cloud-connection.txt') -Encoding UTF8
   $report.CloudConnectionExitCode=$connectionCode
   if($connectionCode -ne 0){$report.CloudValidationError='Cloud connection unavailable; perform the direct scan and keep the release gate blocked.'}

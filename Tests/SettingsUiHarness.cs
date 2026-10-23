@@ -1,7 +1,7 @@
 using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
 public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
 public static class DeskPagesWorkspaceApi {
- public static string Language="en";public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;public static bool Groups=true;public static int GroupWrites,MonitorWrites;public static string[] MonitorRows=new[]{"False"},MonitorArguments;
+ public static string Language="en";public static bool PrimaryOnly=true,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;public static bool Groups=true;public static int GroupWrites,MonitorWrites;public static string[] MonitorRows=new[]{"False"},MonitorArguments;
  public static string L(string en,string ar,string he){return Language=="ar"?ar:Language=="he"?he:en;}
  public static void CheckUpdates(){UpdateChecks++;}
  public static void StartTour(){Tours++;}public static void RefreshSettingsLanguage(){}
@@ -67,29 +67,11 @@ public static class SettingsUiHarness {
      using(var pins=new DeskPagesPinnedIcons()){pins.Show();Application.DoEvents();var list=Field<ListView>(pins,"list");Require(list.Items.Count==3 && !list.Items[0].Checked && list.Items[2].Checked && DeskPagesWorkspaceApi.PinWrites==0,"Loading pin list lost state or wrote data");Require(list.Items[0].Text=="fixture.txt" && list.Items[1].Text=="Demo App" && list.SmallImageList.Images.Count==3,"Pin list showed paths, shortcut suffixes or missing icons");foreach(ListViewItem item in list.Items)Require(item.ImageIndex>=0 && !item.Text.Contains("C:"),"Missing icon or leaked file path in label");list.Items[0].Checked=true;list.Items[2].Checked=false;typeof(DeskPagesPinnedIcons).GetMethod("Save",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(pins,null);Require(DeskPagesWorkspaceApi.FilePinned && !DeskPagesWorkspaceApi.SystemPinned && DeskPagesWorkspaceApi.PinWrites==1,"Pin manager save was disconnected");pins.Close();}
      var capture=Field<ComboBox>(form,"captureMode");Require(capture.SelectedIndex==0,"Direct capture was not the default");capture.SelectedIndex=1;Require(DeskPagesWorkspaceApi.CacheEnabled,"Cached mode was not persisted");form.RefreshData();Require(capture.SelectedIndex==1,"Cached mode was not loaded");DeskPagesWorkspaceApi.CacheDenied=true;capture.SelectedIndex=0;Require(capture.SelectedIndex==1 && DeskPagesWorkspaceApi.CacheEnabled,"Rejected capture mode was not restored");DeskPagesWorkspaceApi.CacheDenied=false;capture.SelectedIndex=0;Require(!DeskPagesWorkspaceApi.CacheEnabled && DeskPagesWorkspaceApi.CacheWrites==2,"Direct mode was not restored");
      var groups=Field<DeskPagesModernToggle>(form,"groupsEnabled");Require(groups.Checked,"Groups did not default on");groups.Checked=false;Require(!DeskPagesWorkspaceApi.Groups && DeskPagesWorkspaceApi.GroupWrites==1,"Groups off toggle was not saved");form.RefreshData();Require(!groups.Checked,"Explicit groups off was not loaded");groups.Checked=true;Require(DeskPagesWorkspaceApi.Groups && DeskPagesWorkspaceApi.GroupWrites==2,"Groups on toggle was not saved");
-     var primary=Field<DeskPagesModernToggle>(form,"primaryOnly");DeskPagesWorkspaceApi.ScopeDenied=true;primary.Checked=true;Require(!primary.Checked && !DeskPagesWorkspaceApi.PrimaryOnly,"Rejected display scope was not restored");DeskPagesWorkspaceApi.ScopeDenied=false;
+     var primary=Field<DeskPagesModernToggle>(form,"primaryOnly");Require(primary.Checked && !primary.Enabled,"Primary-only navigation must be fixed on.");
     }
     form.Close();
    }
   }
-  MonitorChoices();
-  Console.WriteLine("PASS: "+screens+" real settings screens / "+rows+" rows; EN/AR/HE; explicit 100/125/150/200% geometry; normal/narrow windows; rendered text, full switches, bounded controls; preference mapping, replay/save actions, rejected display-scope rollback, capture-mode persistence/reload/rollback, live memory percentage and stopped hidden sampling; file-name-only pin labels, shortcut titles, icons and preserved checkbox saves. Fixture only; physical Windows DPI acceptance remains separate.");return 0;
+  Console.WriteLine("PASS: "+screens+" real settings screens / "+rows+" rows; EN/AR/HE; explicit 100/125/150/200% geometry; normal/narrow windows; rendered text, full switches, bounded controls; preference mapping, replay/save actions, fixed primary-only navigation, capture-mode persistence/reload/rollback, live memory percentage and stopped hidden sampling; file-name-only pin labels, shortcut titles, icons and preserved checkbox saves. Fixture only; physical Windows DPI acceptance remains separate.");return 0;
  }
- static void MonitorChoices(){
-  DeskPagesWorkspaceApi.Language="en";DeskPagesWorkspaceApi.MonitorRows=new[]{"False","panel-right\tDISPLAY2\t2\t1280 × 1024","panel-left\tDISPLAY3\t3\t1280 × 1024"};
-  using(var form=new DeskPagesMonitorPages()){
-   form.Show();Application.DoEvents();form.Size=new Size(480,360);Application.DoEvents();
-   var choices=Field<System.Collections.Generic.Dictionary<string,ComboBox>>(form,"choices");var rows=Field<FlowLayoutPanel>(form,"rows");
-   Require(choices.Count==2 && choices["panel-right"].SelectedIndex==2 && choices["panel-left"].SelectedIndex==3,"Monitor page choices did not load");
-   foreach(var combo in choices.Values)Require(combo.Right<=rows.ClientSize.Width && combo.Left>=0,"Narrow monitor dialog clipped a page selector");
-   Field<CheckBox>(form,"enabled").Checked=true;choices["panel-left"].SelectedIndex=2;
-   var save=typeof(DeskPagesMonitorPages).GetMethod("Save",BindingFlags.NonPublic|BindingFlags.Instance);save.Invoke(form,null);
-   Require(DeskPagesWorkspaceApi.MonitorWrites==0 && form.Visible,"Duplicate monitor pages were accepted");
-   choices["panel-left"].SelectedIndex=3;save.Invoke(form,null);
-   Require(DeskPagesWorkspaceApi.MonitorWrites==1 && DeskPagesWorkspaceApi.MonitorArguments.Length==3 && DeskPagesWorkspaceApi.MonitorArguments[0]=="True","Monitor selection save was disconnected");
-   Require(Array.IndexOf(DeskPagesWorkspaceApi.MonitorArguments,"panel-right\t2")>=0 && Array.IndexOf(DeskPagesWorkspaceApi.MonitorArguments,"panel-left\t3")>=0,"Monitor page payload lost the persistent display identities");
-  }
-  Console.WriteLine("PASS: real monitor preferences form loads two secondary displays, keeps narrow selectors visible, rejects duplicate pages and saves independent choices; integrated groups toggle persists and reloads off/on. Display list mocked.");
- }
-
 }

@@ -338,6 +338,7 @@ public:
         // the target page or changing displays. Rebind the icon view AND its
         // verified Progman/WorkerW capture owner, not just the child HWND.
         LocateDesktop();
+        PlaceCover(SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE);
         expectedIcons=job.iconCount;if(preview.active)preview.Confirm(snapshotRevision.load(),incomingKey==job.targetKey);else incomingKey=job.targetKey;VerifyIconCount();
         Report("Target membership verified; original Explorer icon count="+std::to_string(expectedIcons));
     }
@@ -407,10 +408,17 @@ public:
     }
     void Tick() {
         if(state.phase==deskpages::Phase::Idle)return;
-        if(desktopMode && GetWindow(desktopWindow,GW_HWNDPREV)!=hwnd)PlaceCover(SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE);
         DWORD explorer=0;GetWindowThreadProcessId(FindWindowW(L"Progman",nullptr),&explorer);
         if(sourceExplorer && explorer!=sourceExplorer){Abort();Report("Transition cancelled: Explorer restarted");return;}
         if(GetTickCount64()>expiry){Abort();Report("Transition cancelled: 12-second cover watchdog");return;}
+        if(desktopMode){
+            if(!IsWindow(iconWindow) || GetAncestor(iconWindow,GA_ROOT)!=desktopWindow){
+                // Refresh may temporarily remove the icon view. Keep the cover
+                // until the replacement view exists; do not expose that gap.
+                try{LocateDesktop();}catch(...){Report("Waiting for Explorer replacement view behind cover");return;}
+            }
+            if(GetWindow(desktopWindow,GW_HWNDPREV)!=hwnd)PlaceCover(SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE);
+        }
         if(state.phase==deskpages::Phase::Playing && GetTickCount64()>=motionEnds)motionEnded=1;
         if(state.phase==deskpages::Phase::Playing && preview.CanRetire() && GetTickCount64()>=hideAt) {
             Check(DwmFlush(),"Final composition fence");

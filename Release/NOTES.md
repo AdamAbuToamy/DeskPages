@@ -1,8 +1,8 @@
-# DeskPages 0.8.32 · Trial
+# DeskPages 0.8.33 · Trial
 
-- Retains the 0.8.31 primary snapshot/cache changes and 0.8.30 Desktop restoration/secondary arrangement fixes.
-- Installer packaging now accepts reviewed Git source plus explicitly named runtime outputs. Build objects, untracked scripts/binaries, CI workflows and unexpected generated files are excluded. Every payload file has a SHA-256 inventory. This packaging correction is not a confirmed explanation for the reported 0.8.31 Defender alert.
-- New builds are scanned with updated Microsoft Defender, archive/script scanning enabled, file exclusions ignored, and cloud connectivity checked. Automatic sample submission stays disabled, respecting the user's instruction not to submit the executable to Microsoft. The runner may remain in passive mode; that state is reported. A successful isolated scan does not guarantee the user's browser/cloud verdict.
-- The previous 0.8.31 setup was reported as Trojan:Win32/MalUri.A!cl on Windows 11. Its reviewed text files match the committed source, and its separate local-only Defender scan found no detection; the cause remains unconfirmed.
+- Removes pages assigned to additional monitors. Existing assignments are retired automatically, all active pages return to primary navigation, and the settings control is removed. Legacy assignment metadata is backed up; canonical page layouts, current page, original Desktop checkpoint, pin membership and layout history stay intact. Old imports/history and APIs cannot re-enable assignments.
+- Normal page transitions notify Explorer about changed file attributes instead of refreshing the entire Desktop. A full refresh remains available for changed system-icon registry state or a stale/incomplete view. Target membership, stable view and saved positions remain verified before handoff.
+- The native cover rebinds to Explorer's current Desktop owner. A temporarily missing replacement icon view keeps the cover alive until the new view exists, within the existing watchdog, instead of exposing the refresh gap.
+- Retains primary-only capture/cache independence from secondary hotplug, original Desktop restoration on exit, icon-arrangement protection, pinned icons, taskbar groups, updates and installer security/inventory checks.
 
-Trial only. Do not publish without user acceptance.
+Validation includes upgrade retirement, byte-preserved layouts, retired API rejection, incremental/fallback view updates and covered animation transaction sequencing. Fixtures do not certify physical Windows monitor/touchpad rendering. Trial only; do not publish before user acceptance.

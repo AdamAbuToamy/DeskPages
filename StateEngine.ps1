@@ -76,7 +76,7 @@ function Invoke-DpPageTransaction {
         # Pages 2+ share hidden system-icon state. Their file membership still
         # changes and Explorer notifications alone can leave the prior view.
         # The opaque source cover stays presented throughout refresh/restore.
-        Refresh-DpDesktop
+        if(Get-Command Update-DpPageView -ErrorAction SilentlyContinue){Update-DpPageView -Page $Page -SystemChanged $systemChanged}else{Refresh-DpDesktop}
         Restore-DpPageLayout $Page
         Invoke-DpFaultPoint 'LayoutApplied'
         if ($Animate -and $script:hostReady -and [DeskPagesAnimation]::IsVisible) {

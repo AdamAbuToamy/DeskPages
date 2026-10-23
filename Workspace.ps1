@@ -23,7 +23,23 @@ function Initialize-DpWorkspace {
     if(-not $script:DpState.PSObject.Properties['Revision']){$script:DpState | Add-Member -NotePropertyName Revision -NotePropertyValue ''}
     $script:DpWorkspaceRoot=Join-Path $script:DpStore 'Workspace'
     New-Item -ItemType Directory -Force $script:DpWorkspaceRoot,(Join-Path $script:DpWorkspaceRoot 'History'),(Join-Path $script:DpWorkspaceRoot 'HistoryIndex'),(Join-Path $script:DpWorkspaceRoot 'Profiles') | Out-Null
+    if($script:DpState.Workspace.MonitorPagesEnabled -or @($script:DpState.Workspace.MonitorPages | Where-Object {$null -ne $_}).Count){
+        $retired=Join-Path $script:DpWorkspaceRoot 'retired-monitor-pages.xml'
+        if(-not(Test-Path -LiteralPath $retired)){Write-DpAtomicXml $retired ([PSCustomObject]@{At=[DateTime]::UtcNow;Current=$script:DpState.Current;MonitorPages=Copy-DpData $script:DpState.Workspace.MonitorPages;MonitorPagesEnabled=$script:DpState.Workspace.MonitorPagesEnabled})}
+    }
+    Set-DpPrimaryDisplayPolicy $script:DpState
 }
+function Set-DpPrimaryDisplayPolicy {param($State)
+    if(-not $State.PSObject.Properties['Workspace']){return}
+    foreach($field in @('PrimaryOnly','MonitorPagesEnabled','MonitorPages','SecondaryIcons')){
+        $value=$(if($field -eq 'PrimaryOnly'){$true}elseif($field -eq 'MonitorPagesEnabled'){$false}else{@()})
+        if($State.Workspace.PSObject.Properties[$field]){$State.Workspace.$field=$value}else{$State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue $value}
+    }
+    $State.Workspace.MonitorPages=@();$State.Workspace.SecondaryIcons=@()
+    # Retain MonitorKey until Sync-DpMonitorProfile reads the previous primary
+    # origin. Canonical page layouts and the original Desktop remain untouched.
+}
+
 function Test-DpItemVisible {param($Entry,[int]$Page) ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned) -or (Test-DpSecondaryKey ([string]$Entry.Path)))}
 function Get-DpActivePages {
     if(-not $script:DpState.PSObject.Properties['Workspace']){return @($script:DpState.Pages)}
@@ -124,6 +140,7 @@ function Invoke-DpWorkspaceCommit {
     if($script:DpSuspended -or $script:DpEdgeDrag -or (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){throw 'Finish the current interaction before changing the workspace.'}
     if($null -eq $Before){Save-DpVerifiedSourceLayout ([int]$script:DpState.Current);$Before=Get-DpWorkspaceSnapshot}
     Assert-DpWorkspaceSnapshot $Before
+    Set-DpPrimaryDisplayPolicy $After.State
     $id=[guid]::NewGuid().ToString('N');$After.State.Revision=$id
     if($Record){$After.State.Workspace.Undo=@(@($Before.State.Workspace.Undo)+@($id) | Select-Object -Last 100);$After.State.Workspace.Redo=@()}
     $After.State.PageCount=@($After.State.Pages).Count
@@ -308,6 +325,7 @@ function Invoke-DpRules {
 }
 function Publish-DpWorkspacePreferences {
     if(-not('DeskPagesWorkspaceApi' -as [type])){return}
+    Set-DpPrimaryDisplayPolicy $script:DpState
     $w=$script:DpState.Workspace
     [DeskPagesWorkspaceApi]::Configure([string]$w.Language,[int]$w.WheelThreshold,[int]$w.PointerThreshold,[int]$w.EdgeWidth,[int]$w.EdgeDwell,[bool]$w.ReduceMotion)
     $names=@(foreach($page in $script:DpState.Pages){[string]$page+"`t"+(Get-DpWorkspaceName $page)})
@@ -376,26 +394,11 @@ function Get-DpMonitorIdentity {param($Screen)
     return [string]$Screen.Device
 }
 function Get-DpFixedMonitorPages {param($State=$script:DpState,[object[]]$Screens=$null)
-    if(-not $State.Workspace.MonitorPagesEnabled){return @()}
-    if($null -eq $Screens -and $script:DpMonitorPageContext -and [object]::ReferenceEquals($State,$script:DpMonitorPageContext.State)){return $script:DpMonitorPageContext.Fixed}
-    if($null -eq $Screens){$Screens=@(Get-DpMonitorGeometry)}
-    $used=@{}
-    foreach($screen in @($Screens | Where-Object {-not $_.Primary})){
-        $id=Get-DpMonitorIdentity $screen
-        $assignment=@($State.Workspace.MonitorPages | Where-Object {$_.Monitor -eq $id} | Select-Object -First 1)
-        if($assignment.Count -and [int]$assignment[0].Page -in @($State.Pages) -and [int]$assignment[0].Page -notin @($State.Workspace.Archived) -and -not $used.ContainsKey([int]$assignment[0].Page)){
-            $page=[int]$assignment[0].Page;$used[$page]=$true
-            [PSCustomObject]@{Page=$page;Screen=$screen;Monitor=$id}
-        }
-    }
+    # Retired feature: legacy metadata must never reserve a secondary page.
+    return @()
 }
-function Get-DpNavigationPages {
-    $fixed=@(Get-DpFixedMonitorPages | ForEach-Object {$_.Page})
-    @(Get-DpActivePages | Where-Object {$_ -notin $fixed})
-}
-function Get-DpVisiblePages {param([int]$Page,[object[]]$Screens=$null)
-    @($Page)+@(Get-DpFixedMonitorPages -Screens $Screens | ForEach-Object {$_.Page}) | Select-Object -Unique
-}
+function Get-DpNavigationPages {return @(Get-DpActivePages)}
+function Get-DpVisiblePages {param([int]$Page,[object[]]$Screens=$null) return @($Page)}
 function Set-DpMonitorCurrent {param($State,[object[]]$Screens)
     $fixed=@(Get-DpFixedMonitorPages $State $Screens | ForEach-Object {$_.Page})
     if([int]$State.Current -in $fixed){

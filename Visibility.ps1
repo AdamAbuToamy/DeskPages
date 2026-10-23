@@ -102,6 +102,7 @@ function Set-DpFilePage {
         [bool]$PersistMembership=$true
     )
 
+    $script:DpVisibilityChangedPaths=@()
     $setting = Get-ItemProperty `
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
         -ErrorAction SilentlyContinue
@@ -180,6 +181,7 @@ function Set-DpFilePage {
             $applied.Add($change)
         }
 
+        $script:DpVisibilityChangedPaths=[string[]]@($applied | ForEach-Object {$_.Path})
         if ($Commit) {
             $script:DpState.Current = $Page
             Save-DpState
@@ -241,6 +243,23 @@ function Set-DpSystemIcons {
         }
     } finally {$key.Dispose()}
     return $changed
+}
+function Update-DpPageView {param([int]$Page,[bool]$SystemChanged)
+    # Attribute notifications update only affected items and preserve the view.
+    # A registry system-icon change still needs the full shell refresh.
+    if(-not $SystemChanged){
+        [DpOriginalViewRefresh]::NotifyAttributes([string[]]@($script:DpVisibilityChangedPaths))
+        $settle=[Diagnostics.Stopwatch]::StartNew()
+        while($settle.ElapsedMilliseconds -lt 180){
+            $icons=@([OriginalDesktopReader]::Read($script:originalDesktop));$valid=$false
+            try{Assert-DpPageView -Page $Page -Icons $icons;$valid=$true}catch{}
+            if($valid){return} # Restore-DpPageLayout independently verifies two stable samples and target positions.
+            Start-Sleep -Milliseconds 15
+        }
+    }
+    # Compatibility fallback stays behind the transition cover. Never drop the
+    # verification step or accept an incomplete Explorer view to avoid refresh.
+    Refresh-DpDesktop
 }
 function Refresh-DpDesktop {
 
