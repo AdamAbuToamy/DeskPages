@@ -1,4 +1,4 @@
-name: Validate and build Windows preview
+﻿name: Validate and build Windows preview
 on:
   push:
     branches: [main]

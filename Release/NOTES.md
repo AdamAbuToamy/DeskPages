@@ -1,8 +1,7 @@
-# DeskPages 0.8.33 · Trial
+# DeskPages 0.8.34 trial
 
-- Removes pages assigned to additional monitors. Existing assignments are retired automatically, all active pages return to primary navigation, and the settings control is removed. Legacy assignment metadata is backed up; canonical page layouts, current page, original Desktop checkpoint, pin membership and layout history stay intact. Old imports/history and APIs cannot re-enable assignments.
-- Normal page transitions notify Explorer about changed file attributes instead of refreshing the entire Desktop. A full refresh remains available for changed system-icon registry state or a stale/incomplete view. Target membership, stable view and saved positions remain verified before handoff.
-- The native cover rebinds to Explorer's current Desktop owner. A temporarily missing replacement icon view keeps the cover alive until the new view exists, within the existing watchdog, instead of exposing the refresh gap.
-- Retains primary-only capture/cache independence from secondary hotplug, original Desktop restoration on exit, icon-arrangement protection, pinned icons, taskbar groups, updates and installer security/inventory checks.
+Uses the published 0.8.28 desktop paging, cache and animation implementation. Later multi-monitor page assignment and transition changes are excluded.
 
-Validation includes upgrade retirement, byte-preserved layouts, retired API rejection, incremental/fallback view updates and covered animation transaction sequencing. Fixtures do not certify physical Windows monitor/touchpad rendering. Trial only; do not publish before user acceptance.
+Taskbar groups are enabled by default, with a switch in DeskPages Settings and no separate notification-area icon. Explicit off preferences are retained. The + button avoids native taskbar controls when apps are left aligned. Individual groups expose Delete group on click/right-click; their running windows are restored before removing the group. VS Code resolution uses live taskbar identities and pinned shortcuts without combining competing live profiles.
+
+Retains reviewed installer payload inventory and Defender scan gate. No public release until user acceptance. Physical Windows 11 drag/drop and animation smoothness require device testing.

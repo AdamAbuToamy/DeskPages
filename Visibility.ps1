@@ -102,7 +102,6 @@ function Set-DpFilePage {
         [bool]$PersistMembership=$true
     )
 
-    $script:DpVisibilityChangedPaths=@()
     $setting = Get-ItemProperty `
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
         -ErrorAction SilentlyContinue
@@ -112,8 +111,6 @@ function Set-DpFilePage {
     }
 
     if($script:DpState.PSObject.Properties['Workspace'] -and $script:DpState.Workspace.PSObject.Properties['PrimaryOnly'] -and $script:DpState.Workspace.PrimaryOnly){$script:DpScopeScreens=@(Get-DpMonitorGeometry)}
-    $script:DpVisibilityContext=$null
-    if($script:DpState.Workspace.MonitorPagesEnabled){$visiblePages=@{};foreach($id in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){$visiblePages[[int]$id]=$true};$script:DpVisibilityContext=[PSCustomObject]@{State=$script:DpState;Page=$Page;Pages=$visiblePages}}
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $oldPage = $script:DpState.Current
     $oldItems = @($script:DpState.Items)
@@ -181,7 +178,6 @@ function Set-DpFilePage {
             $applied.Add($change)
         }
 
-        $script:DpVisibilityChangedPaths=[string[]]@($applied | ForEach-Object {$_.Path})
         if ($Commit) {
             $script:DpState.Current = $Page
             Save-DpState
@@ -227,7 +223,7 @@ function Set-DpSystemIcons {
         foreach($entry in $script:DpState.SystemIconBackup) {
             $exists=$entry.Id -in @($key.GetValueNames())
             $shared=-not $Original -and $script:DpState.PSObject.Properties['Workspace'] -and ($entry.Id -in @($script:DpState.Workspace.SystemPinned) -or ((Get-Command Test-DpSecondarySystem -ErrorAction SilentlyContinue) -and (Test-DpSecondarySystem $entry.Id)))
-            $showSystem=$Page -eq 1 -or $shared -or (-not $Original -and (Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and 1 -in @(Get-DpVisiblePages $Page))
+            $showSystem=$Page -eq 1 -or $shared
             if($shared){
                 if(-not $exists -or $key.GetValue($entry.Id) -ne 0 -or $key.GetValueKind($entry.Id) -ne [Microsoft.Win32.RegistryValueKind]::DWord){$key.SetValue($entry.Id,0,[Microsoft.Win32.RegistryValueKind]::DWord);$changed=$true}
             } elseif(-not $showSystem) {
@@ -243,23 +239,6 @@ function Set-DpSystemIcons {
         }
     } finally {$key.Dispose()}
     return $changed
-}
-function Update-DpPageView {param([int]$Page,[bool]$SystemChanged)
-    # Attribute notifications update only affected items and preserve the view.
-    # A registry system-icon change still needs the full shell refresh.
-    if(-not $SystemChanged){
-        [DpOriginalViewRefresh]::NotifyAttributes([string[]]@($script:DpVisibilityChangedPaths))
-        $settle=[Diagnostics.Stopwatch]::StartNew()
-        while($settle.ElapsedMilliseconds -lt 180){
-            $icons=@([OriginalDesktopReader]::Read($script:originalDesktop));$valid=$false
-            try{Assert-DpPageView -Page $Page -Icons $icons;$valid=$true}catch{}
-            if($valid){return} # Restore-DpPageLayout independently verifies two stable samples and target positions.
-            Start-Sleep -Milliseconds 15
-        }
-    }
-    # Compatibility fallback stays behind the transition cover. Never drop the
-    # verification step or accept an incomplete Explorer view to avoid refresh.
-    Refresh-DpDesktop
 }
 function Refresh-DpDesktop {
 

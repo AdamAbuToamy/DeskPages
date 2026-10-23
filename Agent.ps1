@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.33.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.34.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -216,7 +216,6 @@ try {
     Initialize-DpWorkspace
     Assert-DpWorkspaceState $script:DpState
     Repair-DpWorkspaceTransaction
-    Repair-DpMonitorLayoutCheckpoint
     # Record startup state; never overwrite the known original layout.
     $checkpoint=Join-Path $script:DpStore ('checkpoint-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.xml')
     Export-Clixml -InputObject $script:DpState -LiteralPath $checkpoint
@@ -235,7 +234,6 @@ try {
         }
         Write-DpLog ('Desktop view after visibility sync: '+[DeskPagesLayout]::DescribeView($script:originalDesktop))
     }catch{Write-DpLog ('Live Explorer visibility sync unavailable: '+[string]$_)}
-    Initialize-DpOriginalDesktop -FirstRun $firstRun
     if($firstRun){Save-DpPageLayout 1}
     if ($Recover) {
         Recover-DpDesktop
@@ -268,7 +266,7 @@ try {
         try {
             if ($script:DpSuspended -and $Code -lt 9000) {throw 'Session suspended; switching is blocked.'}
             if($Code -lt 9000 -or $Code -in @(9000,9002,9101,9102,9300)){Stop-DpNewItemPlacement}
-            $pages=@(Get-DpNavigationPages | ForEach-Object {[int]$_})
+            $pages=@(Get-DpActivePages | ForEach-Object {[int]$_})
             $current=[int]$script:DpState.Current
             $index=[Array]::IndexOf([int[]]$pages,$current)
             if ($Code -eq -1 -or $Code -eq 1) {
@@ -332,8 +330,8 @@ try {
                 }
             }
             elseif ($Code -eq 9000 -or $Code -eq 9002) {
-                Recover-DpDesktop
-                [DeskPagesHost]::RequestExit()
+                try {Recover-DpDesktop}
+                finally {[DeskPagesHost]::RequestExit()}
             }
             elseif ($Code -eq 9001) {
                 [Windows.Forms.MessageBox]::Show([DeskPagesHost]::Diagnostics(),'DeskPages input') | Out-Null
@@ -348,8 +346,7 @@ try {
                 }
             }
             elseif ($Code -eq 9760) {
-                Connect-DpDesktop
-                $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
+                Set-DpGroupsEnabled $true
             }
             elseif ($Code -eq 9600) { . (Join-Path $script:base 'EdgeDrag.ps1'); Invoke-DpEdgeRequest }
             elseif ($Code -eq 9401) {
@@ -417,7 +414,7 @@ try {
             if($Code -in @(9500,9501)){Stop-DpNewItemPlacement}
             elseif ($Code -notin @(9100,9300,9750,9701,9702)) {[DeskPagesHost]::ShowError([string]$_)}
         } finally {
-            if($Code -notin @(9500,9501,9750,9702)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpNavigationPages),[int]$script:DpState.Current)}
+            if($Code -notin @(9500,9501,9750,9702)){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
         }
     }
     $script:hostReady=$true
@@ -441,7 +438,7 @@ try {
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
     try{
         $groupsEnabled=Join-Path $env:LOCALAPPDATA 'DeskPages\TaskbarGroups\enabled.txt'
-        if(-not(Test-Path -LiteralPath $groupsEnabled) -or [IO.File]::ReadAllText($groupsEnabled).Trim() -ne 'off'){
+        if(Get-DpGroupsEnabled){
             $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
         }
     }catch{Write-DpLog ('Taskbar groups could not start: '+[string]$_)}

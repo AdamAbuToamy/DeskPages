@@ -27,11 +27,6 @@ public sealed class DeskPagesHost : ApplicationContext
     private bool busy;
     private long displayRevision,layoutEditRevision,displayChangedAt;
     private static bool monitorArrangementProtected;
-    public static bool FixedMonitorPagesEnabled;
-    private readonly object desktopEditLock=new object();private int desktopEditX=int.MinValue,desktopEditY=int.MinValue;private long desktopEditDisplay;
-    private void RecordDesktopEdit(Point point){lock(desktopEditLock){desktopEditX=point.X;desktopEditY=point.Y;desktopEditDisplay=Interlocked.Read(ref displayRevision);Interlocked.Increment(ref layoutEditRevision);}}
-    public static long[] GetDesktopEdit(){if(active==null)return null;lock(active.desktopEditLock){return new long[]{Interlocked.Read(ref active.layoutEditRevision),active.desktopEditX,active.desktopEditY,active.desktopEditDisplay};}}
-
     private long nextMonitorCheck;
     public static void ProtectMonitorArrangement(bool enabled){monitorArrangementProtected=enabled;}
     private void DisplayChanged(){
@@ -186,8 +181,7 @@ public sealed class DeskPagesHost : ApplicationContext
 
             }
             if(busy || DeskPagesAnimation.IsVisible) return;
-            HostCommand urgent; if(commands.TryDequeue(out urgent)){DispatchCommand(urgent);return;}
-            if((monitorArrangementProtected || FixedMonitorPagesEnabled) && ElapsedMs()>=nextMonitorCheck){
+            if(monitorArrangementProtected && ElapsedMs()>=nextMonitorCheck){
                 nextMonitorCheck=ElapsedMs()+500;
                 if(!CreationInputBusy && !DeskPagesLayout.IsLabelEditing()){
                     busy=true;
@@ -228,14 +222,13 @@ public sealed class DeskPagesHost : ApplicationContext
                 busy=true;try{dispatch(9750);}catch(Exception ex){DeskPagesStartupGate.Log("idle snapshot: "+ex.Message);}finally{busy=false;}
             }
             HostCommand command; if(!commands.TryDequeue(out command)) return;
-            DispatchCommand(command);
+            busy=true;explicitUiCommand=command.ExplicitUi;
+            try {dispatch(command.Code);}
+            catch(Exception ex) {AbortAnimation(); ShowError(ex.Message);}
+            finally {busy=false;explicitUiCommand=false;}
+            if(exitRequested) ExitThread();
         };
         Enqueue(9004); timer.Start();
-    }
-    private void DispatchCommand(HostCommand command){
-        busy=true;explicitUiCommand=command.ExplicitUi;
-        try{dispatch(command.Code);}catch(Exception ex){AbortAnimation();ShowError(ex.Message);}finally{busy=false;explicitUiCommand=false;}
-        if(exitRequested)ExitThread();
     }
     private void OpenPanel(){if(DeskPagesWorkspaceApi.Request!=null){DeskPagesWorkspaceApi.Open();return;}OpenQuickPanel();}
     public static string[] WorkspaceCommand(Func<string[]> action){
@@ -341,7 +334,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.33\r\n"+active.hidStatus+
+        return "Build: 0.8.34\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -489,7 +482,7 @@ public sealed class DeskPagesHost : ApplicationContext
             // Low-level and Raw Input may deliver the same physical click.
             if(now-lastContextAt<250)return;
             lastContextAt=now;
-            if(now-Interlocked.Read(ref owner.displayChangedAt)>=1000)owner.RecordDesktopEdit(point);
+            if(now-Interlocked.Read(ref owner.displayChangedAt)>=1000)Interlocked.Increment(ref owner.layoutEditRevision);
             Interlocked.Exchange(ref owner.contextClick,new ContextClick{X=point.X,Y=point.Y,At=now});
         }
         private IntPtr OnMouse(int code,IntPtr message,IntPtr data)
@@ -507,7 +500,7 @@ public sealed class DeskPagesHost : ApplicationContext
                     if(msg==0x202 && dragging) {
                         dragging=false;
                         if(Math.Abs(md.Position.X-dragStart.X)+Math.Abs(md.Position.Y-dragStart.Y)>6 && onDesktop){
-                            if(dragDisplayRevision==Interlocked.Read(ref owner.displayRevision) && ElapsedMs()-Interlocked.Read(ref owner.displayChangedAt)>=1000)owner.RecordDesktopEdit(md.Position);
+                            if(dragDisplayRevision==Interlocked.Read(ref owner.displayRevision) && ElapsedMs()-Interlocked.Read(ref owner.displayChangedAt)>=1000)Interlocked.Increment(ref owner.layoutEditRevision);
                             owner.checkpoints.Changed(ElapsedMs());
                         }
                     }
@@ -622,14 +615,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.33 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.34 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.33 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.34 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }
@@ -703,7 +696,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static void SnapshotSceneContext(string context){if(active!=null && active.snapshots!=null)active.snapshots.SceneContext(context);}
     public static string SavedSnapshotKey(int page){return active==null||active.snapshots==null?"":active.snapshots.KnownKey(page);}
     public static bool NeedsSnapshotCapture(string key){return active==null||active.snapshots==null||active.snapshots.NeedsCapture(key);}
-    public static void WarmSnapshot(string key){if(!SnapshotCacheEnabled)return;Rectangle bounds=DeskPagesAnimation.CaptureBounds();bool ok=DeskPagesAnimation.WarmSnapshot(key,bounds);active.snapshots.Captured(key,ok);}
+    public static void WarmSnapshot(string key){if(!SnapshotCacheEnabled)return;Rectangle bounds=Screen.PrimaryScreen.WorkingArea;foreach(var screen in Screen.AllScreens)bounds=Rectangle.Union(bounds,screen.WorkingArea);bool ok=DeskPagesAnimation.WarmSnapshot(key,bounds);active.snapshots.Captured(key,ok);}
     private bool previewStarted;
     public static bool TryBeginCachedPreview(int direction,string source,string target){
         if(!SnapshotCacheEnabled || active==null || !active.animate || DeskPagesWorkspaceApi.ReduceMotion)return false;
@@ -727,7 +720,8 @@ public sealed class DeskPagesHost : ApplicationContext
         active.transitionForeground=GetAncestor(foreground,2);
         AbortAnimation();active.previewStarted=false;
         try {
-            Rectangle bounds=DeskPagesAnimation.CaptureBounds();
+            Rectangle bounds=Screen.PrimaryScreen.WorkingArea;
+            foreach(var screen in Screen.AllScreens)bounds=Rectangle.Union(bounds,screen.WorkingArea);
             active.slideDirection=direction;
             bool shown=preview?DeskPagesAnimation.BeginCachedPreview(bounds,source,target,direction):DeskPagesAnimation.BeginDesktop(bounds);
             active.animationStatus=shown?(preview?"resident images presented before Explorer preparation":"desktop source prepared below apps"):DeskPagesAnimation.Metrics;

@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $base=Split-Path $PSScriptRoot -Parent
 . (Join-Path $base 'Installer/PayloadFiles.ps1')
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('dp-payload-'+[guid]::NewGuid().ToString('N'))

@@ -1,15 +1,14 @@
 ﻿function Get-DpMonitorGeometry {
     @(foreach($screen in [Windows.Forms.Screen]::AllScreens){
         $g=[DeskPagesLayout]::ContextGeometry($screen.WorkingArea.Left+1,$screen.WorkingArea.Top+1)
-        $identity=$screen.DeviceName;if('DeskPagesDisplayIdentity' -as [type]){$identity=[DeskPagesDisplayIdentity]::ForDevice($screen.DeviceName)}
-        [PSCustomObject]@{Identity=$identity;Device=$screen.DeviceName;Left=$g[2];Top=$g[3];Right=$g[4];Bottom=$g[5];Primary=$screen.Primary}
+        [PSCustomObject]@{Device=$screen.DeviceName;Left=$g[2];Top=$g[3];Right=$g[4];Bottom=$g[5];Primary=$screen.Primary}
     })
 }
 function Get-DpMonitorKey {
     param([object[]]$Screens)
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
     if($null -eq $Screens){$Screens=@(Get-DpMonitorGeometry)}
-    $text=(@($Screens | Sort-Object Device | ForEach-Object {"$($_.Device)|$($_.Left)|$($_.Top)|$($_.Right)|$($_.Bottom)|$($_.Primary)"}) -join ';')+"|$($spacing.X)|$($spacing.Y)|primary-v2=$($script:DpState.Workspace.PrimaryOnly)|fixed=$($script:DpState.Workspace.MonitorPagesEnabled):$(@($script:DpState.Workspace.MonitorPages | ForEach-Object {"$($_.Monitor)=$($_.Page)"}) -join ';')"
+    $text=(@($Screens | Sort-Object Device | ForEach-Object {"$($_.Device)|$($_.Left)|$($_.Top)|$($_.Right)|$($_.Bottom)|$($_.Primary)"}) -join ';')+"|$($spacing.X)|$($spacing.Y)|primary-v2=$($script:DpState.Workspace.PrimaryOnly)"
     $sha=[Security.Cryptography.SHA256]::Create();try{([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))).Replace('-','').Substring(0,24)}finally{$sha.Dispose()}
 }
 function Get-DpDisplaySignal {
@@ -97,7 +96,6 @@ function Sync-DpMonitorProfile {
         # from an earlier attachment must never replace newer user positions.
         if($saved.Count -and -not $w.PrimaryOnly){Convert-DpMonitorLayouts @($saved[0]) $screens $screens $spacing.X $spacing.Y}else{Convert-DpMonitorLayouts @($layout) $oldScreens $screens $spacing.X $spacing.Y}
     })
-    Set-DpMonitorCurrent $after.State $screens
     $after.State.Workspace.MonitorKey=$key
     $script:DpMonitorSyncBusy=$true
     try{Invoke-DpWorkspaceCommit -Operation 'Display configuration changed' -After $after -Before $before -Record $false}
@@ -172,7 +170,6 @@ function Invoke-DpWorkspaceRequest {
                     $order=[int[]]@($w.Order);$i=[Array]::IndexOf($order,$page);$j=$i+$(if($Command -eq 'up'){-1}else{1})
                     if($i -ge 0 -and $j -ge 0 -and $j -lt $order.Length){$order[$i]=$order[$j];$order[$j]=$page;$w.Order=@($order)}
                 }
-                if($Command -in @('archive','delete')){$w.MonitorPages=@($w.MonitorPages | Where-Object {[int]$_.Page -ne $page});Set-DpMonitorCurrent $edit.After.State @(Get-DpMonitorGeometry)}
                 Invoke-DpWorkspaceCommit $Command $edit.After -Before $edit.Before
             }
             {$_ -in @('move','pin','unpin')} {Set-DpWorkspaceItems -Paths @($Arguments | Select-Object -Skip 1) -Page ([int]$Arguments[0]) -Mode $Command}
@@ -213,19 +210,16 @@ function Invoke-DpWorkspaceRequest {
                 $w=$script:DpState.Workspace
                 @([string]$w.Inbox,[string]$w.Language,[string]$w.ReduceMotion,[string]$w.WheelThreshold,[string]$w.PointerThreshold,[string]$w.EdgeWidth,[string]$w.EdgeDwell)+@($w.Input | ForEach-Object {[string]$_})+@('{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{645FF040-5081-101B-9F08-00AA002F954E}','{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}' | ForEach-Object {[string]($_ -in @($w.SystemPinned))})
             }
-            'capture-settings' {[string][bool][DeskPagesHost]::SnapshotCacheEnabled}
-            'capture-mode' {if($Arguments.Count -ne 1){throw 'Invalid capture mode.'};[DeskPagesHost]::SetSnapshotMode([bool]::Parse($Arguments[0]))}
             'groups-settings' {[string](Get-DpGroupsEnabled)}
             'groups-enable' {if($Arguments.Count -ne 1){throw 'Invalid taskbar group preference.'};Set-DpGroupsEnabled ([bool]::Parse($Arguments[0]))}
-            'monitor-pages-settings' {'False'}
-            'monitor-pages-save' {throw 'Pages on additional displays have been removed. Navigation stays on the main display.'}
+            'capture-settings' {[string][bool][DeskPagesHost]::SnapshotCacheEnabled}
+            'capture-mode' {if($Arguments.Count -ne 1){throw 'Invalid capture mode.'};[DeskPagesHost]::SetSnapshotMode([bool]::Parse($Arguments[0]))}
             'display-settings' {[string][bool]$script:DpState.Workspace.PrimaryOnly}
             'display-scope' {
                 if($Arguments.Count -ne 1){throw 'Invalid display scope.'}
-                $enabled=[bool]::Parse($Arguments[0]);if(-not $enabled){throw 'Navigation is restricted to the main display.'};if($enabled -eq [bool]$script:DpState.Workspace.PrimaryOnly){break}
+                $enabled=[bool]::Parse($Arguments[0]);if($enabled -eq [bool]$script:DpState.Workspace.PrimaryOnly){break}
                 $edit=New-DpWorkspaceEdit;$w=$edit.After.State.Workspace
                 $w.PrimaryOnly=$enabled
-                if(-not $enabled){$w.MonitorPagesEnabled=$false}
                 $w.SecondaryIcons=@()
                 if($enabled){$screens=@(Get-DpMonitorGeometry);$spacing=[DeskPagesLayout]::Spacing($script:originalDesktop);$prior=$script:DpState.Workspace.PrimaryOnly;try{$script:DpState.Workspace.PrimaryOnly=$true;$edit.After.Layouts=@(Convert-DpMonitorLayouts $edit.After.Layouts $screens $screens $spacing.X $spacing.Y)}finally{$script:DpState.Workspace.PrimaryOnly=$prior}}
                 $w.MonitorKey=''
@@ -256,7 +250,7 @@ function Invoke-DpWorkspaceRequest {
                 if($Command -eq 'restore-layout'){
                     $snapshot=Copy-DpData $saved.Snapshot
                     # Restoring organization must not revert the app's current preferences.
-                    foreach($field in @('PrimaryOnly','SecondaryIcons','DisplayPolicyVersion','MonitorPagesEnabled','MonitorPages','Language','Input','ReduceMotion','WheelThreshold','PointerThreshold','EdgeWidth','EdgeDwell')){$snapshot.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field) -Force}
+                    foreach($field in @('PrimaryOnly','SecondaryIcons','DisplayPolicyVersion','Language','Input','ReduceMotion','WheelThreshold','PointerThreshold','EdgeWidth','EdgeDwell')){$snapshot.State.Workspace | Add-Member -NotePropertyName $field -NotePropertyValue (Copy-DpData $script:DpState.Workspace.$field) -Force}
                     $inbox=[int]$script:DpState.Workspace.Inbox
                     $snapshot.State.Workspace.Inbox=$(if($inbox -in @($snapshot.State.Pages) -and $inbox -notin @($snapshot.State.Workspace.Archived)){$inbox}else{0})
                     Restore-DpWorkspaceSnapshot -Snapshot $snapshot -Operation 'Restore saved layout'
@@ -311,6 +305,6 @@ function Invoke-DpWorkspaceRequest {
         }
     }finally{
         $script:DpWorkspaceBusy=$false
-        if($script:hostReady){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpNavigationPages),[int]$script:DpState.Current)}
+        if($script:hostReady){[DeskPagesHost]::UpdatePages([int[]]@(Get-DpActivePages),[int]$script:DpState.Current)}
     }
 }

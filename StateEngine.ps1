@@ -1,8 +1,4 @@
 ﻿function Test-DpFileVisible {param($Entry,[int]$Page)
-    if($script:DpState.Workspace.MonitorPagesEnabled -and (Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue)){
-        if($script:DpVisibilityContext -and $script:DpVisibilityContext.Page -eq $Page -and [object]::ReferenceEquals($script:DpVisibilityContext.State,$script:DpState)){if($script:DpVisibilityContext.Pages.ContainsKey([int]$Entry.Page)){return $true}}
-        elseif([int]$Entry.Page -in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){return $true}
-    }
     if(Get-Command Test-DpItemVisible -ErrorAction SilentlyContinue){return (Test-DpItemVisible $Entry $Page)}
     return ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned))
 }
@@ -16,7 +12,6 @@ function Write-DpAtomicXml {
         try {$stream.Flush($true)} finally {$stream.Dispose()}
         if ([IO.File]::Exists($Path)) {[IO.File]::Replace($temporary,$Path,($Path+'.previous'))}
         else {[IO.File]::Move($temporary,$Path)}
-        if($script:DpLayoutReadCache){$script:DpLayoutReadCache.Remove($Path)}
     } finally {if([IO.File]::Exists($temporary)){[IO.File]::Delete($temporary)}}
 }
 function Invoke-DpFaultPoint {param([string]$Stage)}
@@ -52,7 +47,6 @@ function Invoke-DpPageTransaction {
     if ($script:DpSuspended) {throw 'DeskPages is suspended. Resume explicitly before switching.'}
     $source=[int]$script:DpState.Current
     if ($source -eq $Page) {return}
-    if((Get-Command Get-DpFixedMonitorPages -ErrorAction SilentlyContinue) -and $Page -in @((Get-DpFixedMonitorPages) | ForEach-Object {$_.Page})){throw 'This page is displayed on another monitor. Change its assignment in settings first.'}
     if ($Page -notin @($script:DpState.Pages)) {throw 'Unknown page.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Archived)){throw 'Restore this archived page before opening it.'}
     if($script:hostReady -and (Get-Command Start-DpNavigationSample -ErrorAction SilentlyContinue)){Start-DpNavigationSample}
@@ -76,7 +70,7 @@ function Invoke-DpPageTransaction {
         # Pages 2+ share hidden system-icon state. Their file membership still
         # changes and Explorer notifications alone can leave the prior view.
         # The opaque source cover stays presented throughout refresh/restore.
-        if(Get-Command Update-DpPageView -ErrorAction SilentlyContinue){Update-DpPageView -Page $Page -SystemChanged $systemChanged}else{Refresh-DpDesktop}
+        Refresh-DpDesktop
         Restore-DpPageLayout $Page
         Invoke-DpFaultPoint 'LayoutApplied'
         if ($Animate -and $script:hostReady -and [DeskPagesAnimation]::IsVisible) {

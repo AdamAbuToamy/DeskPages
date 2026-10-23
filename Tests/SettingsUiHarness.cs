@@ -1,24 +1,22 @@
-using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
+﻿using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
 public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
 public static class DeskPagesWorkspaceApi {
- public static string Language="en";public static bool PrimaryOnly=true,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;public static bool Groups=true;public static int GroupWrites,MonitorWrites;public static string[] MonitorRows=new[]{"False"},MonitorArguments;
+ public static string Language="en";public static bool GroupsEnabled=true,GroupsDenied;public static int GroupWrites;public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;
  public static string L(string en,string ar,string he){return Language=="ar"?ar:Language=="he"?he:en;}
  public static void CheckUpdates(){UpdateChecks++;}
  public static void StartTour(){Tours++;}public static void RefreshSettingsLanguage(){}
  public static string[] Execute(string command,params string[] args){
   if(command=="pinned-icons")return new[]{"file\t"+FilePinned+"\t1\tC:\\Desktop\\fixture.txt","file\tFalse\t1\tC:\\Desktop\\Demo App.lnk","system\t"+SystemPinned+"\t{645FF040-5081-101B-9F08-00AA002F954E}\tWindows"};
   if(command=="pins-save"){PinWrites++;foreach(string row in args){var f=row.Split('\t');if(f[0]=="file")FilePinned=bool.Parse(f[1]);else SystemPinned=bool.Parse(f[1]);}return new string[0];}
-  if(command=="groups-settings")return new[]{Groups.ToString()};
-  if(command=="groups-enable"){Groups=bool.Parse(args[0]);GroupWrites++;return new string[0];}
-  if(command=="monitor-pages-settings")return MonitorRows;
-  if(command=="monitor-pages-save"){MonitorArguments=args;MonitorWrites++;return new string[0];}
+  if(command=="groups-settings")return new[]{GroupsEnabled.ToString()};
+  if(command=="groups-enable"){if(GroupsDenied)throw new Exception("Injected groups failure");GroupsEnabled=bool.Parse(args[0]);GroupWrites++;return new string[0];}
   if(command=="capture-settings")return new[]{CacheEnabled.ToString()};
   if(command=="capture-mode"){if(CacheDenied)throw new Exception("Injected capture failure");CacheEnabled=bool.Parse(args[0]);CacheWrites++;return new string[0];}
   if(command=="display-settings")return new[]{PrimaryOnly.ToString()};
   if(command=="display-scope"){if(ScopeDenied)throw new Exception("Injected scope failure");PrimaryOnly=bool.Parse(args[0]);return new string[0];}
   if(command=="preferences-save"){Writes++;LastPreferences=args;return new string[0];}
   if(command=="save-layout"){Layouts++;return new string[0];}
-  if(command=="pages")return new[]{"1\tMain\t0\tFalse\tFalse\tTrue","2\tWork\t0\tFalse\tFalse\tFalse","3\tStudy\t0\tFalse\tFalse\tFalse","4\tNotes\t0\tFalse\tFalse\tFalse"};
+  if(command=="pages")return new[]{"1\tMain\t0\tFalse\tFalse\tTrue"};
   if(command=="settings"){var a=new string[16];for(int i=0;i<a.Length;i++)a[i]="False";a[0]="0";a[1]=Language;foreach(int i in new[]{7,9,10,11,12})a[i]="True";return a;}
   throw new Exception("Unexpected workspace command: "+command);
  }
@@ -54,6 +52,7 @@ public static class SettingsUiHarness {
     }
     Require(writes==DeskPagesWorkspaceApi.Writes,"Section navigation changed preferences");
     if(language=="en" && scale==1 && width==760){
+     var groups=Field<DeskPagesModernToggle>(form,"groupsEnabled");Require(groups.Checked && DeskPagesWorkspaceApi.GroupWrites==0,"Group preference was not loaded without writing");groups.Checked=false;Require(!DeskPagesWorkspaceApi.GroupsEnabled && DeskPagesWorkspaceApi.GroupWrites==1,"Disable groups did not save");form.RefreshData();Require(!groups.Checked,"Disabled groups preference was lost");DeskPagesWorkspaceApi.GroupsDenied=true;groups.Checked=true;Require(!groups.Checked && !DeskPagesWorkspaceApi.GroupsEnabled,"Rejected groups change did not roll back");DeskPagesWorkspaceApi.GroupsDenied=false;groups.Checked=true;Require(DeskPagesWorkspaceApi.GroupsEnabled && DeskPagesWorkspaceApi.GroupWrites==2,"Enable groups did not save");
      var basic=Field<DeskPagesModernToggle[]>(form,"basic");basic[0].Checked=false;
      typeof(DeskPagesSimpleSettings).GetMethod("Persist",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
      Require(DeskPagesWorkspaceApi.LastPreferences.Length==9 && DeskPagesWorkspaceApi.LastPreferences[1]=="False" && DeskPagesWorkspaceApi.LastPreferences[2]=="True","Preference mapping changed");
@@ -66,12 +65,11 @@ public static class SettingsUiHarness {
      form.Surface.Updates.PerformClick();Require(DeskPagesWorkspaceApi.UpdateChecks==1,"Check for updates was disconnected");
      using(var pins=new DeskPagesPinnedIcons()){pins.Show();Application.DoEvents();var list=Field<ListView>(pins,"list");Require(list.Items.Count==3 && !list.Items[0].Checked && list.Items[2].Checked && DeskPagesWorkspaceApi.PinWrites==0,"Loading pin list lost state or wrote data");Require(list.Items[0].Text=="fixture.txt" && list.Items[1].Text=="Demo App" && list.SmallImageList.Images.Count==3,"Pin list showed paths, shortcut suffixes or missing icons");foreach(ListViewItem item in list.Items)Require(item.ImageIndex>=0 && !item.Text.Contains("C:"),"Missing icon or leaked file path in label");list.Items[0].Checked=true;list.Items[2].Checked=false;typeof(DeskPagesPinnedIcons).GetMethod("Save",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(pins,null);Require(DeskPagesWorkspaceApi.FilePinned && !DeskPagesWorkspaceApi.SystemPinned && DeskPagesWorkspaceApi.PinWrites==1,"Pin manager save was disconnected");pins.Close();}
      var capture=Field<ComboBox>(form,"captureMode");Require(capture.SelectedIndex==0,"Direct capture was not the default");capture.SelectedIndex=1;Require(DeskPagesWorkspaceApi.CacheEnabled,"Cached mode was not persisted");form.RefreshData();Require(capture.SelectedIndex==1,"Cached mode was not loaded");DeskPagesWorkspaceApi.CacheDenied=true;capture.SelectedIndex=0;Require(capture.SelectedIndex==1 && DeskPagesWorkspaceApi.CacheEnabled,"Rejected capture mode was not restored");DeskPagesWorkspaceApi.CacheDenied=false;capture.SelectedIndex=0;Require(!DeskPagesWorkspaceApi.CacheEnabled && DeskPagesWorkspaceApi.CacheWrites==2,"Direct mode was not restored");
-     var groups=Field<DeskPagesModernToggle>(form,"groupsEnabled");Require(groups.Checked,"Groups did not default on");groups.Checked=false;Require(!DeskPagesWorkspaceApi.Groups && DeskPagesWorkspaceApi.GroupWrites==1,"Groups off toggle was not saved");form.RefreshData();Require(!groups.Checked,"Explicit groups off was not loaded");groups.Checked=true;Require(DeskPagesWorkspaceApi.Groups && DeskPagesWorkspaceApi.GroupWrites==2,"Groups on toggle was not saved");
-     var primary=Field<DeskPagesModernToggle>(form,"primaryOnly");Require(primary.Checked && !primary.Enabled,"Primary-only navigation must be fixed on.");
+     var primary=Field<DeskPagesModernToggle>(form,"primaryOnly");DeskPagesWorkspaceApi.ScopeDenied=true;primary.Checked=true;Require(!primary.Checked && !DeskPagesWorkspaceApi.PrimaryOnly,"Rejected display scope was not restored");DeskPagesWorkspaceApi.ScopeDenied=false;
     }
     form.Close();
    }
   }
-  Console.WriteLine("PASS: "+screens+" real settings screens / "+rows+" rows; EN/AR/HE; explicit 100/125/150/200% geometry; normal/narrow windows; rendered text, full switches, bounded controls; preference mapping, replay/save actions, fixed primary-only navigation, capture-mode persistence/reload/rollback, live memory percentage and stopped hidden sampling; file-name-only pin labels, shortcut titles, icons and preserved checkbox saves. Fixture only; physical Windows DPI acceptance remains separate.");return 0;
+  Console.WriteLine("PASS: "+screens+" real settings screens / "+rows+" rows; EN/AR/HE; explicit 100/125/150/200% geometry; normal/narrow windows; rendered text, full switches, bounded controls; preference mapping, replay/save actions, rejected display-scope rollback, capture-mode persistence/reload/rollback, live memory percentage and stopped hidden sampling; file-name-only pin labels, shortcut titles, icons and preserved checkbox saves. Fixture only; physical Windows DPI acceptance remains separate.");return 0;
  }
 }

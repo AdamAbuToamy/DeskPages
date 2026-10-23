@@ -1,4 +1,4 @@
-# Build-time inventory: reviewed Git source plus explicitly named build outputs.
+﻿# Build-time inventory: reviewed Git source plus explicitly named build outputs.
 function Get-DpInstallerFiles {param([Parameter(Mandatory)][string]$Root)
     $Root=[IO.Path]::GetFullPath($Root)
     $tracked=@(& git -C $Root -c core.quotepath=false ls-files --cached)

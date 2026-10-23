@@ -81,35 +81,16 @@ public static class DeskPagesAnimation
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)] private static extern int DPBeginDesktopRegions(int left,int top,int width,int height,int[] regions,int count);
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPBeginCachedPreview(int left,int top,int width,int height,int[] regions,int count,string source,string target,int direction);
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPCompleteCachedPreview();
-    // Primary-only transitions own only the primary surface. Secondary displays
-    // stay live and cannot change the dimensions of resident page images.
-    public static Rectangle SelectCaptureBounds(Rectangle primary,Rectangle[] displays,bool primaryOnly){
-        if(primaryOnly)return primary;
-        foreach(var display in displays)primary=Rectangle.Union(primary,display);
-        return primary;
-    }
-    public static Rectangle CaptureBounds(){
-        var areas=new System.Collections.Generic.List<Rectangle>();
-        foreach(var screen in System.Windows.Forms.Screen.AllScreens)areas.Add(screen.WorkingArea);
-        return SelectCaptureBounds(System.Windows.Forms.Screen.PrimaryScreen.WorkingArea,areas.ToArray(),DeskPagesWorkspaceApi.PrimaryOnly);
-    }
-    static int[] CaptureRegions(Rectangle bounds){
-        var data=new System.Collections.Generic.List<int>();
-        foreach(var screen in System.Windows.Forms.Screen.AllScreens){
-            if(DeskPagesWorkspaceApi.PrimaryOnly && !screen.Primary)continue;
-            var r=Rectangle.Intersect(screen.WorkingArea,bounds);if(r.IsEmpty)continue;
-            data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,1});
-        }
-        return data.ToArray();
-    }
     public static bool BeginCachedPreview(Rectangle bounds,string source,string target,int direction){
-        Initialize();var data=CaptureRegions(bounds);
-        return DPBeginCachedPreview(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data,data.Length/5,source,target,direction)!=0;
+        Initialize();var data=new System.Collections.Generic.List<int>();
+        foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
+        return DPBeginCachedPreview(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,source,target,direction)!=0;
     }
     public static void CompleteCachedPreview(){if(DPCompleteCachedPreview()==0)throw new InvalidOperationException(Metrics);}
     public static bool BeginDesktop(Rectangle bounds){
-        Initialize();var data=CaptureRegions(bounds);
-        return (SnapshotCacheEnabled?DPBeginDesktopCachedRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data,data.Length/5,SnapshotSourceKey):DPBeginDesktopRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data,data.Length/5))!=0;
+        Initialize();var data=new System.Collections.Generic.List<int>();
+        foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
+        return (SnapshotCacheEnabled?DPBeginDesktopCachedRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,SnapshotSourceKey):DPBeginDesktopRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5))!=0;
     }
     public static uint ProbeWindow(IntPtr source,Rectangle bounds){Initialize();uint sample;if(DPProbeWindowCapture(source,bounds.Left,bounds.Top,bounds.Width,bounds.Height,out sample)==0)throw new InvalidOperationException(Metrics);return sample;}
     public static bool Begin(Bitmap before,Rectangle bounds)

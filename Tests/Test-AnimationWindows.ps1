@@ -4,7 +4,7 @@ $area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $a=[Drawing.Bitmap]::new($area.Width,$area.Height)
 $b=[Drawing.Bitmap]::new($area.Width,$area.Height)
 $lines=[Collections.Generic.List[string]]::new()
-$lines.Add('DeskPages 0.8.33 native compositor test: synthetic pictures, not desktop pages.')
+$lines.Add('DeskPages 0.8.34 native compositor test: synthetic pictures, not desktop pages.')
 $backdrop=$null;$front=$null
 try {
     foreach($pair in @(@($a,[Drawing.Color]::SteelBlue),@($b,[Drawing.Color]::DarkSlateGray))) {

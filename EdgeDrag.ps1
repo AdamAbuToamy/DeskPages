@@ -45,7 +45,7 @@ function Move-DpEdgeDragPage {
     $drag=$script:DpEdgeDrag
     if($null -eq $drag -or [int]$script:DpState.Current -ne $drag.Current){throw 'Drag session changed.'}
     Assert-DpDragItems -Files $drag.Files -Source $drag.Source
-    $pages=[int[]]@($(if(Get-Command Get-DpNavigationPages -ErrorAction SilentlyContinue){Get-DpNavigationPages}elseif(Get-Command Get-DpActivePages -ErrorAction SilentlyContinue){Get-DpActivePages}else{$script:DpState.Pages | Sort-Object}))
+    $pages=[int[]]@($(if(Get-Command Get-DpActivePages -ErrorAction SilentlyContinue){Get-DpActivePages}else{$script:DpState.Pages | Sort-Object}))
     if($pages.Count -lt 2){throw 'Add a second page first.'}
     $index=[Array]::IndexOf($pages,[int]$script:DpState.Current)
     Set-DeskPage $pages[($index+$Direction+$pages.Count)%$pages.Count] -Direction (-$Direction)

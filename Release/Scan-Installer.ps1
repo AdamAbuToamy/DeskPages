@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Installer,[string]$ReportDirectory)
+﻿param([Parameter(Mandatory)][string]$Installer,[string]$ReportDirectory)
 $ErrorActionPreference='Stop'
 if(-not $ReportDirectory){$ReportDirectory=Join-Path (Split-Path $Installer -Parent) 'security-report'}
 New-Item -ItemType Directory -Force $ReportDirectory | Out-Null

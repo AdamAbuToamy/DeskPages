@@ -43,10 +43,14 @@ try{
  foreach($layout in (Get-DpWorkspaceSnapshot).Layouts){foreach($icon in $layout.Icons){Assert ($icon.X -ge 0 -and $icon.X+80 -le 1920) 'Scope command retained secondary icon coordinates.'}}
  $manifest=(Get-FileHash $script:DpManifest).Hash
  $failed=$false;try{Invoke-DpWorkspaceRequest 'display-scope' @('invalid')}catch{$failed=$true};Assert ($failed -and (Get-FileHash $script:DpManifest).Hash -eq $manifest) 'Invalid scope changed state.'
- # Retired all-display mode must not change state, history or file membership.
+ # Inject a failure before the new manifest is committed; recovery must agree.
+ function Invoke-DpFaultPoint {param($Stage) if($Stage -eq 'WorkspaceLayouts'){throw 'Injected scope commit failure.'}}
  $failed=$false;try{Invoke-DpWorkspaceRequest 'display-scope' @('False')}catch{$failed=$true}
- Assert ($failed -and $script:DpState.Workspace.PrimaryOnly -and (Read-DpManifest $script:DpManifest).Workspace.PrimaryOnly) 'Retired all-display mode was enabled.'
- Assert ($b -notin $script:visible -and -not(Test-Path (Join-Path $script:DpWorkspaceRoot 'pending.xml'))) 'Rejected scope change changed membership or left a journal.'
+ Assert ($failed -and $script:DpState.Workspace.PrimaryOnly -and (Read-DpManifest $script:DpManifest).Workspace.PrimaryOnly) 'Scope failure left split durable state.'
+ Assert ($b -notin $script:visible -and -not(Test-Path (Join-Path $script:DpWorkspaceRoot 'pending.xml'))) 'Scope recovery changed membership or left journal.'
+ function Invoke-DpFaultPoint {param($Stage)}
+ Invoke-DpWorkspaceRequest 'display-scope' @('False')
+ Assert (-not $script:DpState.Workspace.PrimaryOnly -and $b -notin $script:visible) 'Disabling scope did not resume assigned-page visibility.'
  Assert ((Get-FileHash $b).Hash -eq $hash) 'Scope commit/recovery changed file content or path.'
- Write-Host 'PASS: production display-scope dispatcher and durable workspace commit, three pages, primary confinement without shared secondary membership, invalid command and retired all-display mode rejected, unchanged real file and permanent pin ownership. Explorer rendering mocked.'
+ Write-Host 'PASS: production display-scope dispatcher and durable workspace commit, three pages, primary confinement without shared secondary membership, invalid command, injected precommit failure/recovery, disable, unchanged real file and permanent pin ownership. Explorer rendering mocked.'
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}
