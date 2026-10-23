@@ -54,7 +54,7 @@ try{
  $staged=Copy-DpSecurityPayload -PayloadRoot $PayloadRoot -PayloadInventory $PayloadInventory -PayloadStage $payloadStage
  $entries=$staged.Entries
  $report.PayloadInventorySha256=(Get-FileHash -LiteralPath $PayloadInventory -Algorithm SHA256).Hash.ToLowerInvariant()
- $report.PayloadFiles=$entries.Count+1
+ $report.PayloadFiles=$staged.Files
  $previous=$ErrorActionPreference
  try{$ErrorActionPreference='Continue';$payloadOutput=(& $scanner -Scan -ScanType 3 -DisableRemediation -File $payloadStage 2>&1 | Out-String);$payloadCode=$LASTEXITCODE}finally{$ErrorActionPreference=$previous}
  $payloadOutput | Set-Content (Join-Path $ReportDirectory 'payload-scanner-output.txt') -Encoding UTF8

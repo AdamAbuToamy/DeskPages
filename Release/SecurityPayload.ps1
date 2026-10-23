@@ -1,7 +1,7 @@
 ﻿function Copy-DpSecurityPayload {param([string]$PayloadRoot,[string]$PayloadInventory,[string]$PayloadStage)
  $ErrorActionPreference='Stop'
  $sourceRoot=[IO.Path]::GetFullPath($PayloadRoot)
- $entries=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($PayloadInventory))
+ [object[]]$entries=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($PayloadInventory))
  if(-not $entries.Count){throw 'Empty build inventory.'}
  New-Item -ItemType Directory -Path $payloadStage | Out-Null
  $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
