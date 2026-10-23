@@ -2,12 +2,22 @@
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return}
     $parts=@($script:DpState.Items | Sort-Object Path | ForEach-Object {"$($_.Path)|$($_.Page)|$($_.Pinned)|$($_.Secondary)"})
     if($script:DpState.PSObject.Properties['Workspace']){$parts+=@($script:DpState.Workspace.SystemPinned | Sort-Object);$parts+=@($script:DpState.Workspace.SecondaryIcons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}
-    if($script:DpState.Workspace.MonitorPagesEnabled){$parts+=@('MonitorPages', [string]$script:DpState.Workspace.MonitorKey);$shared=@{};foreach($entry in $script:DpState.Items){if($entry.Pinned){$shared[[string]$entry.Path]=$true}};foreach($fixed in @(Get-DpFixedMonitorPages -Screens $script:DpScopeScreens)){$path=Join-Path $script:DpLayoutStore ("page-"+$fixed.Page+'.xml');if(Test-Path -LiteralPath $path){$parts+=@((Read-DpCachedLayout ([int]$fixed.Page)).Icons | Where-Object {$icon=$_;-not $shared.ContainsKey([string]$icon.Key) -and -not @($script:DpState.Workspace.SystemPinned | Where-Object {([string]$icon.Key).IndexOf([string]$_,[StringComparison]::OrdinalIgnoreCase) -ge 0}).Count} | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}}}
     $parts+=@($script:DpState.SystemIconBackup | Sort-Object Id | ForEach-Object {"$($_.Id)|$($_.Exists)|$($_.Value)"})
     [DeskPagesHost]::SnapshotSceneContext(($parts -join "`n"))
 }
 function Get-DpSnapshotKey {
     param([int]$Page,[object[]]$Icons)
+    # Source checkpoints are canonical per-page records, not the composed
+    # Explorer view (which also contains stationary secondary-page icons).
+    if($null -eq $Icons -and $script:DpState.Workspace.PrimaryOnly -and $script:DpLayoutStore){
+        $path=Join-Path $script:DpLayoutStore "page-$Page.xml"
+        if(Test-Path -LiteralPath $path){$Icons=@((Read-DpCachedLayout $Page).Icons)}
+    }
+    if($null -ne $Icons -and $script:DpState.Workspace.PrimaryOnly){
+        if($script:DpState.Workspace.MonitorPagesEnabled){$Icons=@($Icons | Where-Object {(Get-DpIconOwnerPage $_ $Page) -eq $Page})}
+        $primary=@($script:DpScopeScreens | Where-Object Primary)
+        if($primary.Count -eq 1){$Icons=@($Icons | Where-Object {Test-DpPointInScreen $_ $primary[0]})}
+    }
     if($null -ne $Icons){$signature=($Icons | Sort-Object -Property @('Key','Name') | ForEach-Object {"$($_.Key)|$($_.Name)|$($_.X)|$($_.Y)"}) -join "`n"}
     elseif($script:DpLastLayoutSignature -and $script:DpLastLayoutSignature.ContainsKey($Page)){$signature=$script:DpLastLayoutSignature[$Page]}
     else{return ''}
@@ -24,7 +34,15 @@ function Try-DpCachedPreview {param([int]$Source,[int]$Target,[int]$Direction)
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return $false}
     Sync-DpSnapshotScene
     if(-not $script:DpSnapshotKeys){$script:DpSnapshotKeys=@{}}
-    foreach($page in @($Source,$Target)){if(-not $script:DpSnapshotKeys.ContainsKey($page)){$known=[DeskPagesHost]::SavedSnapshotKey($page);if($known){$script:DpSnapshotKeys[$page]=$known}}}
+    # The native session owns scope validity. Never retain an obsolete key
+    # across a real scene/primary-geometry change in this script dictionary.
+    foreach($page in @($Source,$Target)){
+        $known=[DeskPagesHost]::SavedSnapshotKey($page)
+        # A fixed page may have been edited while absent from main navigation.
+        # Compare its canonical checkpoint before reusing its former main image.
+        if($known -and $script:DpLayoutStore -and (Test-Path -LiteralPath (Join-Path $script:DpLayoutStore "page-$page.xml"))){$expected=Get-DpSnapshotKey -Page $page;if($expected -and $known -cne $expected){$known=''}}
+        if($known){$script:DpSnapshotKeys[$page]=$known}else{$script:DpSnapshotKeys.Remove($page)}
+    }
     if(-not $script:DpSnapshotKeys.ContainsKey($Source) -or -not $script:DpSnapshotKeys.ContainsKey($Target)){return $false}
     return [DeskPagesHost]::TryBeginCachedPreview($Direction,$script:DpSnapshotKeys[$Source],$script:DpSnapshotKeys[$Target])
 }

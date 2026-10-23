@@ -14,7 +14,6 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     readonly List<FileSystemWatcher> watchers=new List<FileSystemWatcher>();
     long dirtyAt,nextReport,nextHook,retryAt;int pending=1,observerFailed,observerUnhealthy,scopeDirty=1;bool disposed;
     string sceneContext="",scope="";bool storeReady;
-    readonly Dictionary<int,string> readyKeys=new Dictionary<int,string>();
     public void SceneContext(string value){value=value??"";if(sceneContext!=value){sceneContext=value;Invalidate();}}
     public bool EnsureScene(){
         if(!Enabled)return false;if(Volatile.Read(ref observerUnhealthy)!=0)Interlocked.Exchange(ref scopeDirty,1);if(Interlocked.Exchange(ref scopeDirty,0)==0 && storeReady)return true;
@@ -26,12 +25,12 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
             foreach(var sid in new[]{System.Security.Principal.WindowsIdentity.GetCurrent().User,new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid,null)})acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(sid,System.Security.AccessControl.FileSystemRights.FullControl,inherit,System.Security.AccessControl.PropagationFlags.None,System.Security.AccessControl.AccessControlType.Allow));
             Directory.SetAccessControl(folder,acl);DeskPagesAnimation.ConfigureSnapshotStore(folder,next);storeReady=true;
         }
-        if(scope!=next){DeskPagesAnimation.InvalidateSnapshots();DeskPagesAnimation.ConfigureSnapshotStore(Path.Combine(Folder,"Snapshots"),next);readyKeys.Clear();scope=next;DeskPagesStartupGate.Log("snapshot scene changed; encrypted records validated by scope");}
+        if(scope!=next){DeskPagesAnimation.InvalidateSnapshots();DeskPagesAnimation.ConfigureSnapshotStore(Path.Combine(Folder,"Snapshots"),next);scope=next;DeskPagesStartupGate.Log("snapshot scene changed; encrypted records validated by scope");}
         return true;
     }
-    public string KnownKey(int page){if(!EnsureScene())return "";string key;return readyKeys.TryGetValue(page,out key)?key:DeskPagesAnimation.SavedSnapshotKey(page);}
+    public string KnownKey(int page){return EnsureScene()?DeskPagesAnimation.SavedSnapshotKey(page):"";}
     public bool NeedsCapture(string key){int page;if(!EnsureScene() || !int.TryParse(key.Split(':')[0],out page))return true;return KnownKey(page)!=key;}
-    public void Captured(string key,bool ok){int page;if(ok && int.TryParse(key.Split(':')[0],out page))readyKeys[page]=key;else {retryAt=Now+250;RequestCheck();}}
+    public void Captured(string key,bool ok){if(!ok){retryAt=Now+250;RequestCheck();}}
     [DllImport("user32.dll")]static extern short GetAsyncKeyState(int key);
     int currentPage;
     public void SetPage(int page){Volatile.Write(ref currentPage,page);}

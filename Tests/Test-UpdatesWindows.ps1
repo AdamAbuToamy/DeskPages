@@ -9,7 +9,7 @@ function Release([string]$Version,[string]$Url='',[bool]$Draft=$false){
  @{tag_name=$tag;html_url=$base+'/releases/tag/'+$tag;draft=$Draft;assets=@(@{name='DeskPages-Setup-'+$Version+'.exe';state='uploaded';browser_download_url=$Url})}
 }
 $cases=@(
- @{Rows=@((Release '0.8.18'),(Release '0.8.30'),(Release '0.8.19'));Expected='0.8.30'},
+ @{Rows=@((Release '0.8.18'),(Release '0.8.31'),(Release '0.8.19'));Expected='0.8.31'},
  @{Rows=@((Release '0.8.17'),(Release '0.8.16'));Expected=''},
  @{Rows=@((Release '0.8.18' -Draft $true));Expected=''},
  @{Rows=@((Release '0.8.18' 'https://evil.invalid/update.exe'));Expected=''}
