@@ -22,6 +22,13 @@ public static class TaskbarGroupsHarness {
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }
     private static void Model(){
+        Check(!GroupRefreshPolicy.Due(999,0,true,false,false) && GroupRefreshPolicy.Due(1000,0,true,false,false),"Window events were not coalesced");
+        Check(!GroupRefreshPolicy.Due(1999,0,false,false,false) && GroupRefreshPolicy.Due(2000,0,false,false,false),"Idle UIA fallback changed");
+        Check(!GroupRefreshPolicy.Due(79,0,false,true,true) && GroupRefreshPolicy.Due(80,0,false,true,true),"Active taskbar drag lost fast region refresh");
+        Check(!GroupRefreshPolicy.ResolveWindows(30000,0,false,true),"Idle window event enumerated every open app");
+        Check(GroupRefreshPolicy.ResolveWindows(100,0,true,true) && !GroupRefreshPolicy.ResolveWindows(9999,0,true,false) && GroupRefreshPolicy.ResolveWindows(10000,0,true,false),"Interactive identity refresh/fallback changed");
+        int idleReads=0;long last=0;for(long now=40;now<=30000;now+=40)if(GroupRefreshPolicy.Due(now,last,false,false,false)){last=now;idleReads++;}Check(idleReads==15,"Idle refresh budget exceeded");
+
         var model=new GroupModel(Guid.NewGuid().ToString("N"));var first=model.Add();var second=model.Add();
         Check(model.Prune(w=>true).Length==0,"New empty group vanished before receiving an app");
         var window=new GroupWindow{Handle=10,ProcessId=20,Started=30,Title="Work",AppId="Chrome"};

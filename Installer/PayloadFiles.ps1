@@ -8,6 +8,8 @@ function Get-DpInstallerFiles {param([Parameter(Mandatory)][string]$Root)
     foreach($relative in @($tracked)+$generated){
         $relative=$relative.Replace('\','/')
         if($relative -match '^\.github/'){continue}
+        # Release/installer build tooling belongs in the source archive, not the installed application.
+        if($relative -match '^(Release|Installer)/.*\.ps1$'){continue}
         if($relative -match '(^|/)(Seed|HiddenPages|PageLayouts|DragSessions|SafetyBackups|Backups|dist|\.git|Verification)(/|$)' -or $relative -match '(?i)(\.(pfx|p12|key|obj|pdb|tmp|previous|log)$|(^|/)installed-account\.txt$)'){throw ('Unwanted installer input: '+$relative)}
         if($relative -match '(?i)\.(exe|dll)$' -and $relative -notin $generated){throw ('Unlisted executable in source inventory: '+$relative)}
         $path=[IO.Path]::GetFullPath((Join-Path $Root $relative))

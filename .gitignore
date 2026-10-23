@@ -28,3 +28,6 @@ dist/
 *.key
 DragSessions/
 installed-account.txt
+
+# Disposable build inventory for per-file security scanning.
+security-input/

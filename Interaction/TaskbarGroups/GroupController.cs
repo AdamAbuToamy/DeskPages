@@ -29,6 +29,9 @@ internal sealed class GroupController:ApplicationContext {
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
     private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
     private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastRaise,lastWindowRead;
+    private readonly GroupWindowEvents windowEvents=new GroupWindowEvents();
+    private long refreshRevision=1,seenRefreshRevision,seenWindowRevision,resolvedWindowRevision,lastGeometryRead;private bool pointerOnBar,wasOnBar;
+    private string resolvedButtons="";
     private LiveGroup target;private Process guardian;private int resolveBusy;
     private TaskButton[] pressGroups=new TaskButton[0];private string sourceAppId;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
@@ -66,14 +69,22 @@ internal sealed class GroupController:ApplicationContext {
         if(disposed)return;
         if(stop.WaitOne(0)){ExitThread();return;}
         try{
-            if(Now-lastRaise>=250){lastRaise=Now;plus.KeepAbove();}
-            if(Now-lastRead>=(held?80:(model.Groups.Length>0?750:2000)) && Interlocked.CompareExchange(ref readBusy,1,0)==0){lastRead=Now;ReadSnapshot();}
+            var pointer=Cursor.Position;pointerOnBar=snapshot.Bounds.Contains(pointer);
+            if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
+            bool interacting=pointerOnBar || captured!=null || drag.Length>0;
+            bool dragging=captured!=null || drag.Length>0 || (held && pointerOnBar);
+            if(Now-lastRaise>=(interacting?250:1000)){lastRaise=Now;plus.KeepAbove();}
+            if(Now-lastGeometryRead>=500){lastGeometryRead=Now;var bounds=TaskbarAccess.ReadBounds();if(bounds.Handle!=snapshot.Handle || bounds.Bounds!=snapshot.Bounds)RefreshSoon();}
+            bool changed=seenRefreshRevision!=Interlocked.Read(ref refreshRevision) || seenWindowRevision!=windowEvents.Revision;
+            if(GroupRefreshPolicy.Due(Now,lastRead,changed,interacting,dragging) && Interlocked.CompareExchange(ref readBusy,1,0)==0){
+                lastRead=Now;seenRefreshRevision=Interlocked.Read(ref refreshRevision);seenWindowRevision=windowEvents.Revision;ReadSnapshot(interacting);
+            }
             if(captured!=null){if(Now-captured.Started>30000){captured.Cancelled=true;input.Repair();EndCaptured(captured);}else UpdateCaptured(Cursor.Position);return;}
             bool down=(WindowShell.GetAsyncKeyState(1)&0x8000)!=0;Point point=Cursor.Position;
             if((WindowShell.GetAsyncKeyState(0x1B)&0x8000)!=0){CancelDrag();held=down;return;}
-            if(down && !held){press=point;moved=false;drag=new GroupWindow[0];sourceAppId=null;pressGroups=snapshot.Buttons.Where(b=>model.Find(b.AppId)!=null).ToArray();RefreshSoon();int request=++generation;
-                var root=WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2);
-                if(WindowShell.Class(root)=="TaskListThumbnailWnd")ResolvePress(point,request);
+            if(down && !held){
+                var root=WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2);bool thumbnail=WindowShell.Class(root)=="TaskListThumbnailWnd";
+                if(pointerOnBar || thumbnail){press=point;moved=false;drag=new GroupWindow[0];sourceAppId=null;pressGroups=snapshot.Buttons.Where(b=>model.Find(b.AppId)!=null).ToArray();RefreshSoon();int request=++generation;if(thumbnail)ResolvePress(point,request);}
             }
             if(down && drag.Length>0){
                 moved=moved || Math.Abs(point.X-press.X)+Math.Abs(point.Y-press.Y)>SystemInformation.DragSize.Width;
@@ -81,7 +92,7 @@ internal sealed class GroupController:ApplicationContext {
                 ready=dwell.Observe(target==null?null:target.AppId,Now);
                 if(target!=null)cue.Present(button.Bounds,ready);else cue.Hide();
             }
-            if(!down && held){
+            if(!down && held && (drag.Length>0 || sourceAppId!=null)){
                 if(moved && drag.Length>0){
                     if(ready && target!=null && TaskbarAccess.DropTarget(snapshot,pressGroups,point,sourceAppId,id=>model.Find(id)!=null)!=null)VerifyDrop(target,drag,point);
                     else if(target==null && (Math.Abs(point.X-press.X)+Math.Abs(point.Y-press.Y)>48))foreach(var w in drag)if(model.Owner(w)!=null){recovery.Restore(w);if(!recovery.Owns(w))model.Remove(w);}
@@ -154,8 +165,8 @@ internal sealed class GroupController:ApplicationContext {
             });
         });
     }
-    private void ReadSnapshot(){
-        var ids=model.Groups.Select(g=>g.AppId).ToArray();
+    private void ReadSnapshot(bool interacting){
+        var ids=model.Groups.Select(g=>g.AppId).ToArray();long eventRevision=windowEvents.Revision;
         ThreadPool.QueueUserWorkItem(delegate{
             long observedAt=Now;TaskbarSnapshot next=null;
             try{next=TaskbarAccess.Read();}catch(Exception){}finally{Interlocked.Exchange(ref readBusy,0);}
@@ -165,8 +176,10 @@ internal sealed class GroupController:ApplicationContext {
             input.Publish(regions);
             Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
             // Window/shortcut resolution cannot stall publication of hit regions.
-            if(ids.Length>0 && Now-lastWindowRead>=750 && Interlocked.CompareExchange(ref windowsBusy,1,0)==0){lastWindowRead=Now;ThreadPool.QueueUserWorkItem(delegate{
-                try{var windows=WindowShell.Windows();var sources=next.Buttons.Select(b=>new GroupDragSource{Button=b,Windows=TaskbarAccess.Resolve(b,windows,next.Buttons.Select(v=>v.AppId).ToArray())}).ToArray();Interlocked.Exchange(ref resolvedSources,sources);}
+            var liveIds=next.Buttons.Select(b=>b.AppId).ToArray();string buttonSignature=string.Join("\n",liveIds.OrderBy(id=>id,StringComparer.OrdinalIgnoreCase));
+            bool resolveChanged=resolvedWindowRevision!=eventRevision || resolvedButtons!=buttonSignature;
+            if(ids.Length>0 && GroupRefreshPolicy.ResolveWindows(Now,lastWindowRead,interacting,resolveChanged) && Interlocked.CompareExchange(ref windowsBusy,1,0)==0){lastWindowRead=Now;ThreadPool.QueueUserWorkItem(delegate{
+                try{var windows=WindowShell.Windows();var sources=next.Buttons.Select(b=>new GroupDragSource{Button=b,Windows=TaskbarAccess.Resolve(b,windows,liveIds)}).ToArray();Interlocked.Exchange(ref resolvedSources,sources);resolvedWindowRevision=eventRevision;resolvedButtons=buttonSignature;}
                 catch(Exception){}finally{Interlocked.Exchange(ref windowsBusy,0);}
             });}
         });
@@ -212,11 +225,11 @@ internal sealed class GroupController:ApplicationContext {
         model.DeleteEmpty(group);RemoveAnchor(group);RefreshSoon();
     }
     private void BeginMemberDrag(GroupWindow window){CancelDrag();drag=new[]{window};press=Cursor.Position;held=true;}
-    private void RefreshSoon(){lastRead=0;}
+    private void RefreshSoon(){Interlocked.Increment(ref refreshRevision);}
     private void CancelDrag(){generation++;drag=new GroupWindow[0];pressGroups=new TaskButton[0];sourceAppId=null;target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
     private void Post(Action action){if(disposed)return;try{plus.BeginInvoke((Action)delegate{if(!disposed)try{action();}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}});}catch(InvalidOperationException){ }}
     protected override void ExitThreadCore(){
-        if(disposed)return;disposed=true;if(captured!=null)captured.Cancelled=true;input.Dispose();timer.Stop();timer.Dispose();
+        if(disposed)return;disposed=true;if(captured!=null)captured.Cancelled=true;input.Dispose();windowEvents.Dispose();timer.Stop();timer.Dispose();
         try{recovery.RestoreAll();}catch(Exception){/* The independent guardian retries the durable journal after exit. */}
         finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);if(picker!=null && !picker.IsDisposed)picker.Close();groupPopup.Dispose();ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
         base.ExitThreadCore();

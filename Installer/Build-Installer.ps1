@@ -1,4 +1,4 @@
-﻿﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
+﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
 $ErrorActionPreference='Stop'
 if($RequireSignature -and -not $CertificateThumbprint){throw 'Public release requires a trusted code-signing identity. Supply CertificateThumbprint; no unsigned public release was built.'}
 $root=Split-Path $PSScriptRoot -Parent
@@ -32,12 +32,14 @@ try {
     }
     foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll') -and $_.FullName -notlike ($OutputDirectory+'\*')}){Sign-ReleaseFile $file.FullName}
     . (Join-Path $root 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $root -Version ([Version]'0.8.34.0')
+    Assert-DpPackage -Root $root -Version ([Version]'0.8.35.0')
     . (Join-Path $PSScriptRoot 'PayloadFiles.ps1')
     $packageFiles=@(Get-DpInstallerFiles $root)
     $inventory=@($packageFiles | ForEach-Object {[PSCustomObject]@{Path=$_.Relative;Length=(Get-Item -LiteralPath $_.Path).Length;Sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash.ToLowerInvariant()}})
     $inventoryPath=Join-Path $work 'payload-inventory.json'
     [IO.File]::WriteAllText($inventoryPath,($inventory | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+    $securityInput=Join-Path $root 'security-input';New-Item -ItemType Directory -Force $securityInput | Out-Null
+    Copy-Item -LiteralPath $inventoryPath -Destination (Join-Path $securityInput 'payload-inventory.json') -Force
     $payload=Join-Path $work 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
