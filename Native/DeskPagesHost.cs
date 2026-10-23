@@ -292,7 +292,7 @@ public sealed class DeskPagesHost : ApplicationContext
     private void QueueCommand(int code,bool ui) {
         if(commands.Enqueue(code,ui,ElapsedMs()) && commandWindow!=IntPtr.Zero)PostMessageW(commandWindow,CommandMessage,IntPtr.Zero,IntPtr.Zero);
     }
-    [DllImport("user32.dll")]private static extern bool PostMessageW(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
+
     private string PreferencesPath() {return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","input-settings.txt");}
     private void LoadPreferences()
     {

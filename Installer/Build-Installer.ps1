@@ -1,4 +1,4 @@
-﻿﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
+﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
 $ErrorActionPreference='Stop'
 if($RequireSignature -and -not $CertificateThumbprint){throw 'Public release requires a trusted code-signing identity. Supply CertificateThumbprint; no unsigned public release was built.'}
 $root=Split-Path $PSScriptRoot -Parent
