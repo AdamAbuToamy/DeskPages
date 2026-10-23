@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -8,8 +8,8 @@ using System.Reflection;
 [assembly:AssemblyTitle("DeskPages open taskbar groups")]
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.28.0")]
-[assembly:AssemblyFileVersion("0.8.28.0")]
+[assembly:AssemblyVersion("0.8.34.0")]
+[assembly:AssemblyFileVersion("0.8.34.0")]
 internal static class TaskbarGroupsProgram {
     [STAThread]private static int Main(string[] args){
         try{

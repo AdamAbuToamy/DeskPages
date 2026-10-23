@@ -1,4 +1,4 @@
-﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
+﻿﻿param([string]$OutputDirectory,[string]$CertificateThumbprint,[switch]$RequireSignature)
 $ErrorActionPreference='Stop'
 if($RequireSignature -and -not $CertificateThumbprint){throw 'Public release requires a trusted code-signing identity. Supply CertificateThumbprint; no unsigned public release was built.'}
 $root=Split-Path $PSScriptRoot -Parent
@@ -32,17 +32,21 @@ try {
     }
     foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll') -and $_.FullName -notlike ($OutputDirectory+'\*')}){Sign-ReleaseFile $file.FullName}
     . (Join-Path $root 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $root -Version ([Version]'0.8.28.0')
+    Assert-DpPackage -Root $root -Version ([Version]'0.8.34.0')
+    . (Join-Path $PSScriptRoot 'PayloadFiles.ps1')
+    $packageFiles=@(Get-DpInstallerFiles $root)
+    $inventory=@($packageFiles | ForEach-Object {[PSCustomObject]@{Path=$_.Relative;Length=(Get-Item -LiteralPath $_.Path).Length;Sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash.ToLowerInvariant()}})
+    $inventoryPath=Join-Path $work 'payload-inventory.json'
+    [IO.File]::WriteAllText($inventoryPath,($inventory | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
     $payload=Join-Path $work 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive=[IO.Compression.ZipFile]::Open($payload,[IO.Compression.ZipArchiveMode]::Create)
     try{
-        foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File){
-            $relative=$file.FullName.Substring($root.Length).TrimStart('\','/')
-            if($relative -match '^(dist|Seed|\.git)[\\/]' -or $relative -eq 'installed-account.txt' -or $file.FullName.StartsWith([IO.Path]::GetFullPath($OutputDirectory)+'\',[StringComparison]::OrdinalIgnoreCase)){continue}
-            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$file.FullName,$relative.Replace('\','/'),[IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        foreach($file in $packageFiles){
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$file.Path,$file.Relative,[IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$inventoryPath,'Packaging/payload-inventory.json',[IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }finally{$archive.Dispose()}
     $identity=Join-Path $work 'PayloadIdentity.cs'
     [IO.File]::WriteAllText($identity,('internal static class PayloadIdentity {internal const string Hash="'+(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash+'";}'))

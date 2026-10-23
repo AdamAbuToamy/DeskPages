@@ -1,16 +1,7 @@
-# DeskPages 0.8.28 Alpha
+# DeskPages 0.8.34 trial
 
-## What's new
+Uses the published 0.8.28 desktop paging, cache and animation implementation. Later multi-monitor page assignment and transition changes are excluded.
 
-- Optional taskbar groups for organizing currently running applications under numbered buttons.
-- Normal taskbar reordering, with immediate drop onto a group and no automatic app-selection window.
-- A persistent + button for creating groups, plus hover previews and native group reordering.
-- Desktop pages stay on the Windows primary display.
-- Icon arrangements survive monitor connection, disconnection and rapid reconnection. Delayed Explorer rearrangements are restored from saved positions instead of being saved as user edits.
-- Manual desktop arrangement remains available. Animation capture failures after a completed page switch no longer reload the icon layout.
+Taskbar groups are enabled by default, with a switch in DeskPages Settings and no separate notification-area icon. Explicit off preferences are retained. The + button avoids native taskbar controls when apps are left aligned. Individual groups expose Delete group on click/right-click; their running windows are restored before removing the group. VS Code resolution uses live taskbar identities and pinned shortcuts without combining competing live profiles.
 
-## Download and updates
-
-Download `DeskPages-Setup-0.8.28.exe` from Assets below. Source and SHA-256 checksums are included. Existing installations with update checking enabled can discover this release; installation remains the user's choice.
-
-Windows 11 x64. Alpha release. Windows build, regression and stress checks passed; physical display and taskbar configurations remain device tests.
+Retains reviewed installer payload inventory and Defender scan gate. No public release until user acceptance. Physical Windows 11 drag/drop and animation smoothness require device testing.

@@ -90,6 +90,7 @@ internal static class WindowShell {
     [DllImport("user32.dll")]public static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")]public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindowW(string cls,string name);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindowExW(IntPtr parent,IntPtr after,string cls,string name);
     [DllImport("user32.dll")]public static extern IntPtr GetAncestor(IntPtr hwnd,uint flags);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern bool SetPropW(IntPtr hwnd,string name,IntPtr value);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr GetPropW(IntPtr hwnd,string name);

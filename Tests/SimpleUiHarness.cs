@@ -1,10 +1,12 @@
-// Isolated forms fixture; its stubs must never be compiled into the runtime DLL.
+﻿// Isolated forms fixture; its stubs must never be compiled into the runtime DLL.
 using System;using System.Drawing;using System.Windows.Forms;using System.Diagnostics;using System.Reflection;
 public static class DeskPagesHost {public static string[] WorkspaceCommand(Func<string[]> action){return action();}public static void ShowError(string text){throw new Exception(text);}}
 public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
 public static class SimpleUiHarness {
  private static string[] settings;private static int reads,writes,displayWrites;private static bool scoped,failScope;private static bool forbidden;
  private static string[] Request(string command,string[] args){
+  if(command=="groups-settings")return new[]{"True"};
+  if(command=="groups-enable")return new string[0];
   if(command=="capture-settings")return new[]{"False"};
   if(command=="capture-mode")return new string[0];
   if(command=="display-settings")return new[]{scoped.ToString()};

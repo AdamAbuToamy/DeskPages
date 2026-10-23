@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.28.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.34.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -346,8 +346,7 @@ try {
                 }
             }
             elseif ($Code -eq 9760) {
-                Connect-DpDesktop
-                $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
+                Set-DpGroupsEnabled $true
             }
             elseif ($Code -eq 9600) { . (Join-Path $script:base 'EdgeDrag.ps1'); Invoke-DpEdgeRequest }
             elseif ($Code -eq 9401) {
@@ -439,7 +438,7 @@ try {
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
     try{
         $groupsEnabled=Join-Path $env:LOCALAPPDATA 'DeskPages\TaskbarGroups\enabled.txt'
-        if((Test-Path -LiteralPath $groupsEnabled) -and [IO.File]::ReadAllText($groupsEnabled).Trim() -eq 'on'){
+        if(Get-DpGroupsEnabled){
             $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
         }
     }catch{Write-DpLog ('Taskbar groups could not start: '+[string]$_)}

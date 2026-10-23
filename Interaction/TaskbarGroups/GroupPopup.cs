@@ -26,8 +26,9 @@ internal sealed class GroupPopup:IDisposable {
         }
         if(group.Windows.Count==0){
             Menu.Items.Add("Drag an open taskbar app here").Enabled=false;
-            Menu.Items.Add("Delete empty group",null,delegate{Defer(delegate{if(exists(group) && group.Windows.Count==0)remove(group);});});
         }
+        Menu.Items.Add(new ToolStripSeparator());
+        Menu.Items.Add("Delete group",null,delegate{Defer(delegate{if(exists(group))remove(group);});});
         Menu.Show(owner,owner.PointToClient(location));
     }
     private void Defer(Action action){if(!disposed && !owner.IsDisposed)owner.BeginInvoke((Action)delegate{if(!disposed)action();});}

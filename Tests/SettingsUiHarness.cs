@@ -1,13 +1,15 @@
-using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
+﻿using System;using System.Drawing;using System.IO;using System.Reflection;using System.Windows.Forms;
 public static class DeskPagesStartupGate {public static void Log(string text){Console.WriteLine(text);}}
 public static class DeskPagesWorkspaceApi {
- public static string Language="en";public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;
+ public static string Language="en";public static bool GroupsEnabled=true,GroupsDenied;public static int GroupWrites;public static bool PrimaryOnly,ScopeDenied,CacheEnabled,CacheDenied;public static int Writes,Tours,Layouts,CacheWrites,UpdateChecks,PinWrites;public static bool FilePinned,SystemPinned=true;public static string[] LastPreferences;
  public static string L(string en,string ar,string he){return Language=="ar"?ar:Language=="he"?he:en;}
  public static void CheckUpdates(){UpdateChecks++;}
  public static void StartTour(){Tours++;}public static void RefreshSettingsLanguage(){}
  public static string[] Execute(string command,params string[] args){
   if(command=="pinned-icons")return new[]{"file\t"+FilePinned+"\t1\tC:\\Desktop\\fixture.txt","file\tFalse\t1\tC:\\Desktop\\Demo App.lnk","system\t"+SystemPinned+"\t{645FF040-5081-101B-9F08-00AA002F954E}\tWindows"};
   if(command=="pins-save"){PinWrites++;foreach(string row in args){var f=row.Split('\t');if(f[0]=="file")FilePinned=bool.Parse(f[1]);else SystemPinned=bool.Parse(f[1]);}return new string[0];}
+  if(command=="groups-settings")return new[]{GroupsEnabled.ToString()};
+  if(command=="groups-enable"){if(GroupsDenied)throw new Exception("Injected groups failure");GroupsEnabled=bool.Parse(args[0]);GroupWrites++;return new string[0];}
   if(command=="capture-settings")return new[]{CacheEnabled.ToString()};
   if(command=="capture-mode"){if(CacheDenied)throw new Exception("Injected capture failure");CacheEnabled=bool.Parse(args[0]);CacheWrites++;return new string[0];}
   if(command=="display-settings")return new[]{PrimaryOnly.ToString()};
@@ -50,6 +52,7 @@ public static class SettingsUiHarness {
     }
     Require(writes==DeskPagesWorkspaceApi.Writes,"Section navigation changed preferences");
     if(language=="en" && scale==1 && width==760){
+     var groups=Field<DeskPagesModernToggle>(form,"groupsEnabled");Require(groups.Checked && DeskPagesWorkspaceApi.GroupWrites==0,"Group preference was not loaded without writing");groups.Checked=false;Require(!DeskPagesWorkspaceApi.GroupsEnabled && DeskPagesWorkspaceApi.GroupWrites==1,"Disable groups did not save");form.RefreshData();Require(!groups.Checked,"Disabled groups preference was lost");DeskPagesWorkspaceApi.GroupsDenied=true;groups.Checked=true;Require(!groups.Checked && !DeskPagesWorkspaceApi.GroupsEnabled,"Rejected groups change did not roll back");DeskPagesWorkspaceApi.GroupsDenied=false;groups.Checked=true;Require(DeskPagesWorkspaceApi.GroupsEnabled && DeskPagesWorkspaceApi.GroupWrites==2,"Enable groups did not save");
      var basic=Field<DeskPagesModernToggle[]>(form,"basic");basic[0].Checked=false;
      typeof(DeskPagesSimpleSettings).GetMethod("Persist",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
      Require(DeskPagesWorkspaceApi.LastPreferences.Length==9 && DeskPagesWorkspaceApi.LastPreferences[1]=="False" && DeskPagesWorkspaceApi.LastPreferences[2]=="True","Preference mapping changed");

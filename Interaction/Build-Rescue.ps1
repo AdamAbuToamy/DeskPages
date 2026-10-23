@@ -13,6 +13,6 @@ try{
     foreach($reference in @('System.dll','System.Core.dll',[Windows.Forms.Form].Assembly.Location,[Drawing.Bitmap].Assembly.Location)){$null=$options.ReferencedAssemblies.Add($reference)}
     try{$result=$provider.CompileAssemblyFromFile($options,[string[]]@((Join-Path $PSScriptRoot 'RescueLauncher.cs')));if($result.Errors.HasErrors){throw (($result.Errors | ForEach-Object {$_.ToString()}) -join "`n")}}finally{$provider.Dispose()}
     $null=Read-DpPortableExecutable -Path $options.OutputAssembly -Machine 0x8664 -Managed
-    Assert-DpManagedIdentity -Path $options.OutputAssembly -Name 'DeskPagesRescue' -Version ([Version]'0.8.28.0')
+    Assert-DpManagedIdentity -Path $options.OutputAssembly -Name 'DeskPagesRescue' -Version ([Version]'0.8.34.0')
     Move-Item -LiteralPath $options.OutputAssembly -Destination (Join-Path $root 'DeskPagesRescue.exe') -Force
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force}

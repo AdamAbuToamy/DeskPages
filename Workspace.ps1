@@ -352,3 +352,22 @@ function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
     }
     return @($map.Values)
 }
+
+function Get-DpGroupsEnabled {
+    $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
+    return -not(Test-Path -LiteralPath $path) -or [IO.File]::ReadAllText($path).Trim() -ne 'off'
+}
+function Set-DpGroupsEnabled {param([bool]$Enabled)
+    $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
+    $null=New-Item -ItemType Directory -Force -Path (Split-Path $path)
+    if($Enabled){
+        # A rapid off/on must wait for the old controller to restore ownership.
+        $mutex=$null;$acquired=$false
+        try{$mutex=[Threading.Mutex]::OpenExisting('Local\DeskPages.TaskbarGroups.'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value);try{$acquired=$mutex.WaitOne(3000)}catch [Threading.AbandonedMutexException]{$acquired=$true};if(-not $acquired){throw 'Taskbar groups are still restoring apps. Try enabling again.'}}
+        catch [Threading.WaitHandleCannotBeOpenedException]{}
+        finally{if($mutex){if($acquired){$mutex.ReleaseMutex()};$mutex.Dispose()}}
+    }
+    [DeskPagesDragProtocol]::AtomicText($path,$(if($Enabled){'on'}else{'off'}))
+    if($Enabled){$script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)}
+    else{$signal=$null;try{$signal=[Threading.EventWaitHandle]::OpenExisting('Local\DeskPagesTaskbarGroupsStop-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value);$null=$signal.Set()}catch [Threading.WaitHandleCannotBeOpenedException]{}finally{if($signal){$signal.Dispose()}}}
+}
