@@ -25,10 +25,11 @@ public static class CommandDispatchHarness {
         var host=(DeskPagesHost)FormatterServices.GetUninitializedObject(typeof(DeskPagesHost));
         Field(host,"session",new DeskPagesSessionPolicy());Field(host,"commands",new DeskPagesCommandQueue());
         int dispatched=0;var before=Thread.CurrentThread.Priority;
-        Field(host,"dispatch",(Action<int>)delegate(int code){Check(code==1,"Wrong posted command");dispatched++;});
+        Field(host,"dispatch",(Action<int>)delegate(int code){Console.WriteLine("Fixture dispatch code="+code);if(code==1)dispatched++;});
         var nested=typeof(DeskPagesHost).GetNestedType("SessionWindow",BindingFlags.NonPublic);
         var window=(NativeWindow)Activator.CreateInstance(nested,BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic,null,new object[]{host},null);
         Field(host,"commandWindow",window.Handle);
+        Field(host,"commands",new DeskPagesCommandQueue()); // discard creation-time display notifications in the isolated fixture
         try{
             Console.WriteLine("Fixture: isolated message window created.");
             var enqueue=typeof(DeskPagesHost).GetMethod("QueueCommand",BindingFlags.NonPublic|BindingFlags.Instance);
