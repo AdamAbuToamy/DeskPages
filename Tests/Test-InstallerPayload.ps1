@@ -1,6 +1,8 @@
 ﻿$ErrorActionPreference='Stop'
 $base=Split-Path $PSScriptRoot -Parent
-. (Join-Path $base 'Installer/PayloadFiles.ps1')
+$helper=Join-Path $base 'Installer/PayloadFiles.ps1'
+if(-not(Test-Path -LiteralPath $helper)){Write-Host 'SKIP: packaging fixture requires the source archive.';return}
+. $helper
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('dp-payload-'+[guid]::NewGuid().ToString('N'))
 try{
  New-Item -ItemType Directory -Force $temp | Out-Null
