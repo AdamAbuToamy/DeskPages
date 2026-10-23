@@ -33,7 +33,7 @@ try{
   $connection=(& $scanner -ValidateMapsConnection 2>&1 | Out-String);$connectionCode=$LASTEXITCODE
   $connection | Set-Content (Join-Path $ReportDirectory 'cloud-connection.txt') -Encoding UTF8
   $report.CloudConnectionExitCode=$connectionCode
-  if($connectionCode -ne 0){throw 'Defender cloud connection validation failed.'}
+  if($connectionCode -ne 0){$report.CloudValidationError='Cloud connection unavailable; perform the direct scan and keep the release gate blocked.'}
   # This flag makes a custom scan ignore file exclusions and scan archives.
   # It does not disable antivirus protection; no sample/installer is executed.
   # Findings remain in command output and cause the delivery gate to fail.
@@ -46,6 +46,7 @@ try{
  $report.Threats=@(Get-MpThreat | Select-Object ThreatID,ThreatName,IsActive,DidThreatExecute,Resources)
  if($report.Detections.Count -or $report.Threats.Count -or -not(Test-Path -LiteralPath $file.FullName)){$report.Verdict='DETECTION_RECORDED';throw 'Security detection recorded; do not distribute the build.'}
  if($code -ne 0 -or $output -match '(?im)^\s*Threat\s*:'){$report.Verdict='SCAN_ERROR';throw ('Scanner returned '+$code)}
+ if($connectionCode -ne 0){$report.Verdict='NO_LOCAL_DETECTION_CLOUD_UNAVAILABLE';throw 'Direct scan completed with no detection; cloud validation remains unavailable.'}
  $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
 }catch{$report.Error=$_.ToString();throw}
 finally{
