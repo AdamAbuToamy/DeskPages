@@ -1,0 +1,81 @@
+name: Investigate reported Defender detection
+on:
+  pull_request:
+    paths: ['.github/workflows/defender-investigation.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scan-original-installer:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Download original reported build without executing it
+        uses: actions/download-artifact@v4
+        with:
+          name: deskpages-preview
+          run-id: 39879869080
+          github-token: ${{ github.token }}
+          path: original-build
+      - name: Verify original hash and scan with Microsoft Defender
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force scan-report | Out-Null
+          $report=[ordered]@{
+            ExpectedSha256='403801f3c23f329c3e14be0e524f6d5ca184b683fe6af9071e44c463c6d48928'
+            ReportedDetection='Trojan:Win32/MalUri.A!cl'
+            Verdict='NOT_SCANNED'
+            InstallerExecuted=$false
+            Limitation='Isolated Windows Server on-demand scan; browser download URL/cloud context and the user Windows 11 environment are different. A clean scan does not dismiss the reported detection.'
+          }
+          $started=Get-Date
+          try {
+            $file=Get-Item -LiteralPath 'original-build/DeskPages-Setup-0.8.31.exe'
+            $report.Sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($report.Sha256 -cne $report.ExpectedSha256){throw 'Original artifact hash mismatch; scan aborted.'}
+            $report.Authenticode=(Get-AuthenticodeSignature -LiteralPath $file.FullName).Status.ToString()
+            $before=Get-MpComputerStatus
+            $report.DefenderBefore=$before | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AMEngineVersion,AMProductVersion,AntivirusSignatureVersion,AntivirusSignatureLastUpdated
+            if(-not $before.AMServiceEnabled -or -not $before.AntivirusEnabled){throw 'Defender is unavailable on this runner. No clean result can be claimed.'}
+            Update-MpSignature
+            $status=Get-MpComputerStatus
+            $report.DefenderAfterUpdate=$status | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AMEngineVersion,AMProductVersion,AntivirusSignatureVersion,AntivirusSignatureLastUpdated
+            if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures are stale; scan cannot be treated as current.'}
+            $pref=Get-MpPreference
+            $report.CloudPreferences=$pref | Select-Object MAPSReporting,SubmitSamplesConsent,DisableBlockAtFirstSeen
+            $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+            $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+            if(-not(Test-Path -LiteralPath $scanner)){throw 'Microsoft Defender scanner is unavailable.'}
+            # Execute only Microsoft's scanner. Never launch the reported installer.
+            # Do not disable protection, add exclusions or restore quarantined files.
+            $previous=$ErrorActionPreference
+            try {
+              $ErrorActionPreference='Continue'
+              $output=(& $scanner -Scan -ScanType 3 -File $file.FullName 2>&1 | Out-String)
+              $code=$LASTEXITCODE
+            }finally{$ErrorActionPreference=$previous}
+            $output | Set-Content scan-report/scanner-output.txt -Encoding UTF8
+            $report.ScannerExitCode=$code
+            $report.Detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started -or ($_.Resources -join ' ') -like '*DeskPages-Setup-0.8.31.exe*'} | Select-Object ThreatID,InitialDetectionTime,LastThreatStatusChangeTime,ActionSuccess,Resources)
+            $report.Threats=@(Get-MpThreat | Select-Object ThreatID,ThreatName,SeverityID,IsActive,DidThreatExecute,Resources)
+            $report.InstallerStillPresent=Test-Path -LiteralPath $file.FullName
+            if($report.Detections.Count -or $report.Threats.Count -or -not $report.InstallerStillPresent){$report.Verdict='DETECTION_RECORDED';throw 'Defender recorded a threat or removed the installer; review report.'}
+            if($code -ne 0){$report.Verdict='SCAN_ERROR';throw ('Defender scan returned '+$code)}
+            $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
+          }catch{
+            $report.Error=$_.ToString()
+            throw
+          }finally{
+            $report.CompletedUtc=[DateTime]::UtcNow.ToString('o')
+            $report | ConvertTo-Json -Depth 10 | Set-Content scan-report/report.json -Encoding UTF8
+            $report | ConvertTo-Json -Depth 10 | Write-Host
+            ('## Original installer Defender investigation'+"`n"+$report.Verdict+"`n`n"+$report.Limitation) | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Retain diagnostic report even on detection or scanner failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-installer-defender-report
+          path: scan-report/
+          if-no-files-found: warn
