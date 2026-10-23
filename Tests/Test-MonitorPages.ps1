@@ -57,6 +57,25 @@ try{
  $saved=Import-Clixml (Join-Path $script:DpLayoutStore 'page-2.xml')
  Assert (@($saved.Icons | Where-Object Id -eq '2')[0].X -eq 80) 'Secondary position was not saved in canonical page coordinates.'
  Assert (-not @((Import-Clixml (Join-Path $script:DpLayoutStore 'page-1.xml')).Icons | Where-Object Id -in @('2','3')).Count) 'Combined Explorer view contaminated main page.'
+ # Automatic secondary reflow is repaired even after the primary fence releases.
+ $secondaryPath=Join-Path $script:DpLayoutStore 'page-2.xml';$secondaryHash=(Get-FileHash $secondaryPath).Hash
+ function Get-DpDesktopEditPoint {return $script:editPoint}
+ $script:signal[1]++;$script:editPoint=[PSCustomObject]@{Revision=$script:signal[1];DisplayRevision=$script:signal[0];X=100;Y=100}
+ $mainIcon=@([OriginalDesktopReader]::Icons | Where-Object Id -eq '1')[0];$mainIcon.X=333;$two.X=2500
+ Save-DpPageLayout 1
+ Assert (@([OriginalDesktopReader]::Icons | Where-Object Id -eq '2')[0].X -eq 2000 -and @([OriginalDesktopReader]::Icons | Where-Object Id -eq '1')[0].X -eq 333) 'A primary edit legitimized automatic secondary reflow or discarded the primary edit.'
+ Assert ((Get-FileHash $secondaryPath).Hash -eq $secondaryHash) 'Ordinary main-screen save rewrote the fixed page.'
+ $script:signal[1]++;$script:editPoint=[PSCustomObject]@{Revision=$script:signal[1];DisplayRevision=$script:signal[0];X=2010;Y=12}
+ $two=@([OriginalDesktopReader]::Icons | Where-Object Id -eq '2')[0];$two.X=2010;Save-DpPageLayout 1
+ Assert (@((Import-Clixml $secondaryPath).Icons | Where-Object Id -eq '2')[0].X -eq 90) 'A real secondary-screen edit was rejected.'
+ $script:signal[1]++;$script:editPoint=[PSCustomObject]@{Revision=$script:signal[1];DisplayRevision=$script:signal[0];X=2000;Y=12};$two.X=2000;Save-DpPageLayout 1
+ $two.X=2700;Save-DpPageLayout 1
+ Assert (@([OriginalDesktopReader]::Icons | Where-Object Id -eq '2')[0].X -eq 2000) 'A consumed secondary gesture allowed a later automatic rearrangement.'
+ $two=@([OriginalDesktopReader]::Icons | Where-Object Id -eq '2')[0]
+ $clone=(Get-Command Copy-DpIcon).ScriptBlock
+ function Copy-DpIcon {throw 'Unchanged composed checkpoint must not clone or serialize icons.'}
+ try{Save-DpMonitorPageLayouts 1 @([OriginalDesktopReader]::Icons)}finally{Set-Item Function:Copy-DpIcon $clone}
+ Write-Host 'PASS: main edits cannot overwrite secondary coordinates; actual secondary edits save once; later automatic reflow is repaired; unchanged checkpoint avoids per-icon copying.'
  # A display change during canonical splitting must not write any page.
  $beforeHashes=@{};foreach($file in Get-ChildItem $script:DpLayoutStore -Filter 'page-*.xml'){$beforeHashes[$file.FullName]=(Get-FileHash $file.FullName).Hash}
  $signalReader=(Get-Command Get-DpDisplaySignal).ScriptBlock;$script:signalReads=0

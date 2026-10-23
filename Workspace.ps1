@@ -313,6 +313,7 @@ function Publish-DpWorkspacePreferences {
     $names=@(foreach($page in $script:DpState.Pages){[string]$page+"`t"+(Get-DpWorkspaceName $page)})
     [DeskPagesWorkspaceApi]::SetNames([string[]]$names)
     [DeskPagesWorkspaceApi]::PrimaryOnly=[bool]$w.PrimaryOnly
+    [DeskPagesHost]::FixedMonitorPagesEnabled=[bool]$w.MonitorPagesEnabled
     [DeskPagesWorkspaceApi]::Input=[bool[]]@($w.Input)
     [DeskPagesHost]::ApplyWorkspaceInput([bool[]]@($w.Input))
     [DeskPagesDragProtocol]::AtomicText((Join-Path $script:DpStore 'interaction.txt'),("DeskPagesInteraction1`n"+$w.EdgeWidth+"`n"+$w.EdgeDwell+"`n"+[bool]$w.PrimaryOnly))
@@ -414,6 +415,7 @@ function Get-DpIconOwnerPage {param($Icon,[int]$Page)
 }
 function Get-DpIconScreen {param($Icon,[int]$Page)
     $owner=Get-DpIconOwnerPage $Icon $Page
+    if($script:DpMonitorPageContext){if($script:DpMonitorPageContext.ScreensByPage.ContainsKey($owner)){return $script:DpMonitorPageContext.ScreensByPage[$owner]};return $script:DpMonitorPageContext.Primary}
     $fixed=@(Get-DpFixedMonitorPages | Where-Object {$_.Page -eq $owner})
     if($fixed.Count){return $fixed[0].Screen}
     if($script:DpMonitorPageContext){return $script:DpMonitorPageContext.Primary}
@@ -424,19 +426,19 @@ function Test-DpPointInScreen {param($Icon,$Screen)
 }
 function Get-DpComposedLayoutIcons {param([int]$Page,[object[]]$Saved,[object[]]$Current,[object[]]$Layouts=$null)
     $previous=$script:DpMonitorPageContext
-    $script:DpMonitorPageContext=New-DpMonitorPageContext
+    if(-not $script:DpMonitorPageContext -or -not [object]::ReferenceEquals($script:DpMonitorPageContext.State,$script:DpState)){$script:DpMonitorPageContext=New-DpMonitorPageContext}
     try{
-    $primary=@(Get-DpMonitorGeometry | Where-Object Primary)[0]
+    $primary=$script:DpMonitorPageContext.Primary
     if($null -eq $primary){throw 'Primary display unavailable; saved layouts preserved.'}
     $spacing=[DeskPagesLayout]::Spacing($script:originalDesktop)
     foreach($visible in @(Get-DpVisiblePages $Page)){
         $fixed=@(Get-DpFixedMonitorPages | Where-Object {$_.Page -eq $visible});$screen=$primary
         if($fixed.Count){$screen=$fixed[0].Screen}
-        $icons=@();if($visible -eq $Page){$icons=@($Saved)}else{if($null -ne $Layouts){$icons=@($Layouts | Where-Object {[int]$_.Page -eq $visible} | ForEach-Object {$_.Icons})}else{$path=Join-Path $script:DpLayoutStore "page-$visible.xml";if(Test-Path -LiteralPath $path){$icons=@((Import-Clixml -LiteralPath $path).Icons)}}}
-        $map=@{};foreach($icon in $icons){if((Get-DpIconOwnerPage $icon $Page) -eq $visible){$copy=Copy-DpData $icon;$copy.X=[int]($screen.Left+$copy.X-$primary.Left);$copy.Y=[int]($screen.Top+$copy.Y-$primary.Top);$map[[string]$copy.Key]=$copy}}
+        $icons=@();if($visible -eq $Page){$icons=@($Saved)}else{if($null -ne $Layouts){$icons=@($Layouts | Where-Object {[int]$_.Page -eq $visible} | ForEach-Object {$_.Icons})}else{$path=Join-Path $script:DpLayoutStore "page-$visible.xml";if(Test-Path -LiteralPath $path){$icons=@((Read-DpCachedLayout $visible).Icons)}}}
+        $map=@{};foreach($icon in $icons){if((Get-DpIconOwnerPage $icon $Page) -eq $visible){$copy=Copy-DpIcon $icon;$copy.X=[int]($screen.Left+$copy.X-$primary.Left);$copy.Y=[int]($screen.Top+$copy.Y-$primary.Top);$map[[string]$copy.Key]=$copy}}
         # New icons have no canonical position yet; retain them only on their
         # owning display and fit the rest into available space before any write.
-        foreach($icon in $Current){if((Get-DpIconOwnerPage $icon $Page) -eq $visible -and -not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=Copy-DpData $icon}}
+        foreach($icon in $Current){if((Get-DpIconOwnerPage $icon $Page) -eq $visible -and -not $map.ContainsKey([string]$icon.Key)){$map[[string]$icon.Key]=Copy-DpIcon $icon}}
         $placed=[Collections.Generic.List[object]]::new();$outside=[Collections.Generic.List[object]]::new()
         foreach($icon in @($map.Values | Sort-Object Key)){if(Test-DpPointInScreen $icon $screen){$placed.Add($icon)}else{$outside.Add($icon)}}
         foreach($icon in $outside){$g=@($screen.Left,$screen.Top,$screen.Left,$screen.Top,$screen.Right,$screen.Bottom);$target=Resolve-DpNewItemPosition $g $spacing.X $spacing.Y $placed.ToArray();if($null -eq $target){throw 'Assigned display has insufficient space. Saved page layouts were preserved.'};$icon.X=$target.X;$icon.Y=$target.Y;$placed.Add($icon)}
@@ -447,28 +449,39 @@ function Get-DpComposedLayoutIcons {param([int]$Page,[object[]]$Saved,[object[]]
 function Save-DpMonitorPageLayouts {param([int]$Page,[object[]]$Icons)
     $captureSignal=Get-DpDisplaySignal;$captureKey=Get-DpMonitorKey
     $previous=$script:DpMonitorPageContext
-    $script:DpMonitorPageContext=New-DpMonitorPageContext
+    if(-not $script:DpMonitorPageContext -or -not [object]::ReferenceEquals($script:DpMonitorPageContext.State,$script:DpState)){$script:DpMonitorPageContext=New-DpMonitorPageContext}
     try{
-    $primary=@(Get-DpMonitorGeometry | Where-Object Primary)[0]
+    $primary=$script:DpMonitorPageContext.Primary
+    $signature=($Icons | Sort-Object -Property @('Key','Name') | ForEach-Object {"$($_.Key)|$($_.Name)|$($_.X)|$($_.Y)"}) -join "`n"
+    $dependencies=(@(Get-DpVisiblePages $Page | ForEach-Object {$path=Join-Path $script:DpLayoutStore "page-$_.xml";if(Test-Path -LiteralPath $path){$file=Get-Item -LiteralPath $path;[string]$_+':'+$file.LastWriteTimeUtc.Ticks+':'+$file.Length}})) -join ';'
+    $stamp=[string]$script:DpState.Revision+'|'+$captureKey+'|'+$dependencies
+    if($script:DpMonitorSaveCache -and $script:DpMonitorSaveCache.Page -eq $Page -and $script:DpMonitorSaveCache.Stamp -eq $stamp -and $script:DpMonitorSaveCache.Signature -ceq $signature){
+        if((Get-DpDisplaySignal)[0] -ne $captureSignal[0]){throw 'Display changed during composed layout capture; layout saving is blocked.'}
+        $script:DpLastLayoutSignature[$Page]=$signature;$script:DpFixedSavedEditRevision=(Get-DpDisplaySignal)[1];return
+    }
     $snapshots=@(foreach($visible in @(Get-DpVisiblePages $Page)){
         $path=Join-Path $script:DpLayoutStore "page-$visible.xml"
+        if($visible -ne $Page -and -not (Test-DpFixedPageEdited ([int]$visible))){continue}
         if($visible -in @($script:DpState.Workspace.Locked) -and (Test-Path -LiteralPath $path)){continue}
-        $local=@(foreach($icon in $Icons){if((Get-DpIconOwnerPage $icon $Page) -eq $visible){$screen=Get-DpIconScreen $icon $Page;$copy=Copy-DpData $icon;$copy.X=[int]($primary.Left+$copy.X-$screen.Left);$copy.Y=[int]($primary.Top+$copy.Y-$screen.Top);$copy}})
+        $local=@(foreach($icon in $Icons){if((Get-DpIconOwnerPage $icon $Page) -eq $visible){$screen=Get-DpIconScreen $icon $Page;$copy=Copy-DpIcon $icon;$copy.X=[int]($primary.Left+$copy.X-$screen.Left);$copy.Y=[int]($primary.Top+$copy.Y-$screen.Top);$copy}})
         # Shared icons still need their main-display coordinates on every page.
-        if($visible -ne $Page -and (Test-Path -LiteralPath $path)){$local+=@((Import-Clixml -LiteralPath $path).Icons | Where-Object {(Get-DpIconOwnerPage $_ $Page) -eq $Page})}
+        if($visible -ne $Page -and (Test-Path -LiteralPath $path)){$local+=@((Read-DpCachedLayout $visible).Icons | Where-Object {(Get-DpIconOwnerPage $_ $Page) -eq $Page})}
 
         [PSCustomObject]@{Page=$visible;SavedAt=[DateTime]::UtcNow;Icons=$local}
     })
-    $changed=@(foreach($snapshot in $snapshots){$path=Join-Path $script:DpLayoutStore ("page-"+$snapshot.Page+'.xml');$old=@();if(Test-Path -LiteralPath $path){$old=@((Import-Clixml -LiteralPath $path).Icons)};$a=($snapshot.Icons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";$b=($old | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";if($a -cne $b){$snapshot}})
+    $changed=@(foreach($snapshot in $snapshots){$path=Join-Path $script:DpLayoutStore ("page-"+$snapshot.Page+'.xml');$old=@();if(Test-Path -LiteralPath $path){$old=@((Read-DpCachedLayout ([int]$snapshot.Page)).Icons)};$a=($snapshot.Icons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";$b=($old | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"}) -join "`n";if($a -cne $b){$snapshot}})
+    if((Get-DpDisplaySignal)[0] -ne $captureSignal[0] -or (Get-DpMonitorKey) -ne $captureKey){throw 'Display changed during composed layout capture; layout saving is blocked.'}
     if($changed.Count){
-        if((Get-DpDisplaySignal)[0] -ne $captureSignal[0] -or (Get-DpMonitorKey) -ne $captureKey){throw 'Display changed during composed layout capture; layout saving is blocked.'}
         $journal=Join-Path $script:DpWorkspaceRoot 'monitor-layout-checkpoint.xml'
         Write-DpAtomicXml $journal ([PSCustomObject]@{Revision=[string]$script:DpState.Revision;Layouts=$changed})
         foreach($snapshot in $changed){Write-DpAtomicXml (Join-Path $script:DpLayoutStore ("page-"+$snapshot.Page+'.xml')) $snapshot}
         [IO.File]::Delete($journal)
     }
     if(-not $script:DpLastLayoutSignature){$script:DpLastLayoutSignature=@{}}
-    $script:DpLastLayoutSignature[$Page]=($Icons | Sort-Object -Property @('Key','Name') | ForEach-Object {"$($_.Key)|$($_.Name)|$($_.X)|$($_.Y)"}) -join "`n"
+    $script:DpLastLayoutSignature[$Page]=$signature
+    $dependencies=(@(Get-DpVisiblePages $Page | ForEach-Object {$path=Join-Path $script:DpLayoutStore "page-$_.xml";if(Test-Path -LiteralPath $path){$file=Get-Item -LiteralPath $path;[string]$_+':'+$file.LastWriteTimeUtc.Ticks+':'+$file.Length}})) -join ';'
+    $script:DpMonitorSaveCache=[PSCustomObject]@{Page=$Page;Stamp=([string]$script:DpState.Revision+'|'+$captureKey+'|'+$dependencies);Signature=$signature}
+    $script:DpFixedSavedEditRevision=(Get-DpDisplaySignal)[1]
     }finally{$script:DpMonitorPageContext=$previous}
 }
 function Get-DpGroupsEnabled {
@@ -502,7 +515,55 @@ function Repair-DpMonitorLayoutCheckpoint {
 }
 
 function New-DpMonitorPageContext {
-    $screens=@(Get-DpMonitorGeometry);$items=@{}
+    $screens=@(Get-DpMonitorGeometry);$items=@{};$fixed=@(Get-DpFixedMonitorPages -Screens $screens);$byPage=@{}
+    foreach($assignment in $fixed){$byPage[[int]$assignment.Page]=$assignment.Screen}
     foreach($entry in $script:DpState.Items){$items[[string]$entry.Path]=$entry}
-    [PSCustomObject]@{State=$script:DpState;Items=$items;Fixed=@(Get-DpFixedMonitorPages -Screens $screens);Primary=@($screens | Where-Object Primary)[0]}
+    [PSCustomObject]@{State=$script:DpState;Items=$items;Permissions=@{};Fixed=$fixed;ScreensByPage=$byPage;Primary=@($screens | Where-Object Primary)[0]}
+}
+
+function Copy-DpIcon {param($Icon)
+    [PSCustomObject]@{Id=[string]$Icon.Id;Key=[string]$Icon.Key;Name=[string]$Icon.Name;X=[int]$Icon.X;Y=[int]$Icon.Y}
+}
+function Read-DpCachedLayout {param([int]$Page)
+    $path=Join-Path $script:DpLayoutStore "page-$Page.xml"
+    if(-not(Test-Path -LiteralPath $path)){return $null}
+    $file=Get-Item -LiteralPath $path;$stamp=[string]$file.LastWriteTimeUtc.Ticks+':'+$file.Length
+    if(-not $script:DpLayoutReadCache){$script:DpLayoutReadCache=@{}}
+    $cached=$script:DpLayoutReadCache[$path]
+    if($null -eq $cached -or $cached.Stamp -ne $stamp){$cached=[PSCustomObject]@{Stamp=$stamp;Layout=Import-Clixml -LiteralPath $path};$script:DpLayoutReadCache[$path]=$cached}
+    return $cached.Layout
+}
+
+function Get-DpDesktopEditPoint {
+    if(-not $script:hostReady){return $null}
+    $edit=[DeskPagesHost]::GetDesktopEdit()
+    if($null -eq $edit -or $edit[1] -eq [int]::MinValue){return $null}
+    $g=[DeskPagesLayout]::ContextGeometry([int]$edit[1],[int]$edit[2])
+    [PSCustomObject]@{Revision=$edit[0];X=$g[0];Y=$g[1];DisplayRevision=$edit[3]}
+}
+function Test-DpFixedPageEdited {param([int]$Page)
+    if($script:DpMonitorPageContext -and $script:DpMonitorPageContext.Permissions.ContainsKey($Page)){return $script:DpMonitorPageContext.Permissions[$Page]}
+    $signal=Get-DpDisplaySignal
+    if($signal[1] -le [long]$script:DpFixedSavedEditRevision){return $false}
+    if($script:DpMonitorPageContext -and $script:DpMonitorPageContext.PSObject.Properties['EditPoint']){$point=$script:DpMonitorPageContext.EditPoint}else{$point=Get-DpDesktopEditPoint;if($script:DpMonitorPageContext){$script:DpMonitorPageContext | Add-Member -NotePropertyName EditPoint -NotePropertyValue $point}}
+    # Non-Windows fixture adapters may expose only the original edit counter.
+    if($null -eq $point){return -not $script:hostReady}
+    if($point.DisplayRevision -ne $signal[0] -or $point.Revision -ne $signal[1]){return $false}
+    $fixed=@(Get-DpFixedMonitorPages | Where-Object {$_.Page -eq $Page})
+    $allowed=$fixed.Count -eq 1 -and (Test-DpPointInScreen $point $fixed[0].Screen)
+    if($script:DpMonitorPageContext){$script:DpMonitorPageContext.Permissions[$Page]=$allowed}
+    return $allowed
+}
+function Repair-DpFixedPageArrangement {param([int]$Page,[object[]]$Icons)
+    $fixed=@(Get-DpFixedMonitorPages)
+    if(-not $fixed.Count -or (Get-DpDisplaySignal)[3] -eq 1){return $Icons}
+    $saved=@((Read-DpCachedLayout $Page).Icons)
+    $composed=@(Get-DpComposedLayoutIcons $Page $saved $Icons)
+    $trusted=@{};foreach($icon in $composed){$owner=Get-DpIconOwnerPage $icon $Page;if($owner -ne $Page -and -not(Test-DpFixedPageEdited $owner)){$trusted[[string]$icon.Key]=$icon}}
+    $targets=@(foreach($icon in $Icons){$target=$trusted[[string]$icon.Key];if($null -ne $target -and ([Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2)){[PSCustomObject]@{Id=$icon.Id;X=$target.X;Y=$target.Y}}})
+    if(-not $targets.Count){return $Icons}
+    $null=[DeskPagesLayout]::Restore($script:originalDesktop,[string[]]@($targets.Id),[int[]]@($targets.X),[int[]]@($targets.Y))
+    $actual=@(Read-DpVisibleIcons);$byId=@{};foreach($icon in $actual){$byId[$icon.Id]=$icon}
+    foreach($target in $targets){$icon=$byId[$target.Id];if($null -eq $icon -or [Math]::Abs($icon.X-$target.X) -gt 2 -or [Math]::Abs($icon.Y-$target.Y) -gt 2){throw 'Fixed display arrangement has not settled; layout saving is blocked.'}}
+    return $actual
 }

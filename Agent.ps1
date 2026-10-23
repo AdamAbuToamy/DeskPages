@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.29.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.30.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -235,6 +235,7 @@ try {
         }
         Write-DpLog ('Desktop view after visibility sync: '+[DeskPagesLayout]::DescribeView($script:originalDesktop))
     }catch{Write-DpLog ('Live Explorer visibility sync unavailable: '+[string]$_)}
+    Initialize-DpOriginalDesktop -FirstRun $firstRun
     if($firstRun){Save-DpPageLayout 1}
     if ($Recover) {
         Recover-DpDesktop
@@ -331,8 +332,8 @@ try {
                 }
             }
             elseif ($Code -eq 9000 -or $Code -eq 9002) {
-                try {Recover-DpDesktop}
-                finally {[DeskPagesHost]::RequestExit()}
+                Recover-DpDesktop
+                [DeskPagesHost]::RequestExit()
             }
             elseif ($Code -eq 9001) {
                 [Windows.Forms.MessageBox]::Show([DeskPagesHost]::Diagnostics(),'DeskPages input') | Out-Null

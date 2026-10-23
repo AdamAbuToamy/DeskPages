@@ -1,10 +1,9 @@
-# DeskPages 0.8.29 · Trial
+# DeskPages 0.8.30 · Trial
 
-- Keep the translucent + button clear of left-aligned taskbar controls, running applications and the notification area.
-- Delete an individual empty or populated group from its right-click menu. Its applications return to their original taskbar identities and remain open.
-- Resolve installed classic app identities using live taskbar buttons, including VS Code shortcuts and user-pinned shortcuts, without combining ambiguous active profiles.
-- Taskbar groups start enabled by default, preserve an explicit off preference and use the main settings window without a second tray icon.
-- Optionally assign a distinct page to each additional monitor. Main-display navigation skips connected assigned pages; disconnected pages return to navigation. Monitor assignments use persistent monitor interface identities.
-- Save each displayed page independently and replay interrupted layout checkpoints. Pinned icons remain on the main display; the existing monitor arrangement fence remains active.
+- Exit restores an original Desktop checkpoint before considering page-local positions. Older installations recover earliest retained positions from layout history and safety backups. Original free-form spacing and connected monitor positions take priority; newer files use remaining space. Page snapshots stay intact.
+- Fixed secondary pages remain protected after primary-screen edits. Automatic Explorer reflow is repaired; a secondary layout is saved only after a matching deliberate edit on that display. Consumed edit gestures cannot authorize later automatic rearrangements.
+- Navigation commands run before periodic monitor repair and background snapshot preparation. Monitor geometry and membership are reused during each layout operation, lightweight icon copies replace repeated serialization, and unchanged composed checkpoints skip copying and writing.
+- Restoring a page positions only icons whose coordinates changed. Keyed files never inherit another file's position because their display labels match.
+- Cached previews reuse the verified monitor scope and cached layout metadata. Main-display pin copies do not invalidate all images; actual stationary-page changes still invalidate the composed scene.
 
-Validation uses Windows CI and isolated display/input fixtures. Actual Windows taskbar, VS Code and multiple physical monitors require user acceptance before publishing.
+Validation includes production-function fixtures and Windows build/standard/stress suites. Real Windows 11 monitor behavior and navigation latency require user acceptance before publication.

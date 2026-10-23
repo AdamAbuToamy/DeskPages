@@ -20,7 +20,7 @@ function Get-DpInitialSystemBackup {
 function Save-DpSafetySnapshot {
     $destination=Join-Path (Join-Path $env:LOCALAPPDATA 'DeskPages\SafetyBackups') ([DateTime]::UtcNow.Ticks.ToString())
     New-Item -ItemType Directory -Force $destination | Out-Null
-    foreach($name in @('pages.xml','pages.xml.previous','transition.xml','suspended.xml')){
+    foreach($name in @('pages.xml','pages.xml.previous','transition.xml','suspended.xml','original-desktop.xml')){
         $path=Join-Path $script:DpStore $name
         if(Test-Path -LiteralPath $path){Copy-Item -LiteralPath $path -Destination $destination}
     }

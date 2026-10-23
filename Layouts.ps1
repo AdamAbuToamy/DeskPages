@@ -1,10 +1,14 @@
 ﻿function Save-DpPageLayout {
     param([int]$Page)
+    $previousContext=$script:DpMonitorPageContext
+
+    try{
     if ($script:DpSuspended) {return}
     if($script:DpMonitorProtection -and (Get-DpDisplaySignal)[3] -eq 1){return}
     if (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml')) {throw 'Cannot save a layout during an incomplete transition.'}
     if($script:DpState.PSObject.Properties['Workspace'] -and $Page -in @($script:DpState.Workspace.Locked) -and (Test-Path -LiteralPath (Join-Path $script:DpLayoutStore "page-$Page.xml"))){Restore-DpPageLayout $Page}
     if((Get-Command Sync-DpMonitorProfile -ErrorAction SilentlyContinue) -and -not $script:DpMonitorSyncBusy){Sync-DpMonitorProfile}
+    if($script:DpState.Workspace.MonitorPagesEnabled -and (-not $script:DpMonitorPageContext -or -not [object]::ReferenceEquals($script:DpMonitorPageContext.State,$script:DpState))){$script:DpMonitorPageContext=New-DpMonitorPageContext}
     $displaySignal=$null
     if(Get-Command Get-DpDisplaySignal -ErrorAction SilentlyContinue){$displaySignal=Get-DpDisplaySignal}
     Connect-DpDesktop
@@ -37,9 +41,14 @@
     }
     Write-DpAtomicXml -Path $path -Value $snapshot
     $script:DpLastLayoutSignature[$Page]=$signature
+    }finally{$script:DpMonitorPageContext=$previousContext}
 }
 
 function Protect-DpMonitorArrangement {param([int]$Page,[object[]]$Icons)
+    $previousContext=$script:DpMonitorPageContext
+    if($script:DpState.Workspace.MonitorPagesEnabled -and (-not $previousContext -or -not [object]::ReferenceEquals($previousContext.State,$script:DpState))){$script:DpMonitorPageContext=New-DpMonitorPageContext}
+    try{
+    if($script:DpState.Workspace.MonitorPagesEnabled){$Icons=@(Repair-DpFixedPageArrangement $Page $Icons)}
     if($null -eq $script:DpMonitorProtection){return $Icons}
     $signal=Get-DpDisplaySignal
     if($signal[0] -ne $script:DpMonitorProtection.Revision){throw 'Display changed during layout capture; layout saving is blocked.'}
@@ -61,6 +70,7 @@ function Protect-DpMonitorArrangement {param([int]$Page,[object[]]$Icons)
         }
     }
     return $Icons
+    }finally{$script:DpMonitorPageContext=$previousContext}
 }
 
 function Resolve-DpLayoutTargets {
@@ -78,7 +88,7 @@ function Resolve-DpLayoutTargets {
     foreach ($icon in $now) {
             $old = $null
             if ($icon.Key) {$old=$byKey[$icon.Key]}
-            if ($null -eq $old -and $duplicates[$icon.Name] -eq 1) {$old=$byName[$icon.Name]}
+            if ($null -eq $old -and $duplicates[$icon.Name] -eq 1) {$candidate=$byName[$icon.Name];if($null -ne $candidate -and (-not $candidate.Key -or -not $icon.Key)){$old=$candidate}}
             if ($null -ne $old) {
                 [PSCustomObject]@{Id=$icon.Id; X=[int]$old.X; Y=[int]$old.Y}
             }
@@ -110,7 +120,8 @@ function Restore-DpPageLayout {
     }
     if (-not $ready) {throw 'Explorer did not finish displaying the expected page. Saved layouts were preserved.'}
     if(Get-Command Get-DpScopedLayoutIcons -ErrorAction SilentlyContinue){$saved=@(Get-DpScopedLayoutIcons -Saved $saved -Current $now -Page $Page)}
-    $targets = @(Resolve-DpLayoutTargets -Saved $saved -Current $now)
+    $byId=@{};foreach($icon in $now){$byId[$icon.Id]=$icon}
+    $targets = @(Resolve-DpLayoutTargets -Saved $saved -Current $now | Where-Object {$icon=$byId[$_.Id];[Math]::Abs($icon.X-$_.X) -gt 2 -or [Math]::Abs($icon.Y-$_.Y) -gt 2})
     if ($targets.Count) {
         $null=[DeskPagesLayout]::Restore($script:originalDesktop,
             [string[]]@($targets | ForEach-Object {$_.Id}),
@@ -227,6 +238,9 @@ function Assert-DpPageView {
 }
 
 function Repair-DpPrimaryPlacement {param([int]$Page,[object[]]$Icons)
+    $previousContext=$script:DpMonitorPageContext
+    if($script:DpState.Workspace.MonitorPagesEnabled -and (-not $previousContext -or -not [object]::ReferenceEquals($previousContext.State,$script:DpState))){$script:DpMonitorPageContext=New-DpMonitorPageContext}
+    try{
     if(-not $script:DpState.PSObject.Properties['Workspace'] -or -not $script:DpState.Workspace.PrimaryOnly){return $Icons}
     if((Get-Command Get-DpFixedMonitorPages -ErrorAction SilentlyContinue) -and @(Get-DpFixedMonitorPages).Count){
         $outside=@($Icons | Where-Object {$screen=Get-DpIconScreen $_ $Page; -not(Test-DpPointInScreen $_ $screen)})
@@ -259,4 +273,5 @@ function Repair-DpPrimaryPlacement {param([int]$Page,[object[]]$Icons)
         Start-Sleep -Milliseconds 25
     }while($clock.ElapsedMilliseconds -lt 1200)
     throw 'Explorer has not retained the primary display layout; layout saving is blocked.'
+    }finally{$script:DpMonitorPageContext=$previousContext}
 }

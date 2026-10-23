@@ -1,5 +1,8 @@
 ﻿function Test-DpFileVisible {param($Entry,[int]$Page)
-    if((Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue) -and [int]$Entry.Page -in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){return $true}
+    if($script:DpState.Workspace.MonitorPagesEnabled -and (Get-Command Get-DpVisiblePages -ErrorAction SilentlyContinue)){
+        if($script:DpVisibilityContext -and $script:DpVisibilityContext.Page -eq $Page -and [object]::ReferenceEquals($script:DpVisibilityContext.State,$script:DpState)){if($script:DpVisibilityContext.Pages.ContainsKey([int]$Entry.Page)){return $true}}
+        elseif([int]$Entry.Page -in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){return $true}
+    }
     if(Get-Command Test-DpItemVisible -ErrorAction SilentlyContinue){return (Test-DpItemVisible $Entry $Page)}
     return ([int]$Entry.Page -eq $Page -or ($Entry.PSObject.Properties['Pinned'] -and [bool]$Entry.Pinned))
 }
@@ -13,6 +16,7 @@ function Write-DpAtomicXml {
         try {$stream.Flush($true)} finally {$stream.Dispose()}
         if ([IO.File]::Exists($Path)) {[IO.File]::Replace($temporary,$Path,($Path+'.previous'))}
         else {[IO.File]::Move($temporary,$Path)}
+        if($script:DpLayoutReadCache){$script:DpLayoutReadCache.Remove($Path)}
     } finally {if([IO.File]::Exists($temporary)){[IO.File]::Delete($temporary)}}
 }
 function Invoke-DpFaultPoint {param([string]$Stage)}

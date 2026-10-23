@@ -111,6 +111,8 @@ function Set-DpFilePage {
     }
 
     if($script:DpState.PSObject.Properties['Workspace'] -and $script:DpState.Workspace.PSObject.Properties['PrimaryOnly'] -and $script:DpState.Workspace.PrimaryOnly){$script:DpScopeScreens=@(Get-DpMonitorGeometry)}
+    $script:DpVisibilityContext=$null
+    if($script:DpState.Workspace.MonitorPagesEnabled){$visiblePages=@{};foreach($id in @(Get-DpVisiblePages $Page $script:DpScopeScreens)){$visiblePages[[int]$id]=$true};$script:DpVisibilityContext=[PSCustomObject]@{State=$script:DpState;Page=$Page;Pages=$visiblePages}}
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $oldPage = $script:DpState.Current
     $oldItems = @($script:DpState.Items)

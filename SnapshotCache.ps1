@@ -2,7 +2,7 @@
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return}
     $parts=@($script:DpState.Items | Sort-Object Path | ForEach-Object {"$($_.Path)|$($_.Page)|$($_.Pinned)|$($_.Secondary)"})
     if($script:DpState.PSObject.Properties['Workspace']){$parts+=@($script:DpState.Workspace.SystemPinned | Sort-Object);$parts+=@($script:DpState.Workspace.SecondaryIcons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}
-    if($script:DpState.Workspace.MonitorPagesEnabled){$parts+=@('MonitorPages', (Get-DpMonitorKey));foreach($fixed in @(Get-DpFixedMonitorPages)){$path=Join-Path $script:DpLayoutStore ("page-"+$fixed.Page+'.xml');if(Test-Path -LiteralPath $path){$parts+=@((Import-Clixml -LiteralPath $path).Icons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}}}
+    if($script:DpState.Workspace.MonitorPagesEnabled){$parts+=@('MonitorPages', [string]$script:DpState.Workspace.MonitorKey);$shared=@{};foreach($entry in $script:DpState.Items){if($entry.Pinned){$shared[[string]$entry.Path]=$true}};foreach($fixed in @(Get-DpFixedMonitorPages -Screens $script:DpScopeScreens)){$path=Join-Path $script:DpLayoutStore ("page-"+$fixed.Page+'.xml');if(Test-Path -LiteralPath $path){$parts+=@((Read-DpCachedLayout ([int]$fixed.Page)).Icons | Where-Object {$icon=$_;-not $shared.ContainsKey([string]$icon.Key) -and -not @($script:DpState.Workspace.SystemPinned | Where-Object {([string]$icon.Key).IndexOf([string]$_,[StringComparison]::OrdinalIgnoreCase) -ge 0}).Count} | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}}}
     $parts+=@($script:DpState.SystemIconBackup | Sort-Object Id | ForEach-Object {"$($_.Id)|$($_.Exists)|$($_.Value)"})
     [DeskPagesHost]::SnapshotSceneContext(($parts -join "`n"))
 }
