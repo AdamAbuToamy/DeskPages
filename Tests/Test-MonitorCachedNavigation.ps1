@@ -42,6 +42,11 @@ try{
  $layout.Icons=$main;Write-DpAtomicXml (Join-Path $temp 'page-1.xml') $layout
  Assert ((Get-DpSnapshotKey -Page 1) -eq $key) 'Source checkpoint and composed target use different primary keys.'
  [DeskPagesHost]::One=$key
+ # Resident navigation must reuse a checkpoint key without importing/hash work.
+ $reader=(Get-Command Read-DpCachedLayout).ScriptBlock
+ function Read-DpCachedLayout {throw 'Unchanged resident key re-imported its canonical layout.'}
+ try{Assert (Try-DpCachedPreview 1 4 1) 'Unchanged canonical key did not use its memoized result.'}
+ finally{Set-Item Function:Read-DpCachedLayout $reader}
  [DeskPagesHost]::Available=$false
  Assert (-not (Try-DpCachedPreview 1 4 1)) 'Obsolete script keys survived native scope invalidation.'
  Assert ($script:DpSnapshotKeys.Count -eq 0) 'Obsolete script keys were not removed.'
