@@ -34,6 +34,17 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Release/Build-Windows.ps1
+      - name: Prepare source and checksums
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+        shell: powershell
+        run: ./Release/Prepare-Assets.ps1
+      - name: Retain candidate for security investigation (not approved for distribution)
+        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-candidate-for-analysis
+          path: dist/*
+          if-no-files-found: error
       - name: Scan the new installer with current Defender and verify cloud connectivity
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
@@ -51,10 +62,6 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: ./Tests/Run-Validation.ps1 -Stress
-      - name: Prepare source and checksums
-        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
-        shell: powershell
-        run: ./Release/Prepare-Assets.ps1
       - name: Retain validation results even after failure
         if: always()
         uses: actions/upload-artifact@v4

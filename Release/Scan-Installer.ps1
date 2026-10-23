@@ -2,7 +2,7 @@ param([Parameter(Mandatory)][string]$Installer,[string]$ReportDirectory)
 $ErrorActionPreference='Stop'
 if(-not $ReportDirectory){$ReportDirectory=Join-Path (Split-Path $Installer -Parent) 'security-report'}
 New-Item -ItemType Directory -Force $ReportDirectory | Out-Null
-$report=[ordered]@{Verdict='NOT_SCANNED';InstallerExecuted=$false;SampleUploadPermitted=$false;Limitation='One isolated Windows Server scan is not a guarantee of all Windows 11 browser/cloud verdicts.'}
+$report=[ordered]@{ScanMode='Explicit read-only custom scan; file exclusions ignored and archive contents scanned';Verdict='NOT_SCANNED';InstallerExecuted=$false;SampleUploadPermitted=$false;Limitation='One isolated Windows Server scan is not a guarantee of all Windows 11 browser/cloud verdicts.'}
 $started=Get-Date
 try{
  $file=Get-Item -LiteralPath $Installer
@@ -17,11 +17,13 @@ try{
  $pref=Get-MpPreference
  if([int]$pref.SubmitSamplesConsent -ne 2){throw 'This scanner may submit samples; refused because the user did not authorize file submission.'}
  Update-MpSignature
- Set-MpPreference -MAPSReporting Advanced -DisableRealtimeMonitoring $false
+ Set-MpPreference -MAPSReporting Advanced -DisableArchiveScanning $false -DisableScriptScanning $false -DisableRealtimeMonitoring $false
+ # Hosted build images can remain in passive mode. An explicit custom scan
+ # still works there; report that limit and do not claim real-time coverage.
  $pref=Get-MpPreference;$status=Get-MpComputerStatus
- $report.CloudPreferences=$pref | Select-Object MAPSReporting,SubmitSamplesConsent,DisableBlockAtFirstSeen
+ $report.CloudPreferences=$pref | Select-Object MAPSReporting,SubmitSamplesConsent,DisableBlockAtFirstSeen,DisableArchiveScanning,DisableScriptScanning,ExclusionPath
  $report.DefenderAfter=$status | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AMEngineVersion,AMProductVersion,AntivirusSignatureVersion,AntivirusSignatureLastUpdated
- if([int]$pref.SubmitSamplesConsent -ne 2 -or [int]$pref.MAPSReporting -eq 0 -or -not $status.RealTimeProtectionEnabled){throw 'Requested diagnostic protection state was not established.'}
+ if([int]$pref.SubmitSamplesConsent -ne 2 -or [int]$pref.MAPSReporting -eq 0 -or $pref.DisableArchiveScanning -or $pref.DisableScriptScanning){throw 'Requested diagnostic protection state was not established.'}
  if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Signatures are stale.'}
  $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
  $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
@@ -32,15 +34,18 @@ try{
   $connection | Set-Content (Join-Path $ReportDirectory 'cloud-connection.txt') -Encoding UTF8
   $report.CloudConnectionExitCode=$connectionCode
   if($connectionCode -ne 0){throw 'Defender cloud connection validation failed.'}
-  # Only Microsoft's scanner is executed; the installer is scanned as data.
-  $output=(& $scanner -Scan -ScanType 3 -File $file.FullName 2>&1 | Out-String);$code=$LASTEXITCODE
+  # This flag makes a custom scan ignore file exclusions and scan archives.
+  # It does not disable antivirus protection; no sample/installer is executed.
+  # Findings remain in command output and cause the delivery gate to fail.
+  # https://learn.microsoft.com/defender-endpoint/command-line-arguments-microsoft-defender-antivirus
+  $output=(& $scanner -Scan -ScanType 3 -DisableRemediation -File $file.FullName 2>&1 | Out-String);$code=$LASTEXITCODE
  }finally{$ErrorActionPreference=$previous}
  $output | Set-Content (Join-Path $ReportDirectory 'scanner-output.txt') -Encoding UTF8
  $report.ScannerExitCode=$code
  $report.Detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started -or ($_.Resources -join ' ') -like ('*'+$file.Name+'*')} | Select-Object ThreatID,InitialDetectionTime,ActionSuccess,Resources)
  $report.Threats=@(Get-MpThreat | Select-Object ThreatID,ThreatName,IsActive,DidThreatExecute,Resources)
  if($report.Detections.Count -or $report.Threats.Count -or -not(Test-Path -LiteralPath $file.FullName)){$report.Verdict='DETECTION_RECORDED';throw 'Security detection recorded; do not distribute the build.'}
- if($code -ne 0){$report.Verdict='SCAN_ERROR';throw ('Scanner returned '+$code)}
+ if($code -ne 0 -or $output -match '(?im)^\s*Threat\s*:'){$report.Verdict='SCAN_ERROR';throw ('Scanner returned '+$code)}
  $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
 }catch{$report.Error=$_.ToString();throw}
 finally{
