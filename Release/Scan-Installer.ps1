@@ -1,9 +1,10 @@
-﻿param([Parameter(Mandatory)][string]$Installer,[string]$ReportDirectory)
+﻿param([Parameter(Mandatory)][string]$Installer,[string]$ReportDirectory,[string]$PayloadRoot,[string]$PayloadInventory)
 $ErrorActionPreference='Stop'
 if(-not $ReportDirectory){$ReportDirectory=Join-Path (Split-Path $Installer -Parent) 'security-report'}
 New-Item -ItemType Directory -Force $ReportDirectory | Out-Null
 $report=[ordered]@{ScanMode='Explicit read-only custom scan; file exclusions ignored and archive contents scanned';Verdict='NOT_SCANNED';InstallerExecuted=$false;SampleUploadPermitted=$false;Limitation='One isolated Windows Server scan is not a guarantee of all Windows 11 browser/cloud verdicts.'}
-$started=Get-Date
+$started=Get-Date;$payloadStage=$null
+$report.PayloadVerdict='NOT_SCANNED';$report.PayloadFiles=0
 try{
  $file=Get-Item -LiteralPath $Installer
  $report.File=$file.Name;$report.Sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -46,6 +47,32 @@ try{
  }finally{$ErrorActionPreference=$previous}
  $output | Set-Content (Join-Path $ReportDirectory 'scanner-output.txt') -Encoding UTF8
  $report.ScannerExitCode=$code
+ # Inspect the actual file set assembled by the packager, not only the EXE container.
+ if(-not $PayloadRoot -or -not $PayloadInventory){throw 'Payload root and build inventory are required for a distribution scan.'}
+ $sourceRoot=[IO.Path]::GetFullPath($PayloadRoot)
+ $entries=@(Get-Content -LiteralPath $PayloadInventory -Raw | ConvertFrom-Json)
+ if(-not $entries.Count){throw 'Empty build inventory.'}
+ $payloadStage=Join-Path ([IO.Path]::GetTempPath()) ('DeskPages-security-'+[guid]::NewGuid().ToString('N'))
+ New-Item -ItemType Directory -Path $payloadStage | Out-Null
+ $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+ foreach($entry in $entries){
+  $relative=[string]$entry.Path;$source=[IO.Path]::GetFullPath((Join-Path $sourceRoot $relative));$target=[IO.Path]::GetFullPath((Join-Path $payloadStage $relative))
+  if([IO.Path]::IsPathRooted($relative) -or -not $source.StartsWith($sourceRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or -not $target.StartsWith($payloadStage+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or -not $seen.Add($relative)){throw 'Unsafe or duplicate build inventory entry.'}
+  if((Get-Item -LiteralPath $source).Length -ne $entry.Length -or (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $entry.Sha256){throw ('Build inventory mismatch: '+$relative)}
+  New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+  Copy-Item -LiteralPath $source -Destination $target
+ }
+ New-Item -ItemType Directory -Force (Join-Path $payloadStage 'Packaging') | Out-Null
+ Copy-Item -LiteralPath $PayloadInventory -Destination (Join-Path $payloadStage 'Packaging/payload-inventory.json')
+ $report.PayloadInventorySha256=(Get-FileHash -LiteralPath $PayloadInventory -Algorithm SHA256).Hash.ToLowerInvariant()
+ $report.PayloadFiles=$entries.Count+1
+ $previous=$ErrorActionPreference
+ try{$ErrorActionPreference='Continue';$payloadOutput=(& $scanner -Scan -ScanType 3 -DisableRemediation -File $payloadStage 2>&1 | Out-String);$payloadCode=$LASTEXITCODE}finally{$ErrorActionPreference=$previous}
+ $payloadOutput | Set-Content (Join-Path $ReportDirectory 'payload-scanner-output.txt') -Encoding UTF8
+ $report.PayloadScannerExitCode=$payloadCode
+ if($payloadCode -ne 0 -or $payloadOutput -match '(?im)^\s*Threat\s*:'){$report.PayloadVerdict='SCAN_ERROR_OR_DETECTION';throw 'Payload scan did not pass; do not distribute.'}
+ foreach($entry in $entries){$target=Join-Path $payloadStage $entry.Path;if(-not(Test-Path -LiteralPath $target) -or (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ine $entry.Sha256){throw ('Payload was removed or changed during scanning: '+$entry.Path)}}
+ $report.PayloadVerdict='NO_DETECTION_IN_THIS_SCAN';$report.PayloadHashesVerified=$true
  $report.Detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started -or ($_.Resources -join ' ') -like ('*'+$file.Name+'*')} | Select-Object ThreatID,InitialDetectionTime,ActionSuccess,Resources)
  $report.Threats=@(Get-MpThreat | Select-Object ThreatID,ThreatName,IsActive,DidThreatExecute,Resources)
  if($report.Detections.Count -or $report.Threats.Count -or -not(Test-Path -LiteralPath $file.FullName)){$report.Verdict='DETECTION_RECORDED';throw 'Security detection recorded; do not distribute the build.'}
@@ -54,6 +81,7 @@ try{
  $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
 }catch{$report.Error=$_.ToString();throw}
 finally{
+ if($payloadStage -and (Test-Path -LiteralPath $payloadStage)){Remove-Item -LiteralPath $payloadStage -Recurse -Force -ErrorAction SilentlyContinue}
  $report.CompletedUtc=[DateTime]::UtcNow.ToString('o')
  $report | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $ReportDirectory 'report.json') -Encoding UTF8
  $report | ConvertTo-Json -Depth 10 | Write-Host

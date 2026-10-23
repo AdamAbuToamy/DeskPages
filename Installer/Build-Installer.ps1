@@ -38,6 +38,8 @@ try {
     $inventory=@($packageFiles | ForEach-Object {[PSCustomObject]@{Path=$_.Relative;Length=(Get-Item -LiteralPath $_.Path).Length;Sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash.ToLowerInvariant()}})
     $inventoryPath=Join-Path $work 'payload-inventory.json'
     [IO.File]::WriteAllText($inventoryPath,($inventory | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+    $securityInput=Join-Path $root 'security-input';New-Item -ItemType Directory -Force $securityInput | Out-Null
+    Copy-Item -LiteralPath $inventoryPath -Destination (Join-Path $securityInput 'payload-inventory.json') -Force
     $payload=Join-Path $work 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem

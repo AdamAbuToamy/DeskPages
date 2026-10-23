@@ -1,4 +1,4 @@
-﻿name: Validate and build Windows preview
+name: Validate and build Windows preview
 on:
   push:
     branches: [main]
@@ -50,7 +50,7 @@ jobs:
         shell: powershell
         run: |
           $version=([IO.File]::ReadAllText('VERSION.txt') -replace '^DeskPages\s+','').Trim()
-          ./Release/Scan-Installer.ps1 -Installer (Join-Path 'dist' ("DeskPages-Setup-"+$version+'.exe')) -ReportDirectory 'security-report'
+          ./Release/Scan-Installer.ps1 -Installer (Join-Path 'dist' ("DeskPages-Setup-"+$version+'.exe')) -ReportDirectory 'security-report' -PayloadRoot $pwd.Path -PayloadInventory 'security-input/payload-inventory.json'
       - name: Retain installer security report
         if: always()
         uses: actions/upload-artifact@v4
