@@ -32,7 +32,7 @@ try {
     }
     foreach($file in Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.exe','.dll') -and $_.FullName -notlike ($OutputDirectory+'\*')}){Sign-ReleaseFile $file.FullName}
     . (Join-Path $root 'PackageIntegrity.ps1')
-    Assert-DpPackage -Root $root -Version ([Version]'0.8.34.0')
+    Assert-DpPackage -Root $root -Version ([Version]'0.8.35.0')
     . (Join-Path $PSScriptRoot 'PayloadFiles.ps1')
     $packageFiles=@(Get-DpInstallerFiles $root)
     $inventory=@($packageFiles | ForEach-Object {[PSCustomObject]@{Path=$_.Relative;Length=(Get-Item -LiteralPath $_.Path).Length;Sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash.ToLowerInvariant()}})

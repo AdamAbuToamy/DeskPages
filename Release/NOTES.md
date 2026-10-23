@@ -1,7 +1,9 @@
-# DeskPages 0.8.34 trial
+# DeskPages 0.8.35 trial
 
-Uses the published 0.8.28 desktop paging, cache and animation implementation. Later multi-monitor page assignment and transition changes are excluded.
+Navigation commands wake the host through a posted message and are dispatched before idle capture, routine layout repair and resource polling. Active transactions remain protected against reentry; display-change commands retain FIFO ordering and page changes retain their monitor and layout guards. A short AboveNormal priority scope affects only the dispatch thread during navigation and restores its original priority.
 
-Taskbar groups are enabled by default, with a switch in DeskPages Settings and no separate notification-area icon. Explicit off preferences are retained. The + button avoids native taskbar controls when apps are left aligned. Individual groups expose Delete group on click/right-click; their running windows are restored before removing the group. VS Code resolution uses live taskbar identities and pinned shortcuts without combining competing live profiles.
+Taskbar groups coalesce window lifecycle events, preserve the 80 ms active drag hit-region refresh, and avoid fast polling for desktop mouse presses. Idle UI Automation refresh uses a 2-second fallback. Open-window identity enumeration runs only during taskbar interaction when events/identities change or a 10-second fallback is due. Left-aligned +, individual deletion, VS Code resolution and integrated settings are retained.
 
-Retains reviewed installer payload inventory and Defender scan gate. No public release until user acceptance. Physical Windows 11 drag/drop and animation smoothness require device testing.
+transition-performance-v4.csv records input queue wait, input-to-slide submission and input-to-verified-desktop times. These are software timing measurements, not guaranteed physical display frame times.
+
+The 0.8.28 visibility, layout transaction, encrypted cache and native compositor implementations remain unchanged. Physical Windows 11 latency and multi-window behavior require user acceptance. Trial only; no publication before approval.

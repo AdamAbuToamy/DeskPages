@@ -15,8 +15,9 @@ public sealed class DeskPagesHost : ApplicationContext
 {
     private static DeskPagesHost active;
     private readonly Action<int> dispatch;
-    private sealed class HostCommand {public int Code;public bool ExplicitUi;}
-    private readonly ConcurrentQueue<HostCommand> commands = new ConcurrentQueue<HostCommand>();
+    private readonly DeskPagesCommandQueue commands=new DeskPagesCommandQueue();
+    private const int CommandMessage=0x8038;private IntPtr commandWindow;
+    private long commandReceivedAt,commandQueueWait;
     private bool explicitUiCommand;
     private readonly NotifyIcon tray;
     private DeskPagesUpdates updates;
@@ -112,7 +113,7 @@ public sealed class DeskPagesHost : ApplicationContext
         try {SetThreadDpiAwarenessContext(new IntPtr(-4));} catch(EntryPointNotFoundException) {}
         active=this; dispatch=action;
         SetProcessShutdownParameters(0x3ff,1);
-        sessionWindow=new SessionWindow(this);
+        sessionWindow=new SessionWindow(this);commandWindow=sessionWindow.Handle;
         LoadPreferences();
         try{indicator=new DeskPagesIndicatorController(DeskPagesStartupGate.Log);}catch(Exception ex){DeskPagesStartupGate.Log("page feedback unavailable: "+ex.Message);}
         if(DeskPagesWorkspaceApi.Input!=null)ApplyWorkspaceInput(DeskPagesWorkspaceApi.Input);
@@ -181,6 +182,7 @@ public sealed class DeskPagesHost : ApplicationContext
 
             }
             if(busy || DeskPagesAnimation.IsVisible) return;
+            if(TryDispatchCommand())return;
             if(monitorArrangementProtected && ElapsedMs()>=nextMonitorCheck){
                 nextMonitorCheck=ElapsedMs()+500;
                 if(!CreationInputBusy && !DeskPagesLayout.IsLabelEditing()){
@@ -189,6 +191,7 @@ public sealed class DeskPagesHost : ApplicationContext
                     finally{busy=false;}
                 }
             }
+            if(TryDispatchCommand())return;
             try{snapshots.Poll();}catch(Exception ex){DeskPagesStartupGate.Log("resource collector request: "+ex.Message);}
             if(dragMailbox!=null){
                 try{if(dragMailbox.Poll(currentPage,edgeDrag,knownPages.Length)){
@@ -197,6 +200,7 @@ public sealed class DeskPagesHost : ApplicationContext
                 }}catch(Exception ex){DeskPagesStartupGate.Log("drag request rejected: "+ex.Message);dragMailbox.Complete(false,currentPage);}
             }
             if(DeskPagesAnimation.IsVisible)return;
+            if(TryDispatchCommand())return;
             if(contextClick!=null || (placementWatch && ElapsedMs()>=nextPlacementPoll)){
                 busy=true;
                 try{dispatch(contextClick!=null?9500:9501);}
@@ -218,17 +222,23 @@ public sealed class DeskPagesHost : ApplicationContext
                 request=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","exit-save.request");
                 try {if(File.Exists(request)) {File.Delete(request);Enqueue(9101);}} catch(IOException) {}
             }
-            if(animate && !DeskPagesWorkspaceApi.ReduceMotion && !CreationInputBusy && !DeskPagesLayout.IsLabelEditing() && snapshots.ShouldWarm()){
+            if(TryDispatchCommand())return;
+            if(commands.IsEmpty && animate && !DeskPagesWorkspaceApi.ReduceMotion && !CreationInputBusy && !DeskPagesLayout.IsLabelEditing() && snapshots.ShouldWarm()){
                 busy=true;try{dispatch(9750);}catch(Exception ex){DeskPagesStartupGate.Log("idle snapshot: "+ex.Message);}finally{busy=false;}
             }
-            HostCommand command; if(!commands.TryDequeue(out command)) return;
-            busy=true;explicitUiCommand=command.ExplicitUi;
-            try {dispatch(command.Code);}
-            catch(Exception ex) {AbortAnimation(); ShowError(ex.Message);}
-            finally {busy=false;explicitUiCommand=false;}
-            if(exitRequested) ExitThread();
+            TryDispatchCommand();
         };
         Enqueue(9004); timer.Start();
+    }
+    private bool TryDispatchCommand(){
+        if(busy || session.Ending || DeskPagesAnimation.IsVisible)return false;
+        DeskPagesInputCommand command;if(!commands.TryDequeue(out command))return false;
+        busy=true;explicitUiCommand=command.ExplicitUi;
+        commandReceivedAt=command.ReceivedAt;commandQueueWait=Math.Max(0,ElapsedMs()-command.ReceivedAt);
+        try{using(var priority=new DeskPagesNavigationPriority(command.Navigation)){dispatch(command.Code);}}
+        catch(Exception ex){AbortAnimation();ShowError(ex.Message);}
+        finally{busy=false;explicitUiCommand=false;commandReceivedAt=0;commandQueueWait=0;}
+        if(exitRequested)ExitThread();return true;
     }
     private void OpenPanel(){if(DeskPagesWorkspaceApi.Request!=null){DeskPagesWorkspaceApi.Open();return;}OpenQuickPanel();}
     public static string[] WorkspaceCommand(Func<string[]> action){
@@ -253,7 +263,7 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     private static long ElapsedMs() {return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}
     private void RunCheckpoint(){
-        if(busy || session.Ending || DeskPagesAnimation.IsVisible)return;
+        if(busy || !commands.IsEmpty || session.Ending || DeskPagesAnimation.IsVisible)return;
         checkpointGeneration=checkpoints.Generation;checkpointAcknowledged=false;busy=true;
         try{dispatch(9100);}catch(Exception ex){DeskPagesStartupGate.Log("checkpoint skipped: "+ex.Message);}
         finally{busy=false;if(!checkpointAcknowledged)checkpoints.Completed(checkpointGeneration,false,ElapsedMs());}
@@ -266,6 +276,7 @@ public sealed class DeskPagesHost : ApplicationContext
         private readonly DeskPagesHost owner;
         public SessionWindow(DeskPagesHost host){owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});}
         protected override void WndProc(ref Message m){
+            if(m.Msg==CommandMessage){owner.TryDispatchCommand();m.Result=IntPtr.Zero;return;}
             if(m.Msg==0x7e || m.Msg==0x02e0 || (m.Msg==0x1a && m.WParam.ToInt64()==0x2f)){
                 owner.DisplayChanged();if(owner.snapshots!=null)owner.snapshots.Invalidate();
             }
@@ -278,7 +289,10 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     private void Enqueue(int code) {QueueCommand(code,false);}
     private void EnqueuePanel(int code) {QueueCommand(code,true);}
-    private void QueueCommand(int code,bool ui) {if(commands.Count<3) commands.Enqueue(new HostCommand{Code=code,ExplicitUi=ui});}
+    private void QueueCommand(int code,bool ui) {
+        if(commands.Enqueue(code,ui,ElapsedMs()) && commandWindow!=IntPtr.Zero)PostMessageW(commandWindow,CommandMessage,IntPtr.Zero,IntPtr.Zero);
+    }
+    [DllImport("user32.dll")]private static extern bool PostMessageW(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
     private string PreferencesPath() {return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","input-settings.txt");}
     private void LoadPreferences()
     {
@@ -334,7 +348,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.34\r\n"+active.hidStatus+
+        return "Build: 0.8.35\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -615,14 +629,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.34 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.35 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.34 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.35 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }
@@ -689,7 +703,7 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     public static bool SnapshotCacheEnabled {get{return active!=null && active.snapshots!=null && active.snapshots.Enabled;}}
     public static void SetSnapshotMode(bool enabled){if(active==null || active.snapshots==null)throw new InvalidOperationException("Agent is not ready.");active.snapshots.SetEnabled(enabled);}
-    public static void BeginNavigationSample(){if(active!=null && active.snapshots!=null)active.snapshots.BeginSample();}
+    public static void BeginNavigationSample(){if(active!=null && active.snapshots!=null)active.snapshots.BeginSample(active.commandReceivedAt,active.commandQueueWait);}
     public static void EndNavigationSample(bool success){if(active!=null && active.snapshots!=null)active.snapshots.EndSample(success);}
     public static void SetSnapshotSource(string key){if(active!=null && active.snapshots!=null)active.snapshots.Source(key);}
     public static void SetSnapshotTarget(string key){if(active!=null && active.snapshots!=null)active.snapshots.Target(key);}
@@ -730,7 +744,7 @@ public sealed class DeskPagesHost : ApplicationContext
                 AbortAnimation();DeskPagesAnimation.Trace("isolated capture unavailable; switching without animation: "+active.animationStatus);return false;
             }
             active.previewStarted=preview;
-            if(preview && active.snapshots!=null)active.snapshots.MarkSlideStarted();if(preview)TrackFeedbackMotion();
+            if(preview && active.snapshots!=null)active.snapshots.MarkSlideStarted(true);if(preview)TrackFeedbackMotion();
             DeskPagesAnimation.Trace(preview?"cached slide submitted before Explorer preparation; zero screenshot capture":"source prepared before visibility changes");return true;
         } catch(Exception ex) {active.animationStatus="transition preparation failed: "+ex.Message;AbortAnimation();throw;}
     }
@@ -752,7 +766,7 @@ public sealed class DeskPagesHost : ApplicationContext
         }
         try {
             if(!active.targetConfirmed)throw new InvalidOperationException("Target page was not confirmed; refusing to animate an unverified image.");
-            if(active.previewStarted)DeskPagesAnimation.CompleteCachedPreview();else {DeskPagesAnimation.CaptureAndPlay(active.slideDirection);TrackFeedbackMotion();}
+            if(active.previewStarted)DeskPagesAnimation.CompleteCachedPreview();else {DeskPagesAnimation.CaptureAndPlay(active.slideDirection);if(active.snapshots!=null)active.snapshots.MarkSlideStarted();TrackFeedbackMotion();}
             active.animationStatus="native DirectComposition slide; desktop-window-only capture below apps";
             DeskPagesAnimation.Trace((active.previewStarted?"cached preview handed to verified live desktop: ":"slide submitted: ")+DeskPagesAnimation.Metrics);
         }catch(Exception ex){active.animationStatus="transition failed: "+ex.Message;DeskPagesAnimation.Trace(active.animationStatus);AbortAnimation();throw;}
