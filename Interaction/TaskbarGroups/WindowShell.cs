@@ -37,7 +37,7 @@ internal static class WindowShell {
         catch(ArgumentException){return null;}catch(System.ComponentModel.Win32Exception){return null;}catch(COMException){return null;}
     }
     private static string ProcessAppId(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{uint length=0;GetApplicationUserModelId(process,ref length,null);if(length==0 || length>32768)return null;var s=new StringBuilder((int)length);return GetApplicationUserModelId(process,ref length,s)==0?s.ToString():null;}finally{CloseHandle(process);}}
-    private static string ProcessPath(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{int length=32768;var s=new StringBuilder(length);return QueryFullProcessImageNameW(process,0,s,ref length)?s.ToString():null;}finally{CloseHandle(process);}}
+    internal static string ProcessPath(uint pid){var process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)return null;try{int length=32768;var s=new StringBuilder(length);return QueryFullProcessImageNameW(process,0,s,ref length)?s.ToString():null;}finally{CloseHandle(process);}}
     public static bool OnTaskbar(Point point,IntPtr taskbar){
         if(taskbar==IntPtr.Zero)return false;IntPtr hit=WindowFromPoint(point);
         if(hit==taskbar || IsChild(taskbar,hit) || GetAncestor(hit,2)==taskbar)return true;
@@ -80,7 +80,7 @@ internal static class WindowShell {
     [DllImport("user32.dll")]private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")]private static extern bool ShowWindow(IntPtr hwnd,int command);
     [DllImport("user32.dll")]private static extern bool SetForegroundWindow(IntPtr hwnd);
-    [DllImport("user32.dll")]private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+    [DllImport("user32.dll")]internal static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]private static extern int GetWindowTextW(IntPtr hwnd,StringBuilder text,int length);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]private static extern int GetClassNameW(IntPtr hwnd,StringBuilder text,int length);
     [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")]private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd,int index);

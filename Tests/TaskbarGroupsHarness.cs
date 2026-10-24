@@ -186,10 +186,16 @@ public static class TaskbarGroupsHarness {
             bar.Show();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Exposed owned taskbar fixture was hidden");
             fullscreen.Show();fullscreen.BringToFront();Application.DoEvents();
             Check(WindowShell.IsWindowVisible(bar.Handle) && !TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Visible-style taskbar covered by a fullscreen fixture still exposed '+'");
+            Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor,h=>h==fullscreen.Handle),"Trusted Start/Search backdrop hid an exposed taskbar");
+            bar.Hide();Application.DoEvents();Check(!TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor,h=>true),"Shell backdrop resurrected a hidden taskbar");bar.Show();fullscreen.BringToFront();Application.DoEvents();
+            Check(!TaskbarVisibility.ShellOverlay("Windows.UI.Core.CoreWindow",@"C:\Users\Test\SearchHost.exe",@"C:\Windows"),"Untrusted lookalike SearchHost accepted");
+            Check(!TaskbarVisibility.ShellOverlay("CabinetWClass",@"C:\Windows\explorer.exe",@"C:\Windows"),"Fullscreen File Explorer accepted as Shell backdrop");
+            foreach(var host in new[]{"StartMenuExperienceHost.exe","SearchHost.exe","SearchApp.exe","SearchUI.exe","ShellExperienceHost.exe"})
+                Check(TaskbarVisibility.ShellOverlay("Windows.UI.Core.CoreWindow",@"C:\Windows\SystemApps\ShellPackage\"+host,@"C:\Windows"),"Built-in Shell host rejected: "+host);
             fullscreen.Hide();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Taskbar reappearance did not restore '+' eligibility");
             bar.Bounds=new Rectangle(monitor.Left,monitor.Bottom-1,monitor.Width,48);Application.DoEvents();Check(!TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Auto-hidden taskbar strip exposed '+'");
         }
-        Console.WriteLine("PASS: native taskbar exposure follows owned-window fullscreen occlusion, reappearance and auto-hide strip; real Shell taskbar configuration unchanged.");
+        Console.WriteLine("PASS: native taskbar exposure follows owned-window fullscreen occlusion, Start/Search backdrop, hidden-bar precedence, reappearance and auto-hide strip; real Shell taskbar configuration unchanged.");
     }
     private static void HookOwnershipFixture(){
         var original=Cursor.Position;
