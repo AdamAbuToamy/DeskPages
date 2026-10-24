@@ -18,7 +18,7 @@ public:
  using Save=std::function<void(const std::wstring&,SnapshotArea,const std::vector<unsigned char>&)>;
  using Capture=std::function<Image(SnapshotArea)>;
 private:
- struct Frame {std::wstring key;SnapshotArea area;Image pixels;uint64_t epoch=0,revision=0;};
+ struct Frame {std::wstring key;SnapshotArea area;Image pixels;uint64_t epoch=0,revision=0,serial=0;};
  SnapshotCache& cache;std::atomic<uint64_t>& epoch;
  std::function<uint64_t()> now;std::function<void(std::wstring,std::wstring)> configure;
  std::function<std::wstring(int)> known;Load load;Save save;Capture capture;std::function<void()> initialize;
@@ -41,13 +41,14 @@ private:
     else if(!dirty.empty()){operation=2;auto it=dirty.begin();f=std::move(it->second);dirtyBytes-=f.pixels->size();dirty.erase(it);}
     else if(!deferred.empty()){auto it=deferred.begin();f=it->second.metadata;f.pixels=it->second.pixels.lock();deferred.erase(it);if(f.pixels)operation=2;else ++errors;}
     else if(now()-inputAt.load()<200){wake.wait_for(lock,std::chrono::milliseconds(40));continue;}
-    else if(capturePending){operation=3;f=requestedCapture;capturePending=false;serial=inputSerial.load();revision=f.revision;}
+    else if(capturePending){operation=3;f=requestedCapture;capturePending=false;serial=f.serial;revision=f.revision;}
     else if(planPending){operation=4;order=pages;a=area;generation=epoch.load();serial=inputSerial.load();planPending=false;}
    }
    try{
     if(operation==1)configure(root,stamp);
     else if(operation==2){bool valid;{std::lock_guard<std::mutex> lock(mutex);valid=f.epoch==epoch.load() && f.revision==revisions[Page(f.key)];}if(valid)save(f.key,f.area,*f.pixels);}
     else if(operation==3){
+     {std::lock_guard<std::mutex> lock(mutex);if(serial!=inputSerial.load() || f.epoch!=epoch.load() || revision!=revisions[Page(f.key)]){warmResult=-1;continue;}}
      auto image=capture(f.area);bool accepted=false;
      {std::lock_guard<std::mutex> lock(mutex);int page=Page(f.key);
       if(image && f.epoch==epoch.load() && revision==revisions[page] && serial==inputSerial.load()){
@@ -59,11 +60,11 @@ private:
     }else if(operation==4){
      const size_t frameBytes=size_t(a.width)*a.height*4;size_t admitted=0;
      for(int page:order){
+      if(!frameBytes || admitted++>=cache.Limit()/frameBytes)break;
       if(epoch.load()!=generation || inputSerial.load()!=serial){std::lock_guard<std::mutex> lock(mutex);planPending=true;break;}
       uint64_t rev;{std::lock_guard<std::mutex> lock(mutex);rev=revisions[page];if(invalidPages.count(page))continue;}
       auto key=known(page);if(key.empty())continue;
       {std::lock_guard<std::mutex> lock(mutex);if(revisions[page]!=rev || epoch.load()!=generation)continue;keys[page]=key;}
-      if(!frameBytes || ++admitted>cache.Limit()/frameBytes)continue;
       auto resident=ResidentKey(key,a);if(cache.GetShared(resident,generation,now()))continue;
       auto image=load(key,a);if(!image)continue;
       std::lock_guard<std::mutex> lock(mutex);
@@ -101,7 +102,7 @@ public:
   cache.RemovePrefix(std::to_wstring(page)+L":",ResidentKey(key,a));keys[page]=key;invalidPages.erase(page);
   Frame f;f.key=key;f.area=a;f.pixels=pixels;f.epoch=generation;f.revision=revisions[page];QueueSave(f);Start();return true;
  }
- bool Warm(std::wstring key,SnapshotArea a){std::lock_guard<std::mutex> lock(mutex);if(warmResult.load()==1)return false;requestedCapture={};requestedCapture.key=key;requestedCapture.area=a;requestedCapture.epoch=epoch.load();requestedCapture.revision=revisions[Page(key)];capturePending=true;++requestSerial;warmResult=1;Start();wake.notify_one();return true;}
+ bool Warm(std::wstring key,SnapshotArea a){std::lock_guard<std::mutex> lock(mutex);if(warmResult.load()==1)return false;requestedCapture={};requestedCapture.key=key;requestedCapture.area=a;requestedCapture.epoch=epoch.load();requestedCapture.revision=revisions[Page(key)];requestedCapture.serial=inputSerial.load();capturePending=true;++requestSerial;warmResult=1;Start();wake.notify_one();return true;}
  void Stop(){ {std::lock_guard<std::mutex> lock(mutex);stop=true;capturePending=planPending=false;wake.notify_all();}if(worker.joinable())worker.join();}
 };
 }

@@ -41,6 +41,7 @@ public static class DeskPagesAnimation
     public static void ClearSnapshots(){if(library!=IntPtr.Zero)DPClearSnapshots();}
     public static ulong SnapshotCacheBytes {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(0);}}
     public static string DiskValuesCsv(){return library==IntPtr.Zero?"0,0,0":DPGetSnapshotValue(8)+","+DPGetSnapshotValue(9)+","+DPGetSnapshotValue(10);}
+    public static ulong ForegroundCaptureCalls {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(17);}}
     public static ulong CaptureCalls {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(4);}}
     public static string SnapshotValuesCsv(){if(library==IntPtr.Zero)return "0,0,0,0,0,0,0";return DPGetSnapshotValue(5)+","+DPGetSnapshotValue(6)+","+DPGetSnapshotValue(0)+","+DPGetSnapshotValue(1)+","+DPGetSnapshotValue(2)+","+DPGetSnapshotValue(3)+","+DPGetSnapshotValue(4);}
     public static bool WarmSnapshot(string key,Rectangle bounds){if(!SnapshotCacheEnabled || string.IsNullOrEmpty(key))return false;Initialize();bool ok=DPWarmSnapshot(key,bounds.Left,bounds.Top,bounds.Width,bounds.Height)!=0;if(!ok)Trace("idle snapshot skipped: "+Metrics);return ok;}

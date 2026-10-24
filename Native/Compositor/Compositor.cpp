@@ -66,6 +66,7 @@ std::atomic<HWND> coverWindow{nullptr};
 std::atomic<int> visible{0},playing{0},motionEnded{0};
 std::atomic<unsigned int> captureSample{0};
 std::atomic<uint64_t> snapshotEpoch{1},snapshotRevision{1},snapshotBytes{0},sourceHits{0},targetHits{0},snapshotMisses{0},captureCalls{0},sourceMs{0},targetMs{0},warmMs{0};
+std::atomic<uint64_t> foregroundCaptures{0};
 deskpages::SnapshotDisk diskSnapshots;
 size_t ResidentBudget(){MEMORYSTATUSEX m{};m.dwLength=sizeof(m);return GlobalMemoryStatusEx(&m)?size_t(std::max<uint64_t>(128ull<<20,std::min<uint64_t>(512ull<<20,m.ullTotalPhys/32))):128ull<<20;}
 deskpages::SnapshotCache residentSnapshots(ResidentBudget(),99);
@@ -199,7 +200,7 @@ class Renderer {
     std::vector<unsigned char> Capture() {
         WinCheck(desktopMode && IsWindow(desktopWindow),"Desktop-only capture source required");
         Check(DwmFlush(),"DwmFlush before isolated desktop render");
-        ++captureCalls;auto pixels=CaptureWindowPixels(desktopWindow,left,top,width,height);
+        ++captureCalls;++foregroundCaptures;auto pixels=CaptureWindowPixels(desktopWindow,left,top,width,height);
         unsigned int sample=0;std::memcpy(&sample,pixels.data()+(static_cast<size_t>(height/2)*width+width/2)*4,4);captureSample=sample;
         return pixels;
     }
@@ -322,7 +323,7 @@ public:
         if(desktopMode && !preview.active){
             LocateDesktop();auto generation=snapshotEpoch.load();
             bool reused=GetFrame(job.sourceKey,job.pixels);
-            if(reused){try{ValidateSourceRender(job.pixels);}catch(...){ClearSnapshots();reused=false;}}
+            if(reused){try{ValidateSourceRender(job.pixels);}catch(...){snapshotPipeline.Invalidate(std::stoi(job.sourceKey));reused=false;}}
             if(reused && generation!=snapshotEpoch.load())reused=false;
             if(reused)++sourceHits;
             else {if(!job.sourceKey.empty())++snapshotMisses;generation=snapshotEpoch.load();job.pixels=Capture();}
@@ -586,16 +587,13 @@ __declspec(dllexport) int __cdecl DPScheduleWarmSnapshot(const wchar_t* key,int 
 __declspec(dllexport) int __cdecl DPTakeWarmResult(){int value=snapshotPipeline.warmResult.load();return value==1?1:snapshotPipeline.warmResult.exchange(0);}
 __declspec(dllexport) void __cdecl DPInvalidateSnapshotPage(int page){
     if(page<=0)return;
-    snapshotPipeline.Invalidate(page);
-    ++snapshotRevision;
-    auto job=new(std::nothrow)Job;if(!job){++snapshotEpoch;++snapshotRevision;return;}
-    job->op=Op::InvalidatePage;job->sourceKey=std::to_wstring(page)+L":";
-    if(!job->done || !Start() || !PostThreadMessageW(workerId,JobMessage,0,reinterpret_cast<LPARAM>(job))){++snapshotEpoch;++snapshotRevision;job->release();job->release();return;}
-    job->release(); // Worker owns the remaining reference.
+    // Cache invalidation is already atomic. A second queued removal could
+    // arrive after a newly captured frame and erase that replacement again.
+    try{snapshotPipeline.Invalidate(page);++snapshotRevision;}catch(...){++snapshotEpoch;++snapshotRevision;}
 }
 __declspec(dllexport) void __cdecl DPInvalidateSnapshots(){++snapshotEpoch;++snapshotRevision;}
 __declspec(dllexport) int __cdecl DPClearSnapshots(){++snapshotEpoch;++snapshotRevision;auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ClearSnapshots;return Submit(job);}
-__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return residentSnapshots.Bytes();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();case 11:return residentSnapshots.Limit();case 12:return residentSnapshots.Count();case 13:return snapshotPipeline.preloads.load();case 14:return snapshotPipeline.captures.load();case 15:return snapshotPipeline.errors.load();case 16:return snapshotPipeline.deferredWrites.load();default:return 0;}}
+__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return residentSnapshots.Bytes();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();case 11:return residentSnapshots.Limit();case 12:return residentSnapshots.Count();case 13:return snapshotPipeline.preloads.load();case 14:return snapshotPipeline.captures.load();case 15:return snapshotPipeline.errors.load();case 16:return snapshotPipeline.deferredWrites.load();case 17:return foregroundCaptures.load();default:return 0;}}
 __declspec(dllexport) int __cdecl DPConfirmCachedTarget(int count,const wchar_t* key){auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ConfirmTarget;job->iconCount=count;if(key)job->targetKey=key;return Submit(job);}
 __declspec(dllexport) int __cdecl DPWarmSnapshot(const wchar_t* key,int left,int top,int width,int height){
     if(!key || std::wcslen(key)>256 || width<=0 || height<=0 || static_cast<uint64_t>(width)*height>40000000)return 0;

@@ -94,7 +94,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         if(Interlocked.CompareExchange(ref pending,0,0)==0 || Now-Interlocked.Read(ref dirtyAt)<40 || (GetAsyncKeyState(1)&0x8000)!=0)return false;
         if(!EnsureScene())return false;Interlocked.Exchange(ref pending,0);return true;
     }
-    public void BeginSample(long received=0,long waited=0){inputAgeAtStart=received>0?Math.Max(0,Now-received):0;queueWait=waited;navigation=Stopwatch.StartNew();firstSlide=-1;cachedPreview=false;captureAtStart=DeskPagesAnimation.CaptureCalls;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
+    public void BeginSample(long received=0,long waited=0){inputAgeAtStart=received>0?Math.Max(0,Now-received):0;queueWait=waited;navigation=Stopwatch.StartNew();firstSlide=-1;cachedPreview=false;captureAtStart=DeskPagesAnimation.ForegroundCaptureCalls;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     public void Source(string key){DeskPagesAnimation.SnapshotSourceKey=key;}
     public void Target(string key){DeskPagesAnimation.SnapshotTargetKey=key;}
     public void EndSample(bool success){
@@ -102,7 +102,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         try{using(var p=Process.GetCurrentProcess()){
             string path=Path.Combine(Folder,"transition-performance-v5.csv");
             string header="Utc,Mode,Success,CommandToSlideMs,SourcePrepareMs,TargetPrepareMs,CacheBytes,SourceHits,TargetHits,CacheMisses,CaptureCalls,WorkingSetBytes,PrivateBytes,GCBytes,Handles,DesktopReadyMs,CachedPreview,CaptureCallsDuringNavigation,DiskHits,DiskWrites,DiskErrors,InputQueueWaitMs,InputToSlideSubmitMs,InputToDesktopReadyMs,ResidentLimitBytes,ResidentImages,Preloads,IdleCaptures,SnapshotWorkerErrors,DeferredPersists\r\n";
-            DeskPagesDiagnostics.Append(path,header,DateTime.UtcNow.ToString("o")+","+(Enabled?"cached":"direct")+","+success+","+(firstSlide>=0?firstSlide:navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.SnapshotValuesCsv()+","+p.WorkingSet64+","+p.PrivateMemorySize64+","+GC.GetTotalMemory(false)+","+p.HandleCount+","+navigation.ElapsedMilliseconds+","+cachedPreview+","+(DeskPagesAnimation.CaptureCalls-captureAtStart)+","+DeskPagesAnimation.DiskValuesCsv()+","+queueWait+","+(firstSlide>=0?inputAgeAtStart+firstSlide:-1)+","+(inputAgeAtStart+navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.ResidentValuesCsv()+"\r\n");
+            DeskPagesDiagnostics.Append(path,header,DateTime.UtcNow.ToString("o")+","+(Enabled?"cached":"direct")+","+success+","+(firstSlide>=0?firstSlide:navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.SnapshotValuesCsv()+","+p.WorkingSet64+","+p.PrivateMemorySize64+","+GC.GetTotalMemory(false)+","+p.HandleCount+","+navigation.ElapsedMilliseconds+","+cachedPreview+","+(DeskPagesAnimation.ForegroundCaptureCalls-captureAtStart)+","+DeskPagesAnimation.DiskValuesCsv()+","+queueWait+","+(firstSlide>=0?inputAgeAtStart+firstSlide:-1)+","+(inputAgeAtStart+navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.ResidentValuesCsv()+"\r\n");
         }}catch(Exception ex){DeskPagesStartupGate.Log("performance sample: "+ex.Message);}finally{navigation=null;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     }
     public void Poll(){

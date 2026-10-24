@@ -18,7 +18,8 @@ int main(){
  pipe.Prime({1,2,3,8},area);Wait([&]{return reading.load();});
  // Deliberately stalled disk decoder must not hold the navigation RAM lock.
  int before=reads;auto start=Clock();for(int i=0;i<20000;i++)assert(cache.GetShared(key,1,Clock())==original);assert(Clock()-start<2000 && reads==before);
- pipe.Input();releaseRead=true;
+ assert(pipe.Warm(L"1:queued-old:stamp",area));pipe.Input();releaseRead=true;
+ Wait([&]{return pipe.warmResult.load()==-1;});assert(!shooting);pipe.warmResult=0;
  assert(pipe.Warm(L"1:new:stamp",area));Wait([&]{return shooting.load();});
  pipe.Input();releaseShot=true;Wait([&]{return pipe.warmResult.load()==-1;});assert(cache.GetShared(key,1,Clock())==original);
  pipe.Invalidate(2);assert(pipe.Known(2).empty());assert(cache.GetShared(key,1,Clock())==original);
