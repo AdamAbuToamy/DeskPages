@@ -184,7 +184,7 @@ public static class TaskbarGroupsHarness {
         using(var bar=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=new Rectangle(monitor.Left,monitor.Bottom-48,monitor.Width,48)})
         using(var cover=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=monitor})
         using(var button=new GroupAddButton(delegate{})){
-            Action sync=delegate{var box=new Rectangle(bar.Left+40,bar.Top+7,34,34);button.Present(box,TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),bar.Handle);Application.DoEvents();};
+            Action sync=delegate{var box=new Rectangle(bar.Left+40,bar.Top+7,34,34);button.Present(box,TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),bar.Handle);Application.DoEvents();Check(!button.Visible || button.Bounds==box,"Windows changed the attached button coordinates on show: requested="+box+" actual="+button.Bounds);};
             bar.Show();Application.DoEvents();sync();var point=new Point(button.Left+17,button.Top+17);
             Check(button.Visible && WindowShell.WindowFromPoint(point)==button.Handle,"Visible taskbar did not expose its attached button");
             cover.Opacity=0.15;cover.Show();cover.BringToFront();Application.DoEvents();

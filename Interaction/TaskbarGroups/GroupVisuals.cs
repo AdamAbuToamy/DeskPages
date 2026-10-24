@@ -44,7 +44,7 @@ internal sealed class GroupAddButton:Form {
     private readonly System.Windows.Forms.Timer animation=new System.Windows.Forms.Timer{Interval=15};
     private bool armed,hover;private float progress;
     public GroupAddButton(Action action){
-        add=action;Text="DeskPages groups";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=false;Size=new Size(34,34);Cursor=Cursors.Hand;
+        add=action;Text="DeskPages groups";StartPosition=FormStartPosition.Manual;FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=false;Size=new Size(34,34);Cursor=Cursors.Hand;
         animation.Tick+=delegate{float target=armed && ClientRectangle.Contains(PointToClient(Cursor.Position))?1:0;progress+=(target-progress)*0.35f;if(Math.Abs(target-progress)<0.015f){progress=target;animation.Stop();}Render();};
     }
     protected override bool ShowWithoutActivation{get{return true;}}
