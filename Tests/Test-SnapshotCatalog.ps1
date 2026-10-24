@@ -9,7 +9,7 @@ public static class CatalogFixture {
   int ui=Thread.CurrentThread.ManagedThreadId,reads=0;var changed=new System.Collections.Concurrent.ConcurrentQueue<int[]>();
   var values=new System.Collections.Concurrent.ConcurrentDictionary<string,string>();values["a"]="1";values["b"]="1";values["p"]="1";
   using(var c=new DeskPagesSnapshotCatalog(ids=>changed.Enqueue(ids),()=>{},path=>{Check(Thread.CurrentThread.ManagedThreadId!=ui,"Navigation thread read file metadata");Interlocked.Increment(ref reads);Thread.Sleep(5);return values[path];})){
-   c.SetPages(new[]{1,2,3});c.SetRows(new[]{"a|1|False","b|2|False","p|1|True"});Wait(()=>c.Digest(3).Length>0);
+   c.SetPages(new[]{1,2,3});c.SetRows(new[]{"a|1|False","b|2|False","p|1|True"});Wait(()=>c.Digest(3).Length>0 && c.Digest(1)!=c.Digest(3) && c.Digest(2)!=c.Digest(3));
    int[] startup;while(changed.TryDequeue(out startup)){}
    var first=c.Digest(1);var second=c.Digest(2);int count=reads;
    for(int i=0;i<10000;i++)Check(c.Digest(2)==second,"Digest changed without content change");Check(reads==count,"Digest lookup performed file I/O");
