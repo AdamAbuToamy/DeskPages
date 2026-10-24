@@ -44,7 +44,7 @@ internal sealed class GroupAddButton:Form {
     private readonly System.Windows.Forms.Timer animation=new System.Windows.Forms.Timer{Interval=15};
     private bool armed,hover;private float progress;
     public GroupAddButton(Action action){
-        add=action;Text="DeskPages groups";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;Size=new Size(34,34);Cursor=Cursors.Hand;
+        add=action;Text="DeskPages groups";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=false;Size=new Size(34,34);Cursor=Cursors.Hand;
         animation.Tick+=delegate{float target=armed && ClientRectangle.Contains(PointToClient(Cursor.Position))?1:0;progress+=(target-progress)*0.35f;if(Math.Abs(target-progress)<0.015f){progress=target;animation.Stop();}Render();};
     }
     protected override bool ShowWithoutActivation{get{return true;}}
@@ -58,9 +58,12 @@ internal sealed class GroupAddButton:Form {
     protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(e.Button!=MouseButtons.Left)return;armed=true;Capture=true;animation.Start();}
     protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);if(e.Button!=MouseButtons.Left)return;bool invoke=armed && ClientRectangle.Contains(e.Location);armed=false;Capture=false;animation.Start();if(invoke)add();}
     protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(!Capture && armed){armed=false;animation.Start();}}
-    public void KeepAbove(){if(IsHandleCreated && Visible)SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x13);}
-    public void Present(Rectangle bounds,bool exposed){if(!exposed || bounds.IsEmpty){Hide();return;}if(Bounds!=bounds)Bounds=bounds;if(!Visible)Show();}
-    [DllImport("user32.dll")]private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
+    public void Present(Rectangle bounds,bool exposed){Present(bounds,exposed,IntPtr.Zero);}
+    public void Present(Rectangle bounds,bool exposed,IntPtr taskbar){
+        if(!exposed || bounds.IsEmpty){Hide();return;}
+        if(Bounds!=bounds)Bounds=bounds;if(!Visible)Show();
+        if(taskbar!=IntPtr.Zero)TaskbarVisibility.Follow(Handle,taskbar);
+    }
     internal static Bitmap Surface(int width,int height,float pressed,bool over){
         var bitmap=new Bitmap(width,height,System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
         using(var g=Graphics.FromImage(bitmap)){

@@ -34,7 +34,7 @@ internal sealed class GroupDropDwell {
 internal static class GroupLayoutPolicy {
     public static bool ShellSurface(string windowClass){return windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="Shell_TrayWnd" || windowClass=="Shell_SecondaryTrayWnd";}
     public static Rectangle AddBounds(Rectangle taskbar,Rectangle weather,Rectangle area,Rectangle[] apps,bool accessible){
-        if(taskbar.IsEmpty || taskbar.Height<10 || !TaskbarVisibility.Exposed(true,taskbar,area,true))return Rectangle.Empty;
+        if(taskbar.IsEmpty || taskbar.Height<10 || !TaskbarVisibility.Exposed(true,taskbar,area))return Rectangle.Empty;
         int size=Math.Max(28,Math.Min(36,taskbar.Height-8)),x=weather.IsEmpty?area.Left+160:weather.Right+8;
         var result=new Rectangle(x,taskbar.Top+(taskbar.Height-size)/2,size,size);
         // UIA supplies all occupied controls, including Start/Search/Widgets and

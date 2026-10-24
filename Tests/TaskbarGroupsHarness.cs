@@ -93,8 +93,8 @@ public static class TaskbarGroupsHarness {
         var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
         Check(GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar left a floating '+'");
         Check(GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hidden taskbar left a floating '+'");
-        Check(!TaskbarVisibility.Exposed(true,bar,monitor,false) && !TaskbarVisibility.Exposed(false,bar,monitor,true),"Occluded or hidden taskbar exposed '+'");
-        Check(TaskbarVisibility.Exposed(true,bar,monitor,true),"Visible taskbar lost '+'");
+        Check(!TaskbarVisibility.Exposed(false,bar,monitor),"Hidden taskbar exposed '+'");
+        Check(TaskbarVisibility.Exposed(true,bar,monitor),"Visible taskbar lost '+'");
         var moving=GroupLayoutPolicy.AddBounds(new Rectangle(0,1042,1920,48),new Rectangle(0,1042,120,48),monitor,new Rectangle[0],true);
         Check(moving.Y==GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Y+10,"Button was clamped instead of following native bar motion");
         var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
@@ -182,20 +182,28 @@ public static class TaskbarGroupsHarness {
     private static void TaskbarVisibilityFixture(){
         var area=Screen.PrimaryScreen.WorkingArea;var monitor=new Rectangle(area.Left+20,area.Top+20,Math.Min(520,area.Width-40),300);
         using(var bar=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=new Rectangle(monitor.Left,monitor.Bottom-48,monitor.Width,48)})
-        using(var fullscreen=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=monitor}){
-            bar.Show();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Exposed owned taskbar fixture was hidden");
-            fullscreen.Show();fullscreen.BringToFront();Application.DoEvents();
-            Check(WindowShell.IsWindowVisible(bar.Handle) && !TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Visible-style taskbar covered by a fullscreen fixture still exposed '+'");
-            Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor,h=>h==fullscreen.Handle),"Trusted Start/Search backdrop hid an exposed taskbar");
-            bar.Hide();Application.DoEvents();Check(!TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor,h=>true),"Shell backdrop resurrected a hidden taskbar");bar.Show();fullscreen.BringToFront();Application.DoEvents();
-            Check(!TaskbarVisibility.ShellOverlay("Windows.UI.Core.CoreWindow",@"C:\Users\Test\SearchHost.exe",@"C:\Windows"),"Untrusted lookalike SearchHost accepted");
-            Check(!TaskbarVisibility.ShellOverlay("CabinetWClass",@"C:\Windows\explorer.exe",@"C:\Windows"),"Fullscreen File Explorer accepted as Shell backdrop");
-            foreach(var host in new[]{"StartMenuExperienceHost.exe","SearchHost.exe","SearchApp.exe","SearchUI.exe","ShellExperienceHost.exe"})
-                Check(TaskbarVisibility.ShellOverlay("Windows.UI.Core.CoreWindow",@"C:\Windows\SystemApps\ShellPackage\"+host,@"C:\Windows"),"Built-in Shell host rejected: "+host);
-            fullscreen.Hide();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Taskbar reappearance did not restore '+' eligibility");
-            bar.Bounds=new Rectangle(monitor.Left,monitor.Bottom-1,monitor.Width,48);Application.DoEvents();Check(!TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Auto-hidden taskbar strip exposed '+'");
+        using(var cover=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=monitor})
+        using(var button=new GroupAddButton(delegate{})){
+            Action sync=delegate{var box=new Rectangle(bar.Left+40,bar.Top+7,34,34);button.Present(box,TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),bar.Handle);Application.DoEvents();};
+            bar.Show();Application.DoEvents();sync();var point=new Point(button.Left+17,button.Top+17);
+            Check(button.Visible && WindowShell.WindowFromPoint(point)==button.Handle,"Visible taskbar did not expose its attached button");
+            cover.Opacity=0.15;cover.Show();cover.BringToFront();Application.DoEvents();
+            Check(WindowShell.WindowFromPoint(point)==cover.Handle,"Backdrop fixture did not intercept the old hit test");
+            sync();Check(button.Visible && TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Unknown transparent Start/Search-style backdrop hid '+'");
+            Check(WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2)==cover.Handle,"Button jumped above the backdrop instead of following the bar");
+            cover.Opacity=1;Application.DoEvents();sync();
+            Check(WindowShell.WindowFromPoint(point)==cover.Handle,"Button floated over fullscreen while the bar was covered");
+            bar.BringToFront();Application.DoEvents();sync();
+            Check(WindowShell.WindowFromPoint(point)==button.Handle,"Revealing taskbar did not reveal '+' with it");
+            bar.Hide();Application.DoEvents();sync();Check(!button.Visible,"Hidden taskbar left '+' visible");
+            bar.Show();bar.TopMost=false;Application.DoEvents();sync();
+            Check((GetWindowLongPtrW(button.Handle,-20).ToInt64()&8)==0,"Button stayed topmost after the bar left the topmost band");
+            cover.Hide();bar.TopMost=true;bar.BringToFront();Application.DoEvents();sync();
+            Check((GetWindowLongPtrW(button.Handle,-20).ToInt64()&8)!=0 && WindowShell.WindowFromPoint(point)==button.Handle,"Button failed to follow the bar into its topmost band");
+            int y=button.Top;bar.Top+=10;sync();Check(button.Top==y+10,"Button did not follow taskbar slide coordinates");
+            bar.Bounds=new Rectangle(monitor.Left,monitor.Bottom-1,monitor.Width,48);sync();Check(!button.Visible,"Auto-hidden strip left '+' visible");
         }
-        Console.WriteLine("PASS: native taskbar exposure follows owned-window fullscreen occlusion, Start/Search backdrop, hidden-bar precedence, reappearance and auto-hide strip; real Shell taskbar configuration unchanged.");
+        Console.WriteLine("PASS: real layered '+' follows native taskbar geometry and Z-order; unknown transparent backdrop does not hide it; fullscreen covers both; bar reveal restores both; topmost changes and auto-hide follow together. Real Shell configuration unchanged.");
     }
     private static void HookOwnershipFixture(){
         var original=Cursor.Position;

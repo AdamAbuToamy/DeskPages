@@ -28,7 +28,7 @@ internal sealed class GroupController:ApplicationContext {
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
     private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
-    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastRaise,lastWindowRead;
+    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastWindowRead;
     private readonly GroupWindowEvents windowEvents=new GroupWindowEvents();
     private long refreshRevision=1,seenRefreshRevision,seenWindowRevision,resolvedWindowRevision,lastGeometryRead;private bool pointerOnBar,wasOnBar;
     private string resolvedButtons="";
@@ -74,7 +74,6 @@ internal sealed class GroupController:ApplicationContext {
             if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
             bool interacting=pointerOnBar || captured!=null || drag.Length>0;
             bool dragging=captured!=null || drag.Length>0 || (held && pointerOnBar);
-            if(Now-lastRaise>=(interacting?250:1000)){lastRaise=Now;plus.KeepAbove();}
             if(Now-lastGeometryRead>=500){lastGeometryRead=Now;var bounds=TaskbarAccess.ReadBounds();if(bounds.Handle!=snapshot.Handle || bounds.Bounds!=snapshot.Bounds)RefreshSoon();}
             bool changed=seenRefreshRevision!=Interlocked.Read(ref refreshRevision) || seenWindowRevision!=windowEvents.Revision;
             if(GroupRefreshPolicy.Due(Now,lastRead,changed,interacting,dragging) && Interlocked.CompareExchange(ref readBusy,1,0)==0){
@@ -199,7 +198,7 @@ internal sealed class GroupController:ApplicationContext {
         var weather=snapshot.Weather;if(!weather.IsEmpty)weather.Offset(dx,dy);
         var occupied=dx==0 && dy==0?snapshot.Occupied:snapshot.Occupied.Select(r=>new Rectangle(r.Left+dx,r.Top+dy,r.Width,r.Height)).ToArray();
         var bounds=GroupLayoutPolicy.AddBounds(bar,weather,area,occupied,snapshot.Accessible);
-        plus.Present(bounds,true);
+        plus.Present(bounds,true,live.Handle);
     }
     private void Assign(LiveGroup group,GroupWindow[] items){
         if(guardian.HasExited)throw new InvalidOperationException("Recovery is unavailable; no windows were grouped");
