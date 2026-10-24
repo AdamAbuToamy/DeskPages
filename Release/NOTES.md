@@ -1,5 +1,7 @@
 # DeskPages 0.8.37 trial
 
+The taskbar + button follows native taskbar exposure and slide geometry. It hides when the bar is auto-hidden, unavailable or covered by a fullscreen app, and reappears with the taskbar. No synthetic visible-bar fallback is used while the real bar is hidden. Native owned-window occlusion/reappearance and auto-hide fixtures cover the visibility gate.
+
 Cached navigation reads immutable resident RAM images only. Startup and neighbouring pages preload from the protected disk store on a separate worker. Idle screenshots, DPAPI, compression, decompression and persistence no longer hold navigation behind disk locks. Current/next/previous pages receive eviction protection within a RAM budget of 1/32 physical memory (128-512 MiB cap); images have no timed expiry. Persistence backlog is separately bounded and reported.
 
 Ordinary battery/power-status notifications and graphics-device recreation no longer discard unchanged CPU snapshots. Content fingerprints invalidate only affected pages; duplicate file notifications preserve images. Desktop file metadata is collected asynchronously and compared with persisted image keys after restart. Genuine display/theme/session changes retain scene invalidation.

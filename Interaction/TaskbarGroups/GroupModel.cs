@@ -34,7 +34,7 @@ internal sealed class GroupDropDwell {
 internal static class GroupLayoutPolicy {
     public static bool ShellSurface(string windowClass){return windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="Shell_TrayWnd" || windowClass=="Shell_SecondaryTrayWnd";}
     public static Rectangle AddBounds(Rectangle taskbar,Rectangle weather,Rectangle area,Rectangle[] apps,bool accessible){
-        if(taskbar.IsEmpty || taskbar.Height<10 || taskbar.Top>=area.Bottom-2 || taskbar.Bottom<=area.Top+2){taskbar=new Rectangle(area.Left,area.Bottom-48,area.Width,48);weather=Rectangle.Empty;accessible=false;}
+        if(taskbar.IsEmpty || taskbar.Height<10 || !TaskbarVisibility.Exposed(true,taskbar,area,true))return Rectangle.Empty;
         int size=Math.Max(28,Math.Min(36,taskbar.Height-8)),x=weather.IsEmpty?area.Left+160:weather.Right+8;
         var result=new Rectangle(x,taskbar.Top+(taskbar.Height-size)/2,size,size);
         // UIA supplies all occupied controls, including Start/Search/Widgets and
@@ -51,7 +51,8 @@ internal static class GroupLayoutPolicy {
         }
         if(!accessible)result.Y=taskbar.Top-size-6;
         result.X=Math.Max(area.Left+4,Math.Min(result.X,area.Right-size-4));
-        result.Y=Math.Max(area.Top+4,Math.Min(result.Y,area.Bottom-size-4));
+        // Preserve the bar's native slide offset. Windows clips the part of
+        // the layered button which moves outside the physical monitor.
         return result;
     }
 

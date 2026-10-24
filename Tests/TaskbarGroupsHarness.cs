@@ -91,8 +91,12 @@ public static class TaskbarGroupsHarness {
         Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,151,begin,end),"Aborted native drag blocked another press");gate.Abort(end);
         source.Windows=new GroupWindow[0];Check(inputMap.SourceAt(new Point(120,20),160)!=null,"Unresolved metadata blocked normal native dragging");
         var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
-        Check(!GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar hid persistent '+'");
-        Check(!GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hide/fullscreen hid persistent '+'");
+        Check(GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar left a floating '+'");
+        Check(GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hidden taskbar left a floating '+'");
+        Check(!TaskbarVisibility.Exposed(true,bar,monitor,false) && !TaskbarVisibility.Exposed(false,bar,monitor,true),"Occluded or hidden taskbar exposed '+'");
+        Check(TaskbarVisibility.Exposed(true,bar,monitor,true),"Visible taskbar lost '+'");
+        var moving=GroupLayoutPolicy.AddBounds(new Rectangle(0,1042,1920,48),new Rectangle(0,1042,120,48),monitor,new Rectangle[0],true);
+        Check(moving.Y==GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Y+10,"Button was clamped instead of following native bar motion");
         var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
         Check(!fallback.IsEmpty && fallback.Bottom<bar.Top,"Native taskbar fallback hid '+' or covered unknown app buttons before UIA was ready");
         Check(GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Left==128,"Weather-adjacent placement changed");
@@ -104,6 +108,7 @@ public static class TaskbarGroupsHarness {
         Check(GroupLayoutPolicy.ShellSurface("Progman") && GroupLayoutPolicy.ShellSurface("WorkerW") && GroupLayoutPolicy.ShellSurface("Shell_TrayWnd") && !GroupLayoutPolicy.ShellSurface("CabinetWClass"),"Explorer taskbar grouping included a desktop/taskbar Shell surface");
     }
     private static void Native(){
+        TaskbarVisibilityFixture();
         var group=new GroupModel(Guid.NewGuid().ToString("N")).Add();
         int opens=0;
         using(var anchor=new GroupAnchor(group,delegate{opens++;}))using(var taskbar=new GroupTaskbar()){
@@ -131,6 +136,8 @@ public static class TaskbarGroupsHarness {
         PopupLifecycle();
         int clicks=0;
         using(var button=new GroupAddButton(delegate{clicks++;})){
+            button.Present(new Rectangle(150,150,36,36),true);Application.DoEvents();Check(button.Visible,"Visible taskbar did not show '+'");
+            button.Present(Rectangle.Empty,false);Application.DoEvents();Check(!button.Visible,"Hidden taskbar left '+' visible");
             button.Show();Application.DoEvents();
             var down=typeof(GroupAddButton).GetMethod("OnMouseDown",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
             var up=typeof(GroupAddButton).GetMethod("OnMouseUp",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
@@ -171,6 +178,18 @@ public static class TaskbarGroupsHarness {
             if(recovery!=null){recovery.RestoreAll();Directory.Delete(recovery.Folder,true);}
             if(child!=null){if(!child.HasExited){PostMessageW(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);if(!child.WaitForExit(5000))child.Kill();}child.Dispose();}
         }
+    }
+    private static void TaskbarVisibilityFixture(){
+        var area=Screen.PrimaryScreen.WorkingArea;var monitor=new Rectangle(area.Left+20,area.Top+20,Math.Min(520,area.Width-40),300);
+        using(var bar=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=new Rectangle(monitor.Left,monitor.Bottom-48,monitor.Width,48)})
+        using(var fullscreen=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=monitor}){
+            bar.Show();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Exposed owned taskbar fixture was hidden");
+            fullscreen.Show();fullscreen.BringToFront();Application.DoEvents();
+            Check(WindowShell.IsWindowVisible(bar.Handle) && !TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Visible-style taskbar covered by a fullscreen fixture still exposed '+'");
+            fullscreen.Hide();Application.DoEvents();Check(TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Taskbar reappearance did not restore '+' eligibility");
+            bar.Bounds=new Rectangle(monitor.Left,monitor.Bottom-1,monitor.Width,48);Application.DoEvents();Check(!TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Auto-hidden taskbar strip exposed '+'");
+        }
+        Console.WriteLine("PASS: native taskbar exposure follows owned-window fullscreen occlusion, reappearance and auto-hide strip; real Shell taskbar configuration unchanged.");
     }
     private static void HookOwnershipFixture(){
         var original=Cursor.Position;

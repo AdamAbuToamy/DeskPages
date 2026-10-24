@@ -69,6 +69,7 @@ internal sealed class GroupController:ApplicationContext {
         if(disposed)return;
         if(stop.WaitOne(0)){ExitThread();return;}
         try{
+            PlacePlus();
             var pointer=Cursor.Position;pointerOnBar=snapshot.Bounds.Contains(pointer);
             if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
             bool interacting=pointerOnBar || captured!=null || drag.Length>0;
@@ -191,11 +192,14 @@ internal sealed class GroupController:ApplicationContext {
         picker.FormClosed+=delegate{picker=null;};picker.Show();
     }
     private void PlacePlus(){
-        Rectangle area=Screen.PrimaryScreen.Bounds;
-        var bar=snapshot.Bounds;
-        if(!bar.IsEmpty && bar.Height>=10)area=Screen.FromRectangle(bar).Bounds;
-        var bounds=GroupLayoutPolicy.AddBounds(bar,snapshot.Weather,area,snapshot.Occupied,snapshot.Accessible);
-        plus.Bounds=bounds;if(!plus.Visible)plus.Show();
+        var live=TaskbarAccess.ReadBounds();var bar=live.Bounds;
+        Rectangle area=bar.IsEmpty?Screen.PrimaryScreen.Bounds:Screen.FromRectangle(bar).Bounds;
+        if(!TaskbarVisibility.Read(live.Handle,bar,area)){plus.Present(Rectangle.Empty,false);cue.Hide();return;}
+        int dx=bar.Left-snapshot.Bounds.Left,dy=bar.Top-snapshot.Bounds.Top;
+        var weather=snapshot.Weather;if(!weather.IsEmpty)weather.Offset(dx,dy);
+        var occupied=dx==0 && dy==0?snapshot.Occupied:snapshot.Occupied.Select(r=>new Rectangle(r.Left+dx,r.Top+dy,r.Width,r.Height)).ToArray();
+        var bounds=GroupLayoutPolicy.AddBounds(bar,weather,area,occupied,snapshot.Accessible);
+        plus.Present(bounds,true);
     }
     private void Assign(LiveGroup group,GroupWindow[] items){
         if(guardian.HasExited)throw new InvalidOperationException("Recovery is unavailable; no windows were grouped");

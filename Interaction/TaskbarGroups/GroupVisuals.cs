@@ -59,6 +59,7 @@ internal sealed class GroupAddButton:Form {
     protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);if(e.Button!=MouseButtons.Left)return;bool invoke=armed && ClientRectangle.Contains(e.Location);armed=false;Capture=false;animation.Start();if(invoke)add();}
     protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(!Capture && armed){armed=false;animation.Start();}}
     public void KeepAbove(){if(IsHandleCreated && Visible)SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x13);}
+    public void Present(Rectangle bounds,bool exposed){if(!exposed || bounds.IsEmpty){Hide();return;}if(Bounds!=bounds)Bounds=bounds;if(!Visible)Show();}
     [DllImport("user32.dll")]private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
     internal static Bitmap Surface(int width,int height,float pressed,bool over){
         var bitmap=new Bitmap(width,height,System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
