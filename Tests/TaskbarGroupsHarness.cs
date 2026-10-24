@@ -197,6 +197,8 @@ public static class TaskbarGroupsHarness {
             var barPoint=new Point(bar.Left+10,bar.Top+15);
             Check(WindowShell.WindowFromPoint(barPoint)==bar.Handle,"Fixture did not reveal the native bar: "+StackState(bar.Handle,button.Handle,cover.Handle,point));
             sync();
+            var reveal=Stopwatch.StartNew();
+            while(WindowShell.WindowFromPoint(point)!=button.Handle && reveal.ElapsedMilliseconds<1000){Application.DoEvents();System.Threading.Thread.Sleep(10);}
             Check(WindowShell.WindowFromPoint(point)==button.Handle,"Revealing taskbar did not reveal '+' with it: "+StackState(bar.Handle,button.Handle,cover.Handle,point));
             bar.Hide();Application.DoEvents();sync();Check(!button.Visible,"Hidden taskbar left '+' visible");
             bar.Show();bar.TopMost=false;Application.DoEvents();sync();
@@ -209,7 +211,7 @@ public static class TaskbarGroupsHarness {
         Console.WriteLine("PASS: real layered '+' follows native taskbar geometry and Z-order; unknown transparent backdrop does not hide it; fullscreen covers both; bar reveal restores both; topmost changes and auto-hide follow together. Real Shell configuration unchanged.");
     }
     private static string StackState(IntPtr bar,IntPtr button,IntPtr cover,Point point){
-        return "bar="+bar+" button="+button+" cover="+cover+" hit="+WindowShell.WindowFromPoint(point)+" prevBar="+FixtureGetWindow(bar,3)+" prevButton="+FixtureGetWindow(button,3)+" prevCover="+FixtureGetWindow(cover,3)+" buttonStyle="+GetWindowLongPtrW(button,-20).ToInt64().ToString("X");
+        return "bar="+bar+" button="+button+" cover="+cover+" hit="+WindowShell.WindowFromPoint(point)+" prevBar="+FixtureGetWindow(bar,3)+" prevButton="+FixtureGetWindow(button,3)+" prevCover="+FixtureGetWindow(cover,3)+" buttonStyle="+GetWindowLongPtrW(button,-20).ToInt64().ToString("X")+" point="+point+" barBounds="+WindowShell.Bounds(bar)+" buttonBounds="+WindowShell.Bounds(button)+" coverBounds="+WindowShell.Bounds(cover)+" centerHit="+WindowShell.WindowFromPoint(new Point(WindowShell.Bounds(button).Left+17,WindowShell.Bounds(button).Top+17));
     }
     [DllImport("user32.dll",EntryPoint="GetWindow")]private static extern IntPtr FixtureGetWindow(IntPtr hwnd,uint command);
     private static void HookOwnershipFixture(){
