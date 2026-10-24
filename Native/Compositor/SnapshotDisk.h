@@ -51,7 +51,7 @@ class SnapshotDisk {
   }
   SetFileAttributesW(path.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM|FILE_ATTRIBUTE_READONLY);h=CreateFileW(path.c_str(),GENERIC_READ,0,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);if(h==INVALID_HANDLE_VALUE)throw std::runtime_error("Lock snapshot failed");files[page]={h,f.key,f.scope};++writes;
  }
- void Run(){for(;;){std::shared_ptr<Frame> f;{std::unique_lock<std::mutex> lock(mutex);wake.wait(lock,[this]{return stopping||!pending.empty();});if(stopping&&pending.empty())break;auto it=pending.begin();f=std::make_shared<Frame>(std::move(it->second));writing=f;pending.erase(it);wake.notify_all();}try{Write(*f);}catch(...){++errors;} {std::lock_guard<std::mutex> lock(mutex);if(writing==f)writing.reset();wake.notify_all();}}}
+ void Run(){SetThreadPriority(GetCurrentThread(),THREAD_MODE_BACKGROUND_BEGIN);for(;;){std::shared_ptr<Frame> f;{std::unique_lock<std::mutex> lock(mutex);wake.wait(lock,[this]{return stopping||!pending.empty();});if(stopping&&pending.empty())break;auto it=pending.begin();f=std::make_shared<Frame>(std::move(it->second));writing=f;pending.erase(it);wake.notify_all();}try{Write(*f);}catch(...){++errors;} {std::lock_guard<std::mutex> lock(mutex);if(writing==f)writing.reset();wake.notify_all();}}}
 public:
  std::atomic<uint64_t> hits{0},misses{0},writes{0},errors{0};
  ~SnapshotDisk(){Stop();}

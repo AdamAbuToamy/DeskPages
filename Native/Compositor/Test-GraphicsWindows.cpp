@@ -21,6 +21,11 @@ struct GraphicsFixture {
   int transitions=0,samples=0;
   try{
    Renderer renderer;renderer.Prepare();
+   // Rebuild GPU resources while retaining an independent resident CPU image.
+   auto retained=std::make_shared<const std::vector<unsigned char>>(16,42);auto generation=snapshotEpoch.load();
+   residentSnapshots.PutShared(L"1:gpu-reset-fixture",retained,generation,GetTickCount64());
+   renderer.root.reset();renderer.Prepare();
+   WinCheck(snapshotEpoch.load()==generation && residentSnapshots.GetShared(L"1:gpu-reset-fixture",generation,GetTickCount64())==retained,"GPU rebuild discarded resident CPU snapshots");
    const auto handles=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
    for(int repeat=0;repeat<2;repeat++)for(int direction:{-1,1})for(int delay:{0,100,650})for(bool changed:{false,true}){
     Job begin;begin.op=Op::Begin;begin.left=30;begin.top=30;begin.width=480;begin.height=260;

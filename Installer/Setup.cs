@@ -9,7 +9,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
-[assembly:AssemblyVersion("0.8.36.0")]
+[assembly:AssemblyVersion("0.8.37.0")]
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
 [assembly:AssemblyCopyright("Copyright © 2026 Adam Abu Toamy")]
@@ -34,7 +34,7 @@ internal static class Setup {
             int build;if(version==null || !int.TryParse(Convert.ToString(version.GetValue("CurrentBuildNumber")),out build) || build<22000 || !Environment.Is64BitProcess)throw new PlatformNotSupportedException("DeskPages requires Windows 11 x64.");
         }
         string log=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","setup.log");Directory.CreateDirectory(Path.GetDirectoryName(log));
-        File.WriteAllText(log,"DeskPages setup 0.8.36\r\n");string currentEntry="Package validation";
+        File.WriteAllText(log,"DeskPages setup 0.8.37\r\n");string currentEntry="Package validation";
         status("Checking the installation package…");
         byte[] payload;
         using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("DeskPages.Payload"))using(var m=new MemoryStream()){s.CopyTo(m);payload=m.ToArray();}
@@ -75,7 +75,7 @@ internal static class Setup {
             }
 
             using(var key=Registry.LocalMachine.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\DeskPages-"+sid)){
-                key.SetValue("DisplayName","DeskPages");key.SetValue("Publisher","Adam Abu Toamy");key.SetValue("DisplayVersion","0.8.36");key.SetValue("DisplayIcon",Path.Combine(target,"Assets","DeskPages.ico"));key.SetValue("InstallLocation",target);
+                key.SetValue("DisplayName","DeskPages");key.SetValue("Publisher","Adam Abu Toamy");key.SetValue("DisplayVersion","0.8.37");key.SetValue("DisplayIcon",Path.Combine(target,"Assets","DeskPages.ico"));key.SetValue("InstallLocation",target);
                 key.SetValue("UninstallString","\""+info.FileName+"\" -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File \""+Path.Combine(target,"Uninstall-Startup.ps1")+"\"");key.SetValue("NoModify",1);key.SetValue("NoRepair",1);
             }
             status("DeskPages is running. Finishing installation…");

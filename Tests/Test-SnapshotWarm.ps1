@@ -7,6 +7,7 @@ public static class DeskPagesHost {
  public static int Captures;
  public static bool NeedsSnapshotCapture(string key){return false;}
  public static void SnapshotSceneContext(string context){}
+ public static void TrackSnapshotItems(string[] rows){}
  public static void WarmSnapshot(string key){if(key!="2:SAME")throw new System.Exception("Wrong key");Captures++;}
 }
 '@

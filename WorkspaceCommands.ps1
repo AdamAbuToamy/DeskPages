@@ -67,11 +67,17 @@ function Convert-DpMonitorLayouts {param([object[]]$Layouts,[object[]]$OldScreen
     }
 }
 function Sync-DpMonitorProfile {
+    param([switch]$VerifyGeometry)
     if($script:DpSuspended -or $script:DpEdgeDrag -or $script:DpMonitorSyncBusy){return}
     if(Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml')){return}
-    $signal=Get-DpDisplaySignal;$key=Get-DpMonitorKey;$w=$script:DpState.Workspace
+    $signal=Get-DpDisplaySignal;$w=$script:DpState.Workspace
+    # Native display revision is the navigation fence. Repeated geometry/COM
+    # reads belong to the periodic verification path, not every source read.
+    if($script:hostReady -and -not $VerifyGeometry -and $null -ne $script:DpMonitorRevision -and $signal[0] -eq $script:DpMonitorRevision -and $script:DpMonitorPrimaryOnly -eq [bool]$w.PrimaryOnly){return}
+    $key=Get-DpMonitorKey
     if($null -eq $script:DpMonitorRevision){
         $script:DpMonitorRevision=$signal[0]
+        $script:DpMonitorPrimaryOnly=[bool]$w.PrimaryOnly
         if($w.PrimaryOnly){Enable-DpMonitorProtection $signal}
     }
     if($key -eq $w.MonitorKey -and $signal[0] -eq $script:DpMonitorRevision){return}
@@ -101,6 +107,7 @@ function Sync-DpMonitorProfile {
     try{Invoke-DpWorkspaceCommit -Operation 'Display configuration changed' -After $after -Before $before -Record $false}
     finally{$script:DpMonitorSyncBusy=$false}
     $script:DpMonitorRevision=$signal[0]
+    $script:DpMonitorPrimaryOnly=[bool]$w.PrimaryOnly
     if($w.PrimaryOnly){Enable-DpMonitorProtection $signal}else{$script:DpMonitorProtection=$null;Set-DpMonitorWatch $false}
     Write-DpAtomicXml $profilePath ([PSCustomObject]@{Screens=$screens;Layouts=$after.Layouts})
 }

@@ -20,6 +20,9 @@
 #include "TransitionMath.h"
 #include "FrameGate.h"
 #include "SnapshotCache.h"
+#include "SnapshotPipeline.h"
+#include "ThreadService.h"
+#include "SnapshotScenePolicy.h"
 #include "SnapshotDisk.h"
 #include "PreviewGate.h"
 #include "DragCapturePolicy.h"
@@ -50,6 +53,7 @@ struct Job {
     std::wstring sourceKey,targetKey;
     std::vector<deskpages::Region> regions;
     std::vector<unsigned char> pixels,targetPixels;bool accepted=true,ok=false;
+    deskpages::SnapshotPipeline::Image sourceFrame,targetFrame;
     ~Job(){if(done)CloseHandle(done);}
     void release(){if(refs.fetch_sub(1)==1)delete this;}
 };
@@ -63,6 +67,25 @@ std::atomic<int> visible{0},playing{0},motionEnded{0};
 std::atomic<unsigned int> captureSample{0};
 std::atomic<uint64_t> snapshotEpoch{1},snapshotRevision{1},snapshotBytes{0},sourceHits{0},targetHits{0},snapshotMisses{0},captureCalls{0},sourceMs{0},targetMs{0},warmMs{0};
 deskpages::SnapshotDisk diskSnapshots;
+size_t ResidentBudget(){MEMORYSTATUSEX m{};m.dwLength=sizeof(m);return GlobalMemoryStatusEx(&m)?size_t(std::max<uint64_t>(128ull<<20,std::min<uint64_t>(512ull<<20,m.ullTotalPhys/32))):128ull<<20;}
+deskpages::SnapshotCache residentSnapshots(ResidentBudget(),99);
+BOOL CALLBACK FindSnapshotIcons(HWND window,LPARAM data){HWND view=FindWindowExW(window,nullptr,L"SHELLDLL_DefView",nullptr);HWND icons=view?FindWindowExW(view,nullptr,L"SysListView32",nullptr):nullptr;if(icons){*reinterpret_cast<HWND*>(data)=icons;return FALSE;}return TRUE;}
+deskpages::SnapshotPipeline::Image CaptureIdleImage(deskpages::SnapshotArea a){
+ if(visible.load())return {};
+ HWND icons=nullptr;FindSnapshotIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&icons));if(!icons)EnumWindows(FindSnapshotIcons,reinterpret_cast<LPARAM>(&icons));
+ HWND owner=GetAncestor(icons,GA_ROOT);wchar_t cls[64]{};GetClassNameW(owner,cls,64);
+ WinCheck(IsWindow(icons) && (std::wcscmp(cls,L"Progman")==0 || std::wcscmp(cls,L"WorkerW")==0),"Find idle desktop owner");
+ DWORD_PTR before=0,after=0;WinCheck(SendMessageTimeoutW(icons,0x1004,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,400,&before)!=0,"Read idle icon count");
+ Check(DwmFlush(),"Idle capture fence");++captureCalls;auto pixels=CaptureWindowPixels(owner,a.left,a.top,a.width,a.height);
+ WinCheck(SendMessageTimeoutW(icons,0x1004,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,400,&after)!=0 && before==after && !visible.load(),"Idle view changed during capture");
+ if(before && deskpages::UniformFrame(pixels))throw std::runtime_error("Idle desktop image is blank");
+ return std::make_shared<const std::vector<unsigned char>>(std::move(pixels));
+}
+deskpages::SnapshotPipeline snapshotPipeline(residentSnapshots,snapshotEpoch,[]{return GetTickCount64();},
+ [](std::wstring folder,std::wstring scope){diskSnapshots.Configure(folder,scope);},[](int page){return diskSnapshots.Known(page);},
+ [](const std::wstring& key,deskpages::SnapshotArea a)->deskpages::SnapshotPipeline::Image{std::vector<unsigned char> pixels;if(!diskSnapshots.Get(key,a.left,a.top,a.width,a.height,pixels))return {};return std::make_shared<const std::vector<unsigned char>>(std::move(pixels));},
+ [](const std::wstring& key,deskpages::SnapshotArea a,const std::vector<unsigned char>& pixels){diskSnapshots.Save(key,a.left,a.top,a.width,a.height,pixels);},CaptureIdleImage,
+ []{SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);});
 void Report(const std::string& value){AcquireSRWLockExclusive(&reportLock);report.assign(value.begin(),value.end());ReleaseSRWLockExclusive(&reportLock);}
 
 class Renderer {
@@ -71,11 +94,12 @@ class Renderer {
 #endif
     HWND hwnd=nullptr,desktopWindow=nullptr;
     bool desktopMode=false;
-    deskpages::SnapshotCache snapshots;
+    deskpages::SnapshotCache& snapshots=residentSnapshots;
     std::wstring incomingKey;
-    std::wstring FrameKey(const std::wstring& key)const {DWORD pid=0;GetWindowThreadProcessId(desktopWindow,&pid);return key.empty()?L"":key+L"|"+std::to_wstring(pid)+L"|"+std::to_wstring(left)+L","+std::to_wstring(top)+L","+std::to_wstring(width)+L","+std::to_wstring(height);}
-    bool GetFrame(const std::wstring& key,std::vector<unsigned char>& pixels){bool hit=!key.empty() && snapshots.Get(FrameKey(key),snapshotEpoch.load(),GetTickCount64(),pixels);if(!hit && !key.empty()){auto epoch=snapshotEpoch.load();hit=diskSnapshots.Get(key,left,top,width,height,pixels);if(hit && epoch==snapshotEpoch.load())snapshots.Put(FrameKey(key),pixels,epoch,GetTickCount64());else if(hit)hit=false;}snapshotBytes=snapshots.Bytes();return hit;}
-    void KeepFrame(const std::wstring& key,const std::vector<unsigned char>& pixels,uint64_t generation){if(!key.empty() && generation==snapshotEpoch.load()){auto frame=FrameKey(key);auto separator=key.find(L':');if(separator!=std::wstring::npos)snapshots.RemovePrefix(key.substr(0,separator+1),frame);snapshots.Put(frame,pixels,generation,GetTickCount64());diskSnapshots.Save(key,left,top,width,height,pixels);}snapshotBytes=snapshots.Bytes();}
+    std::wstring FrameKey(const std::wstring& key)const {return deskpages::ResidentKey(key,{left,top,width,height});}
+    deskpages::SnapshotPipeline::Image GetSharedFrame(const std::wstring& key){return key.empty()?deskpages::SnapshotPipeline::Image{}:snapshots.GetShared(FrameKey(key),snapshotEpoch.load(),GetTickCount64());}
+    bool GetFrame(const std::wstring& key,std::vector<unsigned char>& pixels){auto frame=GetSharedFrame(key);if(!frame)return false;pixels=*frame;return true;}
+    void KeepFrame(const std::wstring& key,const std::vector<unsigned char>& pixels,uint64_t generation){if(!key.empty())snapshotPipeline.Keep(key,{left,top,width,height},std::make_shared<const std::vector<unsigned char>>(pixels),generation);snapshotBytes=snapshots.Bytes();}
     void LocateDesktop(){
         iconWindow=nullptr;FindIcons(FindWindowW(L"Progman",nullptr),reinterpret_cast<LPARAM>(&iconWindow));
         if(!iconWindow)EnumWindows(FindIcons,reinterpret_cast<LPARAM>(&iconWindow));
@@ -139,7 +163,7 @@ class Renderer {
                 catch(...){self->Abort();Report("Native timer callback failed");}
                 return 0;
             }
-            if(message==WM_DISPLAYCHANGE || message==WM_DPICHANGED || message==WM_QUERYENDSESSION || (message==WM_SETTINGCHANGE && wp==SPI_SETDESKWALLPAPER) || message==WM_THEMECHANGED || message==WM_DWMCOLORIZATIONCOLORCHANGED || message==WM_POWERBROADCAST){
+            if(message==WM_DISPLAYCHANGE || message==WM_DPICHANGED || message==WM_QUERYENDSESSION || (message==WM_SETTINGCHANGE && wp==SPI_SETDESKWALLPAPER) || message==WM_THEMECHANGED || message==WM_DWMCOLORIZATIONCOLORCHANGED || (message==WM_POWERBROADCAST && deskpages::ScenePowerEvent(wp))){
                 ++snapshotEpoch;++snapshotRevision;self->ClearSnapshots();
                 self->Abort();Report("Transition cancelled: display/session configuration changed");return message==WM_QUERYENDSESSION?TRUE:0;
             }
@@ -248,7 +272,8 @@ public:
         BOOL valid=FALSE;
         if(composition.p && target.p && root.p && hwnd &&
             SUCCEEDED(composition->CheckDeviceState(&valid)) && valid)return;
-        ClearSnapshots();++snapshotEpoch;++snapshotRevision;
+        // A D3D device rebuild does not invalidate CPU pixels or disk images.
+        // Scene/display events own raster invalidation independently of GPU life.
         if(hwnd){DestroyWindow(hwnd);hwnd=nullptr;}
         target.reset();root.reset();composition.reset();dc.reset();d2d.reset();d2dFactory.reset();dxgi.reset();d3dContext.reset();d3d.reset();
         D3D_FEATURE_LEVEL level;
@@ -310,7 +335,7 @@ public:
         PlaceCover(SWP_NOACTIVATE|SWP_HIDEWINDOW);
         const D2D_RECT_F clip{0,0,static_cast<float>(width),static_cast<float>(height)};
         Check(root->SetClip(clip),"Clip page");
-        Upload(oldSurface,job.pixels);
+        Upload(oldSurface,job.sourceFrame?*job.sourceFrame:job.pixels);
         auto regions=job.regions;
         if(regions.empty())regions.push_back({0,0,width,height,true});
         WinCheck(deskpages::ValidRegions(regions,width,height),"Validate monitor animation regions");
@@ -356,10 +381,10 @@ public:
         auto clock=GetTickCount64();auto generation=snapshotEpoch.load();
         capturedTarget=job.pixels.empty();settleMs=0;
         std::vector<unsigned char> pixels;
-        if(preview.active){pixels=std::move(job.targetPixels);capturedTarget=false;}
+        if(preview.active){if(!job.targetFrame)pixels=std::move(job.targetPixels);capturedTarget=false;}
         else if(capturedTarget && GetFrame(incomingKey,pixels) && generation==snapshotEpoch.load()){PaintTarget();VerifyIconCount();if(generation!=snapshotEpoch.load())pixels=CaptureTarget(&job);else ++targetHits;}
         else {if(capturedTarget && !incomingKey.empty())++snapshotMisses;pixels=capturedTarget?CaptureTarget(&job):job.pixels;if(capturedTarget)KeepFrame(incomingKey,pixels,generation);}
-        Upload(newSurface,pixels);
+        Upload(newSurface,job.targetFrame?*job.targetFrame:pixels);
         if(job.cancelled){Abort();return;}
         for(auto& view:monitors){
             const auto& r=view->region;
@@ -388,7 +413,8 @@ public:
         Abort();Prepare();left=job.left;top=job.top;width=job.width;height=job.height;LocateDesktop();
         auto generation=snapshotEpoch.load();auto revision=snapshotRevision.load();
         // Cache-only: a miss never starts capture or changes the desktop.
-        if(!GetFrame(job.sourceKey,job.pixels) || !GetFrame(job.targetKey,job.targetPixels) || generation!=snapshotEpoch.load()){++snapshotMisses;return false;}
+        job.sourceFrame=GetSharedFrame(job.sourceKey);job.targetFrame=GetSharedFrame(job.targetKey);
+        if(!job.sourceFrame || !job.targetFrame || generation!=snapshotEpoch.load()){++snapshotMisses;Report(!job.sourceFrame?"Cached source not resident; cold path required":"Cached target not resident; cold path required");return false;}
         Begin(job);
         if(generation!=snapshotEpoch.load() || revision!=snapshotRevision.load()){Abort();return false;}
         ++sourceHits;++targetHits;Play(job);return true;
@@ -437,6 +463,7 @@ public:
     }
 };
 DWORD WINAPI Worker(void*) {
+    ForegroundServiceThread();
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     MSG msg;PeekMessageW(&msg,nullptr,WM_USER,WM_USER,PM_NOREMOVE);
@@ -551,10 +578,15 @@ __declspec(dllexport) int __cdecl DPPlay(const unsigned char* pixels,int width,i
         return Submit(job);
     }catch(...){if(job){job->release();job->release();}return 0;}
 }
-__declspec(dllexport) int __cdecl DPConfigureSnapshotStore(const wchar_t* folder,const wchar_t* scope){try{if(!folder||!scope)return 0;diskSnapshots.Configure(folder,scope);return 1;}catch(...){return 0;}}
-__declspec(dllexport) int __cdecl DPGetSavedSnapshotKey(int page,wchar_t* output,int count){try{if(!output||count<1)return 0;auto key=diskSnapshots.Known(page);if(key.empty()||key.size()>=size_t(count))return 0;std::memcpy(output,key.c_str(),(key.size()+1)*sizeof(wchar_t));return int(key.size());}catch(...){return 0;}}
+__declspec(dllexport) int __cdecl DPConfigureSnapshotStore(const wchar_t* folder,const wchar_t* scope){try{if(!folder||!scope)return 0;snapshotPipeline.Configure(folder,scope);return 1;}catch(...){return 0;}}
+__declspec(dllexport) int __cdecl DPGetSavedSnapshotKey(int page,wchar_t* output,int count){try{if(!output||count<1)return 0;auto key=snapshotPipeline.Known(page);if(key.empty()||key.size()>=size_t(count))return 0;std::memcpy(output,key.c_str(),(key.size()+1)*sizeof(wchar_t));return int(key.size());}catch(...){return 0;}}
+__declspec(dllexport) void __cdecl DPNotifyNavigation(){snapshotPipeline.Input();}
+__declspec(dllexport) void __cdecl DPPrimeSnapshots(const int* pages,int count,int l,int t,int w,int h){if(!pages||count<1||count>99||w<=0||h<=0)return;try{snapshotPipeline.Prime(std::vector<int>(pages,pages+count),{l,t,w,h});}catch(...){}}
+__declspec(dllexport) int __cdecl DPScheduleWarmSnapshot(const wchar_t* key,int l,int t,int w,int h){try{return key && w>0 && h>0 && uint64_t(w)*h<=40000000 && snapshotPipeline.Warm(key,{l,t,w,h});}catch(...){return 0;}}
+__declspec(dllexport) int __cdecl DPTakeWarmResult(){int value=snapshotPipeline.warmResult.load();return value==1?1:snapshotPipeline.warmResult.exchange(0);}
 __declspec(dllexport) void __cdecl DPInvalidateSnapshotPage(int page){
     if(page<=0)return;
+    snapshotPipeline.Invalidate(page);
     ++snapshotRevision;
     auto job=new(std::nothrow)Job;if(!job){++snapshotEpoch;++snapshotRevision;return;}
     job->op=Op::InvalidatePage;job->sourceKey=std::to_wstring(page)+L":";
@@ -563,7 +595,7 @@ __declspec(dllexport) void __cdecl DPInvalidateSnapshotPage(int page){
 }
 __declspec(dllexport) void __cdecl DPInvalidateSnapshots(){++snapshotEpoch;++snapshotRevision;}
 __declspec(dllexport) int __cdecl DPClearSnapshots(){++snapshotEpoch;++snapshotRevision;auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ClearSnapshots;return Submit(job);}
-__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return snapshotBytes.load();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();default:return 0;}}
+__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return residentSnapshots.Bytes();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();case 11:return residentSnapshots.Limit();case 12:return residentSnapshots.Count();case 13:return snapshotPipeline.preloads.load();case 14:return snapshotPipeline.captures.load();case 15:return snapshotPipeline.errors.load();case 16:return snapshotPipeline.deferredWrites.load();default:return 0;}}
 __declspec(dllexport) int __cdecl DPConfirmCachedTarget(int count,const wchar_t* key){auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ConfirmTarget;job->iconCount=count;if(key)job->targetKey=key;return Submit(job);}
 __declspec(dllexport) int __cdecl DPWarmSnapshot(const wchar_t* key,int left,int top,int width,int height){
     if(!key || std::wcslen(key)>256 || width<=0 || height<=0 || static_cast<uint64_t>(width)*height>40000000)return 0;
@@ -595,6 +627,7 @@ __declspec(dllexport) int __cdecl DPGetReport(wchar_t* text,int count){
     std::memcpy(text,report.c_str(),written*sizeof(wchar_t));text[written]=0;ReleaseSRWLockShared(&reportLock);return written;
 }
 __declspec(dllexport) void __cdecl DPShutdown(){
+    snapshotPipeline.Stop();
     diskSnapshots.Stop();
     if(!worker)return;
     auto job=new(std::nothrow)Job;if(!job)return;job->op=Op::Shutdown;
