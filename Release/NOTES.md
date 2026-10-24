@@ -1,9 +1,9 @@
-# DeskPages 0.8.35 trial
+# DeskPages 0.8.36 trial
 
-Navigation commands wake the host through a posted message and are dispatched before idle capture, routine layout repair and resource polling. Active transactions remain protected against reentry; display-change commands retain FIFO ordering and page changes retain their monitor and layout guards. A short AboveNormal priority scope affects only the dispatch thread during navigation and restores its original priority.
+Primary-only transitions now retain and upload images for the primary working area, rather than the complete virtual desktop atlas. Warming, direct capture and cached preview share the same geometry plan. Other desktop transaction and monitor arrangement guards remain intact.
 
-Taskbar groups coalesce window lifecycle events, preserve the 80 ms active drag hit-region refresh, and avoid fast polling for desktop mouse presses. Idle UI Automation refresh uses a 2-second fallback. Open-window identity enumeration runs only during taskbar interaction when events/identities change or a 10-second fallback is due. Left-aligned +, individual deletion, VS Code resolution and integrated settings are retained.
+Cached and direct slides both use the existing 380 ms eased duration. A late cache key/revision change no longer aborts motion immediately; the verified live target is handed back at the normal animation boundary. Event-requested snapshots refresh their pixels even when membership and icon positions have not changed. The snapshot format scope advances to discard older retained pictures.
 
-transition-performance-v4.csv records input queue wait, input-to-slide submission and input-to-verified-desktop times. These are software timing measurements, not guaranteed physical display frame times.
+Adds randomized capture geometry, unchanged-layout refresh and 300,000 fast/slow/invalidated handoff timing cases. A separate Windows graphics fixture compiles the production renderer and exercises cached handoff under CPU contention with actual synthetic-window pixel samples and a GDI resource bound. Only the fixture EXE permits sampling its synthetic cover; the distributed compositor retains capture exclusion. Full workspace, input, group, installer payload and Defender validation remain enabled.
 
-The 0.8.28 visibility, layout transaction, encrypted cache and native compositor implementations remain unchanged. Physical Windows 11 latency and multi-window behavior require user acceptance. Trial only; no publication before approval.
+This is a trial for user acceptance, not a public release. Synthetic Windows checks cannot certify physical touchpad drivers, mixed GPU displays or every application on the user's machine.

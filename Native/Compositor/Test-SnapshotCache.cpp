@@ -17,8 +17,17 @@ int main(){using deskpages::SnapshotCache;std::vector<unsigned char> out;
  gate.Confirm(3,true);assert(gate.valid && !gate.CanRetire());gate.Complete();assert(gate.CanRetire());
  gate.Begin(3);gate.Confirm(4,true);assert(!gate.valid && !gate.CanRetire());gate.Complete();assert(gate.CanRetire());
  gate.Begin(3);gate.Confirm(3,false);assert(!gate.valid);gate.Reset();assert(!gate.active && gate.CanRetire());
+ // A changed image/key arriving before the animation fence must never cut
+ // motion. A slow desktop must keep its cover after motion, until verified.
+ long handoffs=0;
+ for(uint64_t ready=0;ready<1500;ready+=3)for(bool same:{false,true})for(uint64_t now=0;now<1500;now+=5){
+  gate.Begin(9);gate.Confirm(same?9:10,same);
+  if(now>=ready)gate.Complete();
+  assert(gate.CanRetire(now,440)==(now>=ready && now>=440));handoffs++;
+ }
+ gate.Reset();assert(!gate.CanRetire(379,380) && gate.CanRetire(380,380));
  SnapshotCache selective(64,8);assert(selective.Put(L"1:old|explorer|bounds",{1,2},1,0));assert(selective.Put(L"2:kept|explorer|bounds",{3,4},1,0));assert(selective.Put(L"12:kept|explorer|bounds",{5,6},1,0));
  selective.RemovePrefix(L"1:");assert(!selective.Get(L"1:old|explorer|bounds",1,1,out));assert(selective.Get(L"2:kept|explorer|bounds",1,1,out));assert(selective.Get(L"12:kept|explorer|bounds",1,1,out));
  assert(selective.Put(L"2:new|explorer|bounds",{9,10},1,2));selective.RemovePrefix(L"2:",L"2:new|explorer|bounds");assert(!selective.Get(L"2:kept|explorer|bounds",1,3,out));assert(selective.Get(L"2:new|explorer|bounds",1,3,out));
- std::cout<<"PASS: hits, changed-layout miss, LRU, epochs, TTL, oversized frame rejection, replacement, clear 4K byte cap, unchanged-image retention and preview hold/commit/invalidation gate, selective page removal and replacement preserving other pages.\n";
+ std::cout<<"PASS: hits, changed-layout miss, LRU, epochs, TTL, oversized frame rejection, replacement, clear 4K byte cap, unchanged-image retention, "<<handoffs<<" fast/slow/changed-image handoff timings, selective page removal and replacement preserving other pages.\n";
 }

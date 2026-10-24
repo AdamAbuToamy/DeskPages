@@ -10,7 +10,7 @@ public static class DeskPagesSnapshotScope {
  [DllImport("user32.dll")]static extern IntPtr MonitorFromPoint(Point point,uint flags);
  [DllImport("shcore.dll")]static extern int GetDpiForMonitor(IntPtr monitor,int kind,out uint x,out uint y);
  public static string Hash(string context){
-  var b=new StringBuilder("DeskPagesSnapshot3|").Append(System.Globalization.CultureInfo.CurrentUICulture.Name).Append(context);
+  var b=new StringBuilder("DeskPagesSnapshot4|").Append(System.Globalization.CultureInfo.CurrentUICulture.Name).Append(context);
   foreach(var screen in Screen.AllScreens){b.Append('|').Append(screen.DeviceName).Append(screen.WorkingArea).Append(screen.Bounds);uint x,y;if(GetDpiForMonitor(MonitorFromPoint(new Point{X=screen.Bounds.Left,Y=screen.Bounds.Top},2),0,out x,out y)==0)b.Append('|').Append(x).Append(':').Append(y);}
   foreach(var folder in new[]{Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory)}){
    b.Append('|').Append(DeskPagesSnapshotFiles.Stamp(folder));

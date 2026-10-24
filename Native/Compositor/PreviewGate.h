@@ -8,6 +8,7 @@ struct PreviewGate {
  void Confirm(uint64_t value,bool sameLayout){valid=valid && epoch==value && sameLayout;}
  void Complete(){ready=true;}
  bool CanRetire()const{return !active || ready;}
+ bool CanRetire(uint64_t now,uint64_t motionFence)const{return CanRetire() && now>=motionFence;}
  void Reset(){active=ready=valid=false;epoch=0;}
 };
 }
