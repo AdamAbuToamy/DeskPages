@@ -346,7 +346,7 @@ try {
                 }
             }
             elseif ($Code -eq 9760) {
-                Set-DpGroupsEnabled $true
+                Add-DpTaskbarGroup
             }
             elseif ($Code -eq 9600) { . (Join-Path $script:base 'EdgeDrag.ps1'); Invoke-DpEdgeRequest }
             elseif ($Code -eq 9401) {

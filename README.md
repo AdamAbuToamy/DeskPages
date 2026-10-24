@@ -21,7 +21,7 @@ You only need the EXE installer. Release notes, source and SHA-256 checksums are
 - Primary-display icon arrangements preserved across monitor connection/disconnection, including delayed Explorer rearrangements and rapid reconnection.
 - A failed animation capture after a completed page switch no longer reloads the icon layout.
 
-Enable **Taskbar groups - experimental** from the DeskPages tray menu. See [taskbar group details](Release/TASKBAR-GROUPS.md).
+Choose **Add taskbar group** from the DeskPages tray menu, or press **Win+Alt+Plus** while groups are enabled. Enable/disable groups in Settings. See [taskbar group details](Release/TASKBAR-GROUPS.md).
 
 ## What's new in 0.8.19
 

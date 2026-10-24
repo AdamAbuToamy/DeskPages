@@ -132,6 +132,8 @@ public sealed class DeskPagesHost : ApplicationContext
         var openEntry=menu.Items.Add("Open DeskPages",null,delegate{OpenPanel();});
         var settingsEntry=menu.Items.Add("Settings",null,delegate{DeskPagesWorkspaceApi.OpenSettings();});
 
+        var addGroupEntry=new ToolStripMenuItem(DeskPagesWorkspaceApi.L("Add taskbar group","إضافة مجموعة","הוספת קבוצה"),null,delegate{Enqueue(9760);}){ShortcutKeyDisplayString="Win+Alt+Plus"};menu.Items.Add(addGroupEntry);
+        menu.Opening+=delegate{addGroupEntry.Text=DeskPagesWorkspaceApi.L("Add taskbar group","إضافة مجموعة","הוספת קבוצה");};
         var common=new ToolStripMenuItem("Selected desktop icons");common.DropDownItems.Add("Show on every page",null,delegate{DeskPagesWorkspaceApi.PinSelected(true);});common.DropDownItems.Add("Show only on their page",null,delegate{DeskPagesWorkspaceApi.PinSelected(false);});menu.Items.Add(common);
         pagesMenu=new ToolStripMenuItem("Pages");menu.Items.Add(pagesMenu);
         var previousEntry=menu.Items.Add("Previous page",null,delegate{Enqueue(-1);});

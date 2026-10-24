@@ -1,6 +1,6 @@
 # DeskPages 0.8.37 trial
 
-The taskbar + button follows native taskbar exposure and slide geometry. It hides when the bar is auto-hidden, unavailable or covered by a fullscreen app, and reappears with the taskbar. No synthetic visible-bar fallback is used while the real bar is hidden. Native owned-window occlusion/reappearance and auto-hide fixtures cover the visibility gate.
+The floating taskbar + button has been removed. Create a numbered group from the existing DeskPages tray menu (Add taskbar group) or Win+Alt+Plus, using the main keyboard or numeric keypad. Win+Plus retains its Windows Magnifier function. Group creation uses a hidden message window, with no second tray icon or visible add overlay.
 
 Cached navigation reads immutable resident RAM images only. Startup and neighbouring pages preload from the protected disk store on a separate worker. Idle screenshots, DPAPI, compression, decompression and persistence no longer hold navigation behind disk locks. Current/next/previous pages receive eviction protection within a RAM budget of 1/32 physical memory (128-512 MiB cap); images have no timed expiry. Persistence backlog is separately bounded and reported.
 

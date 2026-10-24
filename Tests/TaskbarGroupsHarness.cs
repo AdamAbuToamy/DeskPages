@@ -12,6 +12,7 @@ public static class TaskbarGroupsHarness {
     [STAThread]public static int Main(string[] args){
         try{
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+            if(args.Length==2 && args[0]=="--request-group"){using(var request=new GroupCreateSignal(args[1]))request.Request();return 0;}
             if(args.Length==1 && args[0]=="--window"){
                 using(var f=new Form{Text="DeskPages grouping fixture",Size=new Size(320,180)}){
                     WindowShell.Set(f.Handle,5,"DeskPages.Fixture.Original");f.Shown+=delegate{Console.WriteLine(f.Handle.ToInt64());Console.Out.Flush();};Application.Run(f);
@@ -90,25 +91,10 @@ public static class TaskbarGroupsHarness {
         gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,150,begin,end);gate.Abort(end);
         Check(!gate.Process(0x201,new Point(120,20),false,false,inputMap.Taskbar,inputMap,151,begin,end),"Aborted native drag blocked another press");gate.Abort(end);
         source.Windows=new GroupWindow[0];Check(inputMap.SourceAt(new Point(120,20),160)!=null,"Unresolved metadata blocked normal native dragging");
-        var monitor=new Rectangle(0,0,1920,1080);var bar=new Rectangle(0,1032,1920,48);
-        Check(GroupLayoutPolicy.AddBounds(Rectangle.Empty,Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Missing taskbar left a floating '+'");
-        Check(GroupLayoutPolicy.AddBounds(new Rectangle(0,1079,1920,48),Rectangle.Empty,monitor,new Rectangle[0],false).IsEmpty,"Auto-hidden taskbar left a floating '+'");
-        Check(!TaskbarVisibility.Exposed(false,bar,monitor),"Hidden taskbar exposed '+'");
-        Check(TaskbarVisibility.Exposed(true,bar,monitor),"Visible taskbar lost '+'");
-        var moving=GroupLayoutPolicy.AddBounds(new Rectangle(0,1042,1920,48),new Rectangle(0,1042,120,48),monitor,new Rectangle[0],true);
-        Check(moving.Y==GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Y+10,"Button was clamped instead of following native bar motion");
-        var fallback=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new Rectangle[0],false);
-        Check(!fallback.IsEmpty && fallback.Bottom<bar.Top,"Native taskbar fallback hid '+' or covered unknown app buttons before UIA was ready");
-        Check(GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,120,48),monitor,new Rectangle[0],true).Left==128,"Weather-adjacent placement changed");
-        var controls=new[]{new Rectangle(0,1032,450,48),new Rectangle(450,1032,100,48),new Rectangle(1700,1032,220,48)};
-        var leftPlus=GroupLayoutPolicy.AddBounds(bar,new Rectangle(0,1032,48,48),monitor,controls,true);
-        Check(!controls.Any(b=>b.IntersectsWith(leftPlus)) && monitor.Contains(leftPlus),"Left-aligned Start/apps/tray overlap persistent +");
-        var fullPlus=GroupLayoutPolicy.AddBounds(bar,Rectangle.Empty,monitor,new[]{bar},true);
-        Check(fullPlus.Bottom<bar.Top && monitor.Contains(fullPlus),"Full taskbar did not move + into a safe visible fallback");
         Check(GroupLayoutPolicy.ShellSurface("Progman") && GroupLayoutPolicy.ShellSurface("WorkerW") && GroupLayoutPolicy.ShellSurface("Shell_TrayWnd") && !GroupLayoutPolicy.ShellSurface("CabinetWClass"),"Explorer taskbar grouping included a desktop/taskbar Shell surface");
     }
     private static void Native(){
-        TaskbarVisibilityFixture();
+        GroupCommandsFixture();
         var group=new GroupModel(Guid.NewGuid().ToString("N")).Add();
         int opens=0;
         using(var anchor=new GroupAnchor(group,delegate{opens++;}))using(var taskbar=new GroupTaskbar()){
@@ -123,34 +109,13 @@ public static class TaskbarGroupsHarness {
             ShowWindow(anchor.Handle,9);Application.DoEvents();Check(IsIconic(anchor.Handle),"Direct native restore displayed the group as an application");
             taskbar.Remove(anchor.Handle);anchor.Finish();
         }
-        using(var normal=GroupAddButton.Surface(36,36,0,false))using(var pressed=GroupAddButton.Surface(36,36,1,true)){
-            var background=normal.GetPixel(8,8);Check(background.A>0 && background.A<255 && background.R>=253 && background.R==background.G && background.G==background.B,"Add background is not translucent white: "+background);
-            Check(normal.GetPixel(18,18).A==255,"Plus glyph lost its opaque contrast");
-            Check(normal.GetPixel(2,18)!=pressed.GetPixel(2,18),"Press animation did not change the button shape");
-        }
         using(var listener=new GroupDragInput(delegate{},delegate{})){
             listener.Publish(new GroupInputMap());
         }
         Console.WriteLine("PASS: input hook thread installs/uninstalls; native group restore is rejected before showing a client window.");
         HookOwnershipFixture();
         PopupLifecycle();
-        int clicks=0;
-        using(var button=new GroupAddButton(delegate{clicks++;})){
-            button.Present(new Rectangle(150,150,36,36),true);Application.DoEvents();Check(button.Visible,"Visible taskbar did not show '+'");
-            button.Present(Rectangle.Empty,false);Application.DoEvents();Check(!button.Visible,"Hidden taskbar left '+' visible");
-            button.Show();Application.DoEvents();
-            var down=typeof(GroupAddButton).GetMethod("OnMouseDown",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
-            var up=typeof(GroupAddButton).GetMethod("OnMouseUp",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance);
-            var inside=new MouseEventArgs(MouseButtons.Left,1,16,16,0);var outside=new MouseEventArgs(MouseButtons.Left,1,-10,-10,0);
-            up.Invoke(button,new object[]{inside});Check(clicks==0,"Unarmed mouse-up added a group");
-            down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{outside});Check(clicks==0,"Release outside added a group");
-            down.Invoke(button,new object[]{inside});up.Invoke(button,new object[]{inside});Check(clicks==1,"Button press did not add exactly one group");
-            button.Hide();button.Size=new Size(36,36);button.Location=new Point(150,150);button.Show();Application.DoEvents();
-            Check(WindowShell.IsWindowVisible(button.Handle),"Layered add button did not redraw after hidden resize/show");
-            button.Hide();
-        }
-        Console.WriteLine("PASS: layered button show and click-once/cancel semantics.");
-        Console.WriteLine("PASS: minimized unowned APPWINDOW anchor, pre-show AppID, native AddTab/RemoveTab; white per-pixel alpha and press surface.");
+        Console.WriteLine("PASS: minimized unowned APPWINDOW anchor, pre-show AppID and native AddTab/RemoveTab.");
         Process child=null;GroupRecovery recovery=null;IntPtr hwnd=IntPtr.Zero;
         try{
             child=Process.Start(new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location,"--window"){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true});
@@ -179,41 +144,34 @@ public static class TaskbarGroupsHarness {
             if(child!=null){if(!child.HasExited){PostMessageW(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);if(!child.WaitForExit(5000))child.Kill();}child.Dispose();}
         }
     }
-    private static void TaskbarVisibilityFixture(){
-        var area=Screen.PrimaryScreen.WorkingArea;var monitor=new Rectangle(area.Left+20,area.Top+20,Math.Min(520,area.Width-40),300);
-        using(var bar=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=new Rectangle(monitor.Left,monitor.Bottom-48,monitor.Width,48)})
-        using(var cover=new Form{FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,Bounds=monitor})
-        using(var button=new GroupAddButton(delegate{})){
-            Action sync=delegate{var box=new Rectangle(bar.Left+40,bar.Top+7,34,34);button.Present(box,TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),bar.Handle);Application.DoEvents();Check(!button.Visible || button.Bounds==box,"Windows changed the attached button coordinates on show: requested="+box+" actual="+button.Bounds);};
-            bar.Show();Application.DoEvents();sync();var point=new Point(button.Left+17,button.Top+17);
-            Check(button.Visible && WindowShell.WindowFromPoint(point)==button.Handle,"Visible taskbar did not expose its attached button");
-            cover.Opacity=0.15;cover.Show();cover.BringToFront();Application.DoEvents();
-            Check(WindowShell.WindowFromPoint(point)==cover.Handle,"Backdrop fixture did not intercept the old hit test");
-            sync();Check(button.Visible && TaskbarVisibility.Read(bar.Handle,bar.Bounds,monitor),"Unknown transparent Start/Search-style backdrop hid '+'");
-            Check(WindowShell.GetAncestor(WindowShell.WindowFromPoint(point),2)==cover.Handle,"Button jumped above the backdrop instead of following the bar");
-            cover.Opacity=1;Application.DoEvents();sync();
-            Check(WindowShell.WindowFromPoint(point)==cover.Handle,"Button floated over fullscreen while the bar was covered");
-            bar.Activate();bar.BringToFront();Application.DoEvents();
-            var barPoint=new Point(bar.Left+10,bar.Top+15);
-            Check(WindowShell.WindowFromPoint(barPoint)==bar.Handle,"Fixture did not reveal the native bar: "+StackState(bar.Handle,button.Handle,cover.Handle,point));
-            sync();
-            var reveal=Stopwatch.StartNew();
-            while(WindowShell.WindowFromPoint(point)!=button.Handle && reveal.ElapsedMilliseconds<1000){Application.DoEvents();System.Threading.Thread.Sleep(10);}
-            Check(WindowShell.WindowFromPoint(point)==button.Handle,"Revealing taskbar did not reveal '+' with it: "+StackState(bar.Handle,button.Handle,cover.Handle,point));
-            bar.Hide();Application.DoEvents();sync();Check(!button.Visible,"Hidden taskbar left '+' visible");
-            bar.Show();bar.TopMost=false;Application.DoEvents();sync();
-            Check((GetWindowLongPtrW(button.Handle,-20).ToInt64()&8)==0,"Button stayed topmost after the bar left the topmost band");
-            cover.Hide();bar.TopMost=true;bar.BringToFront();Application.DoEvents();sync();
-            Check((GetWindowLongPtrW(button.Handle,-20).ToInt64()&8)!=0 && WindowShell.WindowFromPoint(point)==button.Handle,"Button failed to follow the bar into its topmost band");
-            int y=button.Top;bar.Top+=10;sync();Check(button.Top==y+10,"Button did not follow taskbar slide coordinates");
-            bar.Bounds=new Rectangle(monitor.Left,monitor.Bottom-1,monitor.Width,48);sync();Check(!button.Visible,"Auto-hidden strip left '+' visible");
+    private static void GroupCommandsFixture(){
+        int created=0;
+        using(var commands=new GroupCommandWindow(delegate{created++;})){
+            var handle=commands.Handle;commands.Show();Application.DoEvents();
+            Check(!commands.Visible && !commands.ShowInTaskbar && !WindowShell.IsWindowVisible(handle),"Command owner became a visible application or overlay");
+            Check(commands.RegistrationCount==4,"Main keyboard/numeric keypad shortcut registrations failed");
+            using(var collision=new GroupCommandWindow(delegate{})){var other=collision.Handle;Check(collision.RegistrationCount==0,"A second owner stole registered shortcuts");}
+            for(int press=1;press<=2;press++){
+                var keys=new List<FixtureInput>{KeyInput(0x5B,false),KeyInput(0x12,false)};
+                for(int repeat=0;repeat<12;repeat++)keys.Add(KeyInput(0x6B,false));
+                keys.Add(KeyInput(0x6B,true));keys.Add(KeyInput(0x12,true));keys.Add(KeyInput(0x5B,true));
+                try{Check(SendInput((uint)keys.Count,keys.ToArray(),Marshal.SizeOf(typeof(FixtureInput)))==keys.Count,"Native group shortcut injection failed");PumpUntil(delegate{return created==press;});Application.DoEvents();Check(created==press,"Holding Plus created duplicate groups");}
+                finally{var release=new[]{KeyInput(0x6B,true),KeyInput(0x12,true),KeyInput(0x5B,true)};SendInput(3,release,Marshal.SizeOf(typeof(FixtureInput)));}
+            }
+            Check(!WindowShell.IsWindowVisible(handle),"Creating groups made the dispatcher visible");
         }
-        Console.WriteLine("PASS: real layered '+' follows native taskbar geometry and Z-order; unknown transparent backdrop does not hide it; fullscreen covers both; bar reveal restores both; topmost changes and auto-hide follow together. Real Shell configuration unchanged.");
+        using(var reused=new GroupCommandWindow(delegate{})){var handle=reused.Handle;Check(reused.RegistrationCount==4,"Disposed controller left global shortcuts registered");}
+        string name="Local\\DeskPages.GroupCreateFixture."+Guid.NewGuid().ToString("N");
+        using(var pending=new GroupCreateSignal(name)){
+            using(var child=Process.Start(new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location,"--request-group "+name){UseShellExecute=false,CreateNoWindow=true})){
+                Check(child.WaitForExit(10000) && child.ExitCode==0,"Tray request process failed");
+            }
+            using(var receiver=new GroupCreateSignal(name)){Check(receiver.Take() && !receiver.Take(),"Startup request was lost or consumed twice");pending.Request();Check(receiver.Take(),"Running controller did not receive tray request");}
+        }
+        Console.WriteLine("PASS: permanently hidden command window; four global shortcut registrations; actual Win+Alt+keypad Plus with 12 repeated downs creates one request per press; unregister/reuse; isolated cross-process create request survives startup and is consumed once.");
     }
-    private static string StackState(IntPtr bar,IntPtr button,IntPtr cover,Point point){
-        return "bar="+bar+" button="+button+" cover="+cover+" hit="+WindowShell.WindowFromPoint(point)+" prevBar="+FixtureGetWindow(bar,3)+" prevButton="+FixtureGetWindow(button,3)+" prevCover="+FixtureGetWindow(cover,3)+" buttonStyle="+GetWindowLongPtrW(button,-20).ToInt64().ToString("X")+" point="+point+" barBounds="+WindowShell.Bounds(bar)+" buttonBounds="+WindowShell.Bounds(button)+" coverBounds="+WindowShell.Bounds(cover)+" centerHit="+WindowShell.WindowFromPoint(new Point(WindowShell.Bounds(button).Left+17,WindowShell.Bounds(button).Top+17));
-    }
-    [DllImport("user32.dll",EntryPoint="GetWindow")]private static extern IntPtr FixtureGetWindow(IntPtr hwnd,uint command);
+    private static FixtureInput KeyInput(ushort key,bool up){return new FixtureInput{Type=1,Keyboard=new FixtureKeyboard{Key=key,Flags=(key==0x5B?1U:0U)|(up?2U:0U)}};}
+    [StructLayout(LayoutKind.Sequential)]private struct FixtureKeyboard{public ushort Key,Scan;public uint Flags,Time;public UIntPtr Extra;}
     private static void HookOwnershipFixture(){
         var original=Cursor.Position;
         try{
@@ -272,24 +230,24 @@ public static class TaskbarGroupsHarness {
         }finally{recovery.RestoreAll();Directory.Delete(recovery.Folder,true);}
     }
     [StructLayout(LayoutKind.Sequential)]private struct FixtureMouse{public int X,Y;public uint Data,Flags,Time;public UIntPtr Extra;}
-    [StructLayout(LayoutKind.Explicit,Size=40)]private struct FixtureInput{[FieldOffset(0)]public uint Type;[FieldOffset(8)]public FixtureMouse Mouse;}
+    [StructLayout(LayoutKind.Explicit,Size=40)]private struct FixtureInput{[FieldOffset(0)]public uint Type;[FieldOffset(8)]public FixtureMouse Mouse;[FieldOffset(8)]public FixtureKeyboard Keyboard;}
     [DllImport("user32.dll")]private static extern uint SendInput(uint count,FixtureInput[] input,int size);
     private static void PopupLifecycle(){
         var model=new GroupModel(Guid.NewGuid().ToString("N"));var group=model.Add();int removed=0;var anchor=new GroupAnchor(group,delegate{});anchor.Show();
-        using(var owner=new Form{Text="DeskPages popup fixture",StartPosition=FormStartPosition.Manual,Location=new Point(100,100),Size=new Size(200,100),TopMost=true}){
-            owner.Show();owner.Activate();var handle=owner.Handle;
+        using(var owner=new GroupCommandWindow(delegate{})){
+            var handle=owner.Handle;owner.Show();Check(!owner.Visible,"Popup owner unexpectedly became visible");
             using(var popup=new GroupPopup(owner,g=>model.Find(g.AppId)==g,g=>{model.DeleteEmpty(g);anchor.Finish();removed++;},delegate{},delegate{})){
                 var menu=popup.Menu;
                 for(int i=0;i<40;i++){
-                    popup.Show(group,owner.PointToScreen(new Point(8,8)));Application.DoEvents();
+                    popup.Show(group,new Point(150,150));Application.DoEvents();
                     popup.Menu.Close();Application.DoEvents();
                     Check(!menu.IsDisposed && popup.Menu==menu,"Closing the group menu disposed it while WinForms still owned its events");
                 }
-                popup.Show(group,owner.PointToScreen(new Point(8,8)));Application.DoEvents();
+                popup.Show(group,new Point(150,150));Application.DoEvents();
                 menu.Items.Cast<ToolStripItem>().Single(i=>i.Text=="Delete group").PerformClick();Check(removed==0,"Group deletion ran inside the ToolStrip click handler");
                 menu.Close();PumpUntil(delegate{return removed==1;});
                 Check(anchor.IsDisposed && !menu.IsDisposed,"Deleting the anchor disposed its stable-owner popup");
-                var next=model.Add();model.Put(next,new GroupWindow{Handle=1,ProcessId=2,Started=3,Title="Populated app"});popup.Show(next,owner.PointToScreen(new Point(8,8)));Application.DoEvents();menu.Close();Application.DoEvents();
+                var next=model.Add();model.Put(next,new GroupWindow{Handle=1,ProcessId=2,Started=3,Title="Populated app"});popup.Show(next,new Point(150,150));Application.DoEvents();menu.Close();Application.DoEvents();
                 Check(!menu.IsDisposed && menu.Items.Cast<ToolStripItem>().Any(i=>i.Text=="Delete group"),"Populated group lost its own Delete action");
             }
             owner.Close();

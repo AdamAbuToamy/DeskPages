@@ -33,27 +33,4 @@ internal sealed class GroupDropDwell {
 }
 internal static class GroupLayoutPolicy {
     public static bool ShellSurface(string windowClass){return windowClass=="Progman" || windowClass=="WorkerW" || windowClass=="Shell_TrayWnd" || windowClass=="Shell_SecondaryTrayWnd";}
-    public static Rectangle AddBounds(Rectangle taskbar,Rectangle weather,Rectangle area,Rectangle[] apps,bool accessible){
-        if(taskbar.IsEmpty || taskbar.Height<10 || !TaskbarVisibility.Exposed(true,taskbar,area))return Rectangle.Empty;
-        int size=Math.Max(28,Math.Min(36,taskbar.Height-8)),x=weather.IsEmpty?area.Left+160:weather.Right+8;
-        var result=new Rectangle(x,taskbar.Top+(taskbar.Height-size)/2,size,size);
-        // UIA supplies all occupied controls, including Start/Search/Widgets and
-        // the notification area. Prefer the requested slot, then a genuinely free
-        // gap; if the bar is full keep + above it, never over a native control.
-        var occupied=apps.Where(b=>b.IntersectsWith(taskbar)).ToArray();
-        if(accessible && occupied.Any(b=>b.IntersectsWith(result))){
-            bool found=false;
-            foreach(int candidate in occupied.Select(b=>b.Right+8).Concat(new[]{taskbar.Left+8}).OrderBy(v=>v)){
-                var slot=new Rectangle(candidate,result.Y,size,size);
-                if(slot.Right<=Math.Min(taskbar.Right,area.Right)-8 && !occupied.Any(b=>b.IntersectsWith(slot))){result=slot;found=true;break;}
-            }
-            if(!found)result.Y=taskbar.Top-size-6;
-        }
-        if(!accessible)result.Y=taskbar.Top-size-6;
-        result.X=Math.Max(area.Left+4,Math.Min(result.X,area.Right-size-4));
-        // Preserve the bar's native slide offset. Windows clips the part of
-        // the layered button which moves outside the physical monitor.
-        return result;
-    }
-
 }
