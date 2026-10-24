@@ -348,7 +348,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.35\r\n"+active.hidStatus+
+        return "Build: 0.8.36\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -629,14 +629,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.35 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.36 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.35 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.36 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }
@@ -710,7 +710,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static void SnapshotSceneContext(string context){if(active!=null && active.snapshots!=null)active.snapshots.SceneContext(context);}
     public static string SavedSnapshotKey(int page){return active==null||active.snapshots==null?"":active.snapshots.KnownKey(page);}
     public static bool NeedsSnapshotCapture(string key){return active==null||active.snapshots==null||active.snapshots.NeedsCapture(key);}
-    public static void WarmSnapshot(string key){if(!SnapshotCacheEnabled)return;Rectangle bounds=Screen.PrimaryScreen.WorkingArea;foreach(var screen in Screen.AllScreens)bounds=Rectangle.Union(bounds,screen.WorkingArea);bool ok=DeskPagesAnimation.WarmSnapshot(key,bounds);active.snapshots.Captured(key,ok);}
+    public static void WarmSnapshot(string key){if(!SnapshotCacheEnabled)return;bool ok=DeskPagesAnimation.WarmSnapshot(key,DeskPagesAnimation.DesktopBounds);active.snapshots.Captured(key,ok);}
     private bool previewStarted;
     public static bool TryBeginCachedPreview(int direction,string source,string target){
         if(!SnapshotCacheEnabled || active==null || !active.animate || DeskPagesWorkspaceApi.ReduceMotion)return false;
@@ -734,8 +734,7 @@ public sealed class DeskPagesHost : ApplicationContext
         active.transitionForeground=GetAncestor(foreground,2);
         AbortAnimation();active.previewStarted=false;
         try {
-            Rectangle bounds=Screen.PrimaryScreen.WorkingArea;
-            foreach(var screen in Screen.AllScreens)bounds=Rectangle.Union(bounds,screen.WorkingArea);
+            Rectangle bounds=DeskPagesAnimation.DesktopBounds;
             active.slideDirection=direction;
             bool shown=preview?DeskPagesAnimation.BeginCachedPreview(bounds,source,target,direction):DeskPagesAnimation.BeginDesktop(bounds);
             active.animationStatus=shown?(preview?"resident images presented before Explorer preparation":"desktop source prepared below apps"):DeskPagesAnimation.Metrics;

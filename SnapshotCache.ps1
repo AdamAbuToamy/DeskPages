@@ -38,5 +38,8 @@ function Warm-DpCurrentSnapshot {
     Sync-DpSnapshotScene
     $page=[int]$script:DpState.Current
     Save-DpVerifiedSourceLayout $page
-    $key=Get-DpSnapshotKey -Page $page;Remember-DpSnapshotKey $page $key;if([DeskPagesHost]::NeedsSnapshotCapture($key)){[DeskPagesHost]::WarmSnapshot($key)}
+    # ShouldWarm is event driven. A shell icon-image change may keep exactly
+    # the same membership, labels and positions, so key equality is not a veto.
+    $key=Get-DpSnapshotKey -Page $page;Remember-DpSnapshotKey $page $key
+    [DeskPagesHost]::WarmSnapshot($key)
 }

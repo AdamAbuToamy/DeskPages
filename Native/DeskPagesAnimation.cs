@@ -83,14 +83,25 @@ public static class DeskPagesAnimation
     [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPCompleteCachedPreview();
     public static bool BeginCachedPreview(Rectangle bounds,string source,string target,int direction){
         Initialize();var data=new System.Collections.Generic.List<int>();
-        foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
+        foreach(var region in DesktopRegions(bounds))data.AddRange(region);
         return DPBeginCachedPreview(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,source,target,direction)!=0;
     }
     public static void CompleteCachedPreview(){if(DPCompleteCachedPreview()==0)throw new InvalidOperationException(Metrics);}
     public static bool BeginDesktop(Rectangle bounds){
         Initialize();var data=new System.Collections.Generic.List<int>();
-        foreach(var screen in System.Windows.Forms.Screen.AllScreens){var r=screen.WorkingArea;data.AddRange(new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0});}
+        foreach(var region in DesktopRegions(bounds))data.AddRange(region);
         return (SnapshotCacheEnabled?DPBeginDesktopCachedRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5,SnapshotSourceKey):DPBeginDesktopRegions(bounds.Left,bounds.Top,bounds.Width,bounds.Height,data.ToArray(),data.Count/5))!=0;
+    }
+    public static Rectangle DesktopBounds {get{
+        var screens=System.Windows.Forms.Screen.AllScreens;
+        return DeskPagesCapturePlan.Bounds(System.Windows.Forms.Screen.PrimaryScreen.WorkingArea,Array.ConvertAll(screens,s=>s.WorkingArea),DeskPagesWorkspaceApi.PrimaryOnly);
+    }}
+    static System.Collections.Generic.IEnumerable<int[]> DesktopRegions(Rectangle bounds){
+        foreach(var screen in System.Windows.Forms.Screen.AllScreens){
+            var r=DeskPagesCapturePlan.Intersection(screen.WorkingArea,bounds);
+            if(r.IsEmpty)continue;
+            yield return new[]{r.Left-bounds.Left,r.Top-bounds.Top,r.Width,r.Height,(!DeskPagesWorkspaceApi.PrimaryOnly || screen.Primary)?1:0};
+        }
     }
     public static uint ProbeWindow(IntPtr source,Rectangle bounds){Initialize();uint sample;if(DPProbeWindowCapture(source,bounds.Left,bounds.Top,bounds.Width,bounds.Height,out sample)==0)throw new InvalidOperationException(Metrics);return sample;}
     public static bool Begin(Bitmap before,Rectangle bounds)

@@ -66,6 +66,9 @@ deskpages::SnapshotDisk diskSnapshots;
 void Report(const std::string& value){AcquireSRWLockExclusive(&reportLock);report.assign(value.begin(),value.end());ReleaseSRWLockExclusive(&reportLock);}
 
 class Renderer {
+#ifdef DESKPAGES_GRAPHICS_FIXTURE
+    friend struct GraphicsFixture;
+#endif
     HWND hwnd=nullptr,desktopWindow=nullptr;
     bool desktopMode=false;
     deskpages::SnapshotCache snapshots;
@@ -263,7 +266,13 @@ public:
         WinCheck(hwnd!=nullptr,"Create compositor window");coverWindow=hwnd;
         // Public OS capture-exclusion mode keeps the cover on the monitor while
         // allowing capture of the updated desktop underneath, without hiding it.
+#ifdef DESKPAGES_GRAPHICS_FIXTURE
+        // Only the separately compiled synthetic test EXE is observable by
+        // its pixel sampler. Shipping DLLs always exclude the cover below.
+        WinCheck(SetWindowDisplayAffinity(hwnd,0)!=FALSE,"Fixture capture affinity");
+#else
         WinCheck(SetWindowDisplayAffinity(hwnd,0x11)!=FALSE,"SetWindowDisplayAffinity(EXCLUDEFROMCAPTURE)");
+#endif
         Check(composition->CreateTargetForHwnd(hwnd,TRUE,target.put()),"CreateTargetForHwnd");
         Check(composition->CreateVisual(root.put()),"Create root visual");
         Check(target->SetRoot(root),"SetRoot");Check(composition->Commit(),"Initial commit");
@@ -282,7 +291,7 @@ public:
         auto clock=GetTickCount64();
         Abort();Prepare();incomingKey=job.targetKey;left=job.left;top=job.top;width=job.width;height=job.height;
         desktopMode=job.op==Op::BeginDesktop || job.op==Op::BeginPreview;
-        if(job.op==Op::BeginPreview){preview.Begin(snapshotRevision.load());duration=0.240;}
+        if(job.op==Op::BeginPreview)preview.Begin(snapshotRevision.load());
         SetWindowLongPtrW(hwnd,GWL_EXSTYLE,(GetWindowLongPtrW(hwnd,GWL_EXSTYLE)&~WS_EX_TRANSPARENT)|(preview.active?0:WS_EX_TRANSPARENT));
         WinCheck(SetWindowPos(hwnd,HWND_NOTOPMOST,0,0,0,0,SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE|SWP_HIDEWINDOW)!=FALSE,"Remove topmost state");
         if(desktopMode && !preview.active){
@@ -387,7 +396,10 @@ public:
     void CompletePreview(){
         WinCheck(preview.active && state.phase==deskpages::Phase::Playing && expectedIcons>=0,"Cached preview must have a verified live target");
         PaintTarget();preview.Confirm(snapshotRevision.load(),true);preview.Complete();
-        if(!preview.valid){Abort();Report("Cached preview refreshed by verified live desktop");return;}
+        // A late key/revision mismatch must not cut an in-flight DWM curve.
+        // The live target has already been verified. Retire at the normal
+        // motion boundary, including when its image needs reconciliation.
+        if(!preview.valid)Report("Cached preview changed; verified live target will replace it after motion completes");
         hideAt=std::max(hideAt,GetTickCount64()+32);Tick();
     }
     void InvalidatePage(Job& job){snapshots.RemovePrefix(job.sourceKey);snapshotBytes=snapshots.Bytes();}
@@ -412,7 +424,7 @@ public:
         if(sourceExplorer && explorer!=sourceExplorer){Abort();Report("Transition cancelled: Explorer restarted");return;}
         if(GetTickCount64()>expiry){Abort();Report("Transition cancelled: 12-second cover watchdog");return;}
         if(state.phase==deskpages::Phase::Playing && GetTickCount64()>=motionEnds)motionEnded=1;
-        if(state.phase==deskpages::Phase::Playing && preview.CanRetire() && GetTickCount64()>=hideAt) {
+        if(state.phase==deskpages::Phase::Playing && preview.CanRetire(GetTickCount64(),hideAt)) {
             Check(DwmFlush(),"Final composition fence");
             // Never replace a moving target texture or cancel motion because
             // unrelated wallpaper pixels differ. Membership was checked first.
