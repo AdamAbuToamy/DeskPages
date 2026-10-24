@@ -29,6 +29,7 @@ private:
  struct Deferred {Frame metadata;std::weak_ptr<const std::vector<unsigned char>> pixels;};std::map<int,Deferred> deferred;
  Frame requestedCapture;uint64_t requestSerial=0;size_t dirtyBytes=0;
  std::atomic<uint64_t> inputSerial{0},inputAt{0};
+ std::atomic<bool> enabled{true};
  static int Page(const std::wstring& key){try{return std::stoi(key);}catch(...){return 0;}}
  void Start(){if(!worker.joinable()){stop=false;worker=std::thread([this]{Run();});}}
  void Run(){
@@ -48,10 +49,10 @@ private:
     if(operation==1)configure(root,stamp);
     else if(operation==2){bool valid;{std::lock_guard<std::mutex> lock(mutex);valid=f.epoch==epoch.load() && f.revision==revisions[Page(f.key)];}if(valid)save(f.key,f.area,*f.pixels);}
     else if(operation==3){
-     {std::lock_guard<std::mutex> lock(mutex);if(serial!=inputSerial.load() || f.epoch!=epoch.load() || revision!=revisions[Page(f.key)]){warmResult=-1;continue;}}
+     {std::lock_guard<std::mutex> lock(mutex);if(!enabled || serial!=inputSerial.load() || f.epoch!=epoch.load() || revision!=revisions[Page(f.key)]){warmResult=-1;continue;}}
      auto image=capture(f.area);bool accepted=false;
      {std::lock_guard<std::mutex> lock(mutex);int page=Page(f.key);
-      if(image && f.epoch==epoch.load() && revision==revisions[page] && serial==inputSerial.load()){
+      if(enabled && image && f.epoch==epoch.load() && revision==revisions[page] && serial==inputSerial.load()){
        accepted=cache.PutShared(ResidentKey(f.key,f.area),image,f.epoch,now());
        if(accepted){keys[page]=f.key;invalidPages.erase(page);f.pixels=image;QueueSave(f);++captures;}
       }
@@ -61,14 +62,14 @@ private:
      const size_t frameBytes=size_t(a.width)*a.height*4;size_t admitted=0;
      for(int page:order){
       if(!frameBytes || admitted++>=cache.Limit()/frameBytes)break;
-      if(epoch.load()!=generation || inputSerial.load()!=serial){std::lock_guard<std::mutex> lock(mutex);planPending=true;break;}
+      if(!enabled || epoch.load()!=generation || inputSerial.load()!=serial){std::lock_guard<std::mutex> lock(mutex);planPending=enabled.load();break;}
       uint64_t rev;{std::lock_guard<std::mutex> lock(mutex);rev=revisions[page];if(invalidPages.count(page))continue;}
       auto key=known(page);if(key.empty())continue;
       {std::lock_guard<std::mutex> lock(mutex);if(revisions[page]!=rev || epoch.load()!=generation)continue;keys[page]=key;}
       auto resident=ResidentKey(key,a);if(cache.GetShared(resident,generation,now()))continue;
       auto image=load(key,a);if(!image)continue;
       std::lock_guard<std::mutex> lock(mutex);
-      if(revisions[page]==rev && epoch.load()==generation && cache.PutShared(resident,image,generation,now()))++preloads;
+      if(enabled && revisions[page]==rev && epoch.load()==generation && cache.PutShared(resident,image,generation,now()))++preloads;
      }
     }
    }catch(...){++errors;if(operation==3)warmResult=-1;}
@@ -88,21 +89,22 @@ public:
   std::function<void(std::wstring,std::wstring)> config,std::function<std::wstring(int)> lookup,Load read,Save write,Capture shot,std::function<void()> init={}):
   cache(c),epoch(e),now(clock),configure(config),known(lookup),load(read),save(write),capture(shot),initialize(init){}
  ~SnapshotPipeline(){Stop();}
- void Configure(std::wstring root,std::wstring stamp){std::lock_guard<std::mutex> lock(mutex);folder=root;scope=stamp;configurePending=true;keys.clear();revisions.clear();invalidPages.clear();dirty.clear();deferred.clear();dirtyBytes=0;capturePending=false;warmResult=0;Start();wake.notify_one();}
+ void Configure(std::wstring root,std::wstring stamp){std::lock_guard<std::mutex> lock(mutex);enabled=true;folder=root;scope=stamp;configurePending=true;keys.clear();revisions.clear();invalidPages.clear();dirty.clear();deferred.clear();dirtyBytes=0;capturePending=false;warmResult=0;Start();wake.notify_one();}
+ void Suspend(){std::lock_guard<std::mutex> lock(mutex);enabled=false;++inputSerial;planPending=capturePending=false;keys.clear();warmResult=-1;wake.notify_one();}
  void Input(){inputAt=now();++inputSerial;wake.notify_one();}
  void Prime(std::vector<int> order,SnapshotArea a){
-  std::lock_guard<std::mutex> lock(mutex);pages=std::move(order);area=a;planPending=true;
+  std::lock_guard<std::mutex> lock(mutex);if(!enabled)return;pages=std::move(order);area=a;planPending=true;
   cache.Protect(std::vector<int>(pages.begin(),pages.begin()+std::min<size_t>(3,pages.size())));Start();wake.notify_one();
  }
  std::wstring Known(int page){std::lock_guard<std::mutex> lock(mutex);auto it=keys.find(page);return it==keys.end()?L"":it->second;}
  void Invalidate(int page){std::lock_guard<std::mutex> lock(mutex);++revisions[page];invalidPages.insert(page);keys.erase(page);cache.RemovePrefix(std::to_wstring(page)+L":");}
  bool Keep(std::wstring key,SnapshotArea a,Image pixels,uint64_t generation){
-  std::lock_guard<std::mutex> lock(mutex);if(generation!=epoch.load() || !pixels)return false;
+  std::lock_guard<std::mutex> lock(mutex);if(!enabled || generation!=epoch.load() || !pixels)return false;
   int page=Page(key);if(!cache.PutShared(ResidentKey(key,a),pixels,generation,now())){++errors;return false;}
   cache.RemovePrefix(std::to_wstring(page)+L":",ResidentKey(key,a));keys[page]=key;invalidPages.erase(page);
   Frame f;f.key=key;f.area=a;f.pixels=pixels;f.epoch=generation;f.revision=revisions[page];QueueSave(f);Start();return true;
  }
- bool Warm(std::wstring key,SnapshotArea a){std::lock_guard<std::mutex> lock(mutex);if(warmResult.load()==1)return false;requestedCapture={};requestedCapture.key=key;requestedCapture.area=a;requestedCapture.epoch=epoch.load();requestedCapture.revision=revisions[Page(key)];requestedCapture.serial=inputSerial.load();capturePending=true;++requestSerial;warmResult=1;Start();wake.notify_one();return true;}
+ bool Warm(std::wstring key,SnapshotArea a){std::lock_guard<std::mutex> lock(mutex);if(!enabled || warmResult.load()==1)return false;requestedCapture={};requestedCapture.key=key;requestedCapture.area=a;requestedCapture.epoch=epoch.load();requestedCapture.revision=revisions[Page(key)];requestedCapture.serial=inputSerial.load();capturePending=true;++requestSerial;warmResult=1;Start();wake.notify_one();return true;}
  void Stop(){ {std::lock_guard<std::mutex> lock(mutex);stop=true;capturePending=planPending=false;wake.notify_all();}if(worker.joinable())worker.join();}
 };
 }

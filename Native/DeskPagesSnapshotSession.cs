@@ -83,7 +83,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     public void Invalidate(){Interlocked.Exchange(ref scopeDirty,1);RequestCheck();}
     public void SetEnabled(bool value){
         // Never enable a stale cache when file or shell event observation failed.
-        if(value)RefreshHook();
+        if(value){RefreshHook();scope="";}
         if(value && (watchers.Count==0 || hook==IntPtr.Zero))throw new InvalidOperationException("Desktop change tracking is unavailable. Use direct capture.");
         DeskPagesStartupGate.AtomicText(ModePath,value.ToString());Enabled=value;DeskPagesAnimation.SnapshotCacheEnabled=value;foreach(var w in watchers)w.EnableRaisingEvents=value;
         if(!value && hook!=IntPtr.Zero){UnhookWinEvent(hook);hook=IntPtr.Zero;}Invalidate();

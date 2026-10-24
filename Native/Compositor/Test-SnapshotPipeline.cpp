@@ -26,7 +26,8 @@ int main(){
  assert(cache.GetShared(ResidentKey(L"3:layout:stamp",area),1,Clock()));
  auto fresh=std::make_shared<const std::vector<unsigned char>>(16,77);
  for(int i=0;i<1000;i++)assert(pipe.Keep(L"2:new:stamp",area,fresh,1));
- pipe.Stop();assert(saves>0);assert(pipe.deferredWrites==0);
+ pipe.Suspend();cache.Clear();pipe.Prime({1,2,3},area);assert(!pipe.Warm(L"1:disabled:stamp",area));
+ pipe.Stop();assert(cache.Count()==0 && saves>0);assert(pipe.deferredWrites==0);
  // Epochs must not rewind when an old background result arrives late.
  assert(cache.Put(L"fresh",{1,2},2,Clock()));assert(!cache.Put(L"late",{3,4},1,Clock()));assert(cache.GetShared(L"fresh",2,Clock()));
  SnapshotCache pinned(64,99);pinned.Protect({1,2,3});for(int p=1;p<=3;p++)assert(pinned.Put(std::to_wstring(p)+L":hot",std::vector<unsigned char>(16),1,0));
