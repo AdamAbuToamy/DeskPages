@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -8,8 +8,8 @@ using System.Reflection;
 [assembly:AssemblyTitle("DeskPages open taskbar groups")]
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.36.0")]
-[assembly:AssemblyFileVersion("0.8.36.0")]
+[assembly:AssemblyVersion("0.8.37.0")]
+[assembly:AssemblyFileVersion("0.8.37.0")]
 internal static class TaskbarGroupsProgram {
     [STAThread]private static int Main(string[] args){
         try{
@@ -19,11 +19,14 @@ internal static class TaskbarGroupsProgram {
                 Guid token;int number;if(!Guid.TryParseExact(args[1],"N",out token) || !int.TryParse(args[2],out number) || number<1 || number>99)return 2;
                 IntPtr anchor=WindowShell.FindWindowW(null,"DeskPages · "+number.ToString("00"));if(anchor!=IntPtr.Zero && WindowShell.Get(anchor,5)=="DeskPages.LiveGroups."+args[1]+"."+number)PostMessageW(anchor,0x8031,IntPtr.Zero,IntPtr.Zero);return 0;
             }
-            if(args.Length!=0)return 2;
+            bool create=args.Length==1 && args[0]=="--add";
+            if(args.Length!=0 && !create)return 2;
+            using(var request=new GroupCreateSignal()){
+            if(create)request.Request();
             bool fresh;using(var mutex=new Mutex(true,"Local\\DeskPages.TaskbarGroups."+WindowsIdentity.GetCurrent().User.Value,out fresh)){
                 if(!fresh)return 0;GroupRecovery.RecoverOrphans();try{SetThreadDpiAwarenessContext(new IntPtr(-4));}catch(EntryPointNotFoundException){ }
-                Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new GroupController());
-            }return 0;
+                Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new GroupController(request));
+            }}return 0;
         }catch(Exception ex){MessageBox.Show(ex.Message,"DeskPages taskbar groups");return 1;}
     }
     [DllImport("user32.dll")]private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);

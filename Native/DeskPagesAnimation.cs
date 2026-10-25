@@ -41,15 +41,31 @@ public static class DeskPagesAnimation
     public static void ClearSnapshots(){if(library!=IntPtr.Zero)DPClearSnapshots();}
     public static ulong SnapshotCacheBytes {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(0);}}
     public static string DiskValuesCsv(){return library==IntPtr.Zero?"0,0,0":DPGetSnapshotValue(8)+","+DPGetSnapshotValue(9)+","+DPGetSnapshotValue(10);}
+    public static ulong ForegroundCaptureCalls {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(17);}}
     public static ulong CaptureCalls {get{return library==IntPtr.Zero?0:DPGetSnapshotValue(4);}}
     public static string SnapshotValuesCsv(){if(library==IntPtr.Zero)return "0,0,0,0,0,0,0";return DPGetSnapshotValue(5)+","+DPGetSnapshotValue(6)+","+DPGetSnapshotValue(0)+","+DPGetSnapshotValue(1)+","+DPGetSnapshotValue(2)+","+DPGetSnapshotValue(3)+","+DPGetSnapshotValue(4);}
     public static bool WarmSnapshot(string key,Rectangle bounds){if(!SnapshotCacheEnabled || string.IsNullOrEmpty(key))return false;Initialize();bool ok=DPWarmSnapshot(key,bounds.Left,bounds.Top,bounds.Width,bounds.Height)!=0;if(!ok)Trace("idle snapshot skipped: "+Metrics);return ok;}
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern void DPNotifyNavigation();
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern void DPPrimeSnapshots(int[] pages,int count,int left,int top,int width,int height);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]static extern int DPScheduleWarmSnapshot(string key,int left,int top,int width,int height);
+    [DllImport("DeskPagesCompositor.dll",CallingConvention=CallingConvention.Cdecl)]static extern int DPTakeWarmResult();
+    public static void NavigationPending(){if(library!=IntPtr.Zero)DPNotifyNavigation();}
+    public static void PrimeSnapshots(int[] pages,int current){
+        if(!SnapshotCacheEnabled || library==IntPtr.Zero || pages.Length==0)return;
+        var order=new System.Collections.Generic.List<int>();int at=Array.IndexOf(pages,current);if(at<0)return;
+        order.Add(current);foreach(int i in new[]{(at+1)%pages.Length,(at+pages.Length-1)%pages.Length})if(!order.Contains(pages[i]))order.Add(pages[i]);
+        foreach(int page in pages)if(!order.Contains(page))order.Add(page);
+        var b=DesktopBounds;DPPrimeSnapshots(order.ToArray(),order.Count,b.Left,b.Top,b.Width,b.Height);
+    }
+    public static bool ScheduleWarmSnapshot(string key){var b=DesktopBounds;return !string.IsNullOrEmpty(key) && DPScheduleWarmSnapshot(key,b.Left,b.Top,b.Width,b.Height)!=0;}
+    public static int TakeWarmResult(){return library==IntPtr.Zero?0:DPTakeWarmResult();}
+    public static string ResidentValuesCsv(){return string.Join(",",new[]{DPGetSnapshotValue(11),DPGetSnapshotValue(12),DPGetSnapshotValue(13),DPGetSnapshotValue(14),DPGetSnapshotValue(15),DPGetSnapshotValue(16)});}
     public static void Configure(string baseDirectory) {
         libraryPath=Path.Combine(baseDirectory,"Native","DeskPagesCompositor.dll");
         tracePath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","agent.log");
     }
     public static void Trace(string message) {
-        try {if(tracePath!=null){Directory.CreateDirectory(Path.GetDirectoryName(tracePath));File.AppendAllText(tracePath,DateTime.UtcNow.ToString("o")+" animation: "+message+Environment.NewLine);}}
+        try {if(tracePath!=null)DeskPagesDiagnostics.Append(tracePath,null,DateTime.UtcNow.ToString("o")+" animation: "+message+Environment.NewLine);}
         catch(IOException){}catch(UnauthorizedAccessException){}
     }
     public static void ConfirmDesktopTarget(int iconCount) {

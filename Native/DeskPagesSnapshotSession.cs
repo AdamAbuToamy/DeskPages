@@ -15,6 +15,13 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     long dirtyAt,nextReport,nextHook,retryAt;int pending=1,observerFailed,observerUnhealthy,scopeDirty=1;bool disposed;
     string sceneContext="",scope="";bool storeReady;
     readonly Dictionary<int,string> readyKeys=new Dictionary<int,string>();
+    readonly DeskPagesSnapshotCatalog catalog;string warmingKey;int[] pages=new int[0];int catalogReady;
+    public void SetPages(int[] value){pages=(int[])value.Clone();catalog.SetPages(value);}
+    public void TrackItems(string[] rows){catalog.SetRows(rows);}
+    public string PageStamp(int page){return catalog.Digest(page);}
+    void InvalidatePages(int[] values){if(disposed)return;foreach(int page in values)DeskPagesAnimation.InvalidateSnapshotPage(page);if(Array.IndexOf(values,Volatile.Read(ref currentPage))>=0)RequestCheck();}
+    void FileChanged(string path){catalog.FileChanged(path,Volatile.Read(ref currentPage));}
+    public void ScheduleWarm(string key){if(string.IsNullOrEmpty(key)){RequestCheck();return;}if(DeskPagesAnimation.ScheduleWarmSnapshot(key))warmingKey=key;else{retryAt=Now+100;RequestCheck();}}
     public void SceneContext(string value){value=value??"";if(sceneContext!=value){sceneContext=value;Invalidate();}}
     public bool EnsureScene(){
         if(!Enabled)return false;if(Volatile.Read(ref observerUnhealthy)!=0)Interlocked.Exchange(ref scopeDirty,1);if(Interlocked.Exchange(ref scopeDirty,0)==0 && storeReady)return true;
@@ -29,7 +36,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         if(scope!=next){DeskPagesAnimation.InvalidateSnapshots();DeskPagesAnimation.ConfigureSnapshotStore(Path.Combine(Folder,"Snapshots"),next);readyKeys.Clear();scope=next;DeskPagesStartupGate.Log("snapshot scene changed; encrypted records validated by scope");}
         return true;
     }
-    public string KnownKey(int page){if(!EnsureScene())return "";string key;return readyKeys.TryGetValue(page,out key)?key:DeskPagesAnimation.SavedSnapshotKey(page);}
+    public string KnownKey(int page){if(!EnsureScene())return "";var stamp=PageStamp(page);if(stamp.Length==0)return "";string key=DeskPagesAnimation.SavedSnapshotKey(page);return key.EndsWith(":"+stamp,StringComparison.Ordinal)?key:"";}
     public bool NeedsCapture(string key){int page;if(!EnsureScene() || !int.TryParse(key.Split(':')[0],out page))return true;return KnownKey(page)!=key;}
     public void Captured(string key,bool ok){int page;if(ok && int.TryParse(key.Split(':')[0],out page))readyKeys[page]=key;else {retryAt=Now+250;RequestCheck();}}
     [DllImport("user32.dll")]static extern short GetAsyncKeyState(int key);
@@ -48,12 +55,13 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     static string Class(IntPtr hwnd){var b=new StringBuilder(80);GetClassNameW(hwnd,b,b.Capacity);return b.ToString();}
     static long Now {get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
     public DeskPagesSnapshotSession(){
+        catalog=new DeskPagesSnapshotCatalog(InvalidatePages,delegate{Interlocked.Exchange(ref catalogReady,1);});
         Directory.CreateDirectory(Folder);bool saved;try{Enabled=File.Exists(ModePath)&&bool.TryParse(File.ReadAllText(ModePath).Trim(),out saved)&&saved;}catch(IOException){Enabled=false;}catch(UnauthorizedAccessException){Enabled=false;}
         callback=Changed;if(Enabled)RefreshHook();
         foreach(var path in new[]{Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory)}){
             if(!Directory.Exists(path))continue;
             try{var w=new FileSystemWatcher(path){IncludeSubdirectories=false,NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.LastWrite|NotifyFilters.Size|NotifyFilters.CreationTime};
-                w.Changed+=delegate(object sender,FileSystemEventArgs args){if(Directory.Exists(args.FullPath))RequestCheck();else Invalidate();};w.Created+=delegate{Invalidate();};w.Deleted+=delegate{Invalidate();};w.Renamed+=delegate{Invalidate();};w.Error+=delegate{Interlocked.Exchange(ref observerUnhealthy,1);Interlocked.Exchange(ref observerFailed,1);Invalidate();};w.EnableRaisingEvents=Enabled;watchers.Add(w);
+                w.Changed+=delegate(object sender,FileSystemEventArgs args){if(Directory.Exists(args.FullPath))RequestCheck();else FileChanged(args.FullPath);};w.Created+=delegate(object sender,FileSystemEventArgs args){FileChanged(args.FullPath);};w.Deleted+=delegate(object sender,FileSystemEventArgs args){FileChanged(args.FullPath);};w.Renamed+=delegate(object sender,RenamedEventArgs args){FileChanged(args.OldFullPath);FileChanged(args.FullPath);};w.Error+=delegate{Interlocked.Exchange(ref observerUnhealthy,1);Interlocked.Exchange(ref observerFailed,1);Invalidate();};w.EnableRaisingEvents=Enabled;watchers.Add(w);
             }catch(Exception ex){DeskPagesStartupGate.Log("snapshot watcher: "+ex.Message);Enabled=false;}
         }
         if(watchers.Count==0 || hook==IntPtr.Zero)Enabled=false;
@@ -75,29 +83,32 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     public void Invalidate(){Interlocked.Exchange(ref scopeDirty,1);RequestCheck();}
     public void SetEnabled(bool value){
         // Never enable a stale cache when file or shell event observation failed.
-        if(value)RefreshHook();
+        if(value){RefreshHook();scope="";}
         if(value && (watchers.Count==0 || hook==IntPtr.Zero))throw new InvalidOperationException("Desktop change tracking is unavailable. Use direct capture.");
         DeskPagesStartupGate.AtomicText(ModePath,value.ToString());Enabled=value;DeskPagesAnimation.SnapshotCacheEnabled=value;foreach(var w in watchers)w.EnableRaisingEvents=value;
         if(!value && hook!=IntPtr.Zero){UnhookWinEvent(hook);hook=IntPtr.Zero;}Invalidate();
         if(!value)DeskPagesAnimation.ClearSnapshots();
     }
     public bool ShouldWarm(){
-        if(!Enabled || disposed || Now<retryAt)return false;
+        if(!Enabled || disposed || warmingKey!=null || Now<retryAt)return false;
         if(Interlocked.CompareExchange(ref pending,0,0)==0 || Now-Interlocked.Read(ref dirtyAt)<40 || (GetAsyncKeyState(1)&0x8000)!=0)return false;
         if(!EnsureScene())return false;Interlocked.Exchange(ref pending,0);return true;
     }
-    public void BeginSample(long received=0,long waited=0){inputAgeAtStart=received>0?Math.Max(0,Now-received):0;queueWait=waited;navigation=Stopwatch.StartNew();firstSlide=-1;cachedPreview=false;captureAtStart=DeskPagesAnimation.CaptureCalls;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
+    public void BeginSample(long received=0,long waited=0){inputAgeAtStart=received>0?Math.Max(0,Now-received):0;queueWait=waited;navigation=Stopwatch.StartNew();firstSlide=-1;cachedPreview=false;captureAtStart=DeskPagesAnimation.ForegroundCaptureCalls;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     public void Source(string key){DeskPagesAnimation.SnapshotSourceKey=key;}
     public void Target(string key){DeskPagesAnimation.SnapshotTargetKey=key;}
     public void EndSample(bool success){
         if(navigation==null)return;navigation.Stop();
         try{using(var p=Process.GetCurrentProcess()){
-            string path=Path.Combine(Folder,"transition-performance-v4.csv");
-            if(!File.Exists(path))File.WriteAllText(path,"Utc,Mode,Success,CommandToSlideMs,SourcePrepareMs,TargetPrepareMs,CacheBytes,SourceHits,TargetHits,CacheMisses,CaptureCalls,WorkingSetBytes,PrivateBytes,GCBytes,Handles,DesktopReadyMs,CachedPreview,CaptureCallsDuringNavigation,DiskHits,DiskWrites,DiskErrors,InputQueueWaitMs,InputToSlideSubmitMs,InputToDesktopReadyMs\r\n");
-            File.AppendAllText(path,DateTime.UtcNow.ToString("o")+","+(Enabled?"cached":"direct")+","+success+","+(firstSlide>=0?firstSlide:navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.SnapshotValuesCsv()+","+p.WorkingSet64+","+p.PrivateMemorySize64+","+GC.GetTotalMemory(false)+","+p.HandleCount+","+navigation.ElapsedMilliseconds+","+cachedPreview+","+(DeskPagesAnimation.CaptureCalls-captureAtStart)+","+DeskPagesAnimation.DiskValuesCsv()+","+queueWait+","+(firstSlide>=0?inputAgeAtStart+firstSlide:-1)+","+(inputAgeAtStart+navigation.ElapsedMilliseconds)+"\r\n");
+            string path=Path.Combine(Folder,"transition-performance-v5.csv");
+            string header="Utc,Mode,Success,CommandToSlideMs,SourcePrepareMs,TargetPrepareMs,CacheBytes,SourceHits,TargetHits,CacheMisses,CaptureCalls,WorkingSetBytes,PrivateBytes,GCBytes,Handles,DesktopReadyMs,CachedPreview,CaptureCallsDuringNavigation,DiskHits,DiskWrites,DiskErrors,InputQueueWaitMs,InputToSlideSubmitMs,InputToDesktopReadyMs,ResidentLimitBytes,ResidentImages,Preloads,IdleCaptures,SnapshotWorkerErrors,DeferredPersists\r\n";
+            DeskPagesDiagnostics.Append(path,header,DateTime.UtcNow.ToString("o")+","+(Enabled?"cached":"direct")+","+success+","+(firstSlide>=0?firstSlide:navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.SnapshotValuesCsv()+","+p.WorkingSet64+","+p.PrivateMemorySize64+","+GC.GetTotalMemory(false)+","+p.HandleCount+","+navigation.ElapsedMilliseconds+","+cachedPreview+","+(DeskPagesAnimation.ForegroundCaptureCalls-captureAtStart)+","+DeskPagesAnimation.DiskValuesCsv()+","+queueWait+","+(firstSlide>=0?inputAgeAtStart+firstSlide:-1)+","+(inputAgeAtStart+navigation.ElapsedMilliseconds)+","+DeskPagesAnimation.ResidentValuesCsv()+"\r\n");
         }}catch(Exception ex){DeskPagesStartupGate.Log("performance sample: "+ex.Message);}finally{navigation=null;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     }
     public void Poll(){
+        if(Interlocked.Exchange(ref catalogReady,0)!=0)DeskPagesAnimation.PrimeSnapshots(pages,currentPage);
+        if(warmingKey!=null){int result=DeskPagesAnimation.TakeWarmResult();if(result!=1){string key=warmingKey;warmingKey=null;Captured(key,result==2);}}
+        if(Enabled && scopeDirty!=0){EnsureScene();DeskPagesAnimation.PrimeSnapshots(pages,currentPage);}
         if(Interlocked.Exchange(ref observerFailed,0)!=0){
             bool healthy=true;foreach(var watcher in watchers)try{watcher.EnableRaisingEvents=false;watcher.EnableRaisingEvents=Enabled;}catch(Exception ex){healthy=false;DeskPagesStartupGate.Log("snapshot watcher retry: "+ex.Message);}
             Interlocked.Exchange(ref observerUnhealthy,healthy?0:1);if(!healthy)Interlocked.Exchange(ref observerFailed,1);Invalidate();DeskPagesStartupGate.Log("snapshot watcher rescan; caching preference retained");
@@ -107,5 +118,5 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
             string request=Path.Combine(Folder,"capture-mode.request");if(File.Exists(request)){bool value;if(bool.TryParse(File.ReadAllText(request).Trim(),out value))SetEnabled(value);File.Delete(request);}
         }catch(IOException){}catch(UnauthorizedAccessException){}
     }
-    public void Dispose(){disposed=true;if(hook!=IntPtr.Zero)UnhookWinEvent(hook);foreach(var w in watchers)w.Dispose();watchers.Clear();DeskPagesAnimation.ClearSnapshots();try{string path=Path.Combine(Folder,"performance-agent.pid");if(File.Exists(path) && File.ReadAllLines(path)[0]==Process.GetCurrentProcess().Id.ToString())File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}}
+    public void Dispose(){disposed=true;catalog.Dispose();if(hook!=IntPtr.Zero)UnhookWinEvent(hook);foreach(var w in watchers)w.Dispose();watchers.Clear();DeskPagesAnimation.ClearSnapshots();try{string path=Path.Combine(Folder,"performance-agent.pid");if(File.Exists(path) && File.ReadAllLines(path)[0]==Process.GetCurrentProcess().Id.ToString())File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}}
 }

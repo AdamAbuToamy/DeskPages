@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.36.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.37.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -340,13 +340,13 @@ try {
             elseif ($Code -eq 9701) {Sync-DpMonitorProfile}
             elseif ($Code -eq 9702) {
                 if(-not $script:DpSuspended -and -not $script:DpEdgeDrag -and -not $script:DpNewItemContext -and -not (Test-Path -LiteralPath (Join-Path $script:DpStore 'transition.xml'))){
-                    Sync-DpMonitorProfile
+                    Sync-DpMonitorProfile -VerifyGeometry
                     Connect-DpDesktop
                     $null=Protect-DpMonitorArrangement -Page ([int]$script:DpState.Current) -Icons @([OriginalDesktopReader]::Read($script:originalDesktop))
                 }
             }
             elseif ($Code -eq 9760) {
-                Set-DpGroupsEnabled $true
+                Add-DpTaskbarGroup
             }
             elseif ($Code -eq 9600) { . (Join-Path $script:base 'EdgeDrag.ps1'); Invoke-DpEdgeRequest }
             elseif ($Code -eq 9401) {

@@ -371,3 +371,8 @@ function Set-DpGroupsEnabled {param([bool]$Enabled)
     if($Enabled){$script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)}
     else{$signal=$null;try{$signal=[Threading.EventWaitHandle]::OpenExisting('Local\DeskPagesTaskbarGroupsStop-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value);$null=$signal.Set()}catch [Threading.WaitHandleCannotBeOpenedException]{}finally{if($signal){$signal.Dispose()}}}
 }
+
+function Add-DpTaskbarGroup {
+    if(-not(Get-DpGroupsEnabled)){Set-DpGroupsEnabled $true}
+    $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'--add',$script:base,'open',0)
+}

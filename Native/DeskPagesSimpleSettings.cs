@@ -92,7 +92,7 @@ public sealed class DeskPagesSimpleSettings:Form {
         KeyPreview=true;KeyDown+=delegate(object sender,KeyEventArgs e){if(e.KeyCode==Keys.Escape)Close();};Controls.Add(Surface);
         language.Items.AddRange(new object[]{"English","العربية","עברית"});
         Surface.Add(0,L("Language","اللغة","שפה"),L("Choose the app language","اختر لغة التطبيق","בחרו את שפת היישום"),language);
-        Surface.Add(0,L("Taskbar groups","مجموعات التاسك بار","קבוצות בשורת המשימות"),L("Group running apps with + on the taskbar","اجمع التطبيقات المفتوحة بزر + في التاسك بار","קבצו יישומים פתוחים באמצעות +"),groupsEnabled);
+        Surface.Add(0,L("Taskbar groups","مجموعات التاسك بار","קבוצות בשורת המשימות"),L("Add from the tray menu or Win+Alt+Plus","أضف مجموعة من قائمة البرنامج أو Win+Alt+Plus","הוסיפו קבוצה מתפריט הסמל או Win+Alt+Plus"),groupsEnabled);
         groupsEnabled.CheckedChanged+=delegate{if(loading || !ready)return;bool requested=groupsEnabled.Checked;try{DeskPagesWorkspaceApi.Execute("groups-enable",requested.ToString());Surface.SetStatus(L("Saved","تم الحفظ","נשמר"));}catch(Exception ex){loading=true;groupsEnabled.Checked=!requested;loading=false;Surface.SetStatus(ex.Message);}};
         for(int i=0;i<4;i++){basic[i]=new DeskPagesModernToggle();basic[i].CheckedChanged+=Changed;}
         Surface.Add(1,L("Touchpad swipe","السحب بلوحة اللمس","החלקה במשטח המגע"),L("Use a supported horizontal gesture","تنقل بإيماءة أفقية يدعمها جهازك","מעבר במחווה אופקית נתמכת"),basic[0]);

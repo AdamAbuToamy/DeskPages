@@ -1,6 +1,7 @@
 ﻿function Sync-DpSnapshotScene {
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return}
-    $parts=@($script:DpState.Items | Sort-Object Path | ForEach-Object {"$($_.Path)|$($_.Page)|$($_.Pinned)|$($_.Secondary)"})
+    [DeskPagesHost]::TrackSnapshotItems([string[]]@($script:DpState.Items | Sort-Object Path | ForEach-Object {"$($_.Path)|$($_.Page)|$($_.Pinned)|$($_.Secondary)"}))
+    $parts=@("PrimaryOnly=$($script:DpState.Workspace.PrimaryOnly)")
     if($script:DpState.PSObject.Properties['Workspace']){$parts+=@($script:DpState.Workspace.SystemPinned | Sort-Object);$parts+=@($script:DpState.Workspace.SecondaryIcons | Sort-Object Key | ForEach-Object {"$($_.Key)|$($_.X)|$($_.Y)"})}
     $parts+=@($script:DpState.SystemIconBackup | Sort-Object Id | ForEach-Object {"$($_.Id)|$($_.Exists)|$($_.Value)"})
     [DeskPagesHost]::SnapshotSceneContext(($parts -join "`n"))
@@ -11,7 +12,10 @@ function Get-DpSnapshotKey {
     elseif($script:DpLastLayoutSignature -and $script:DpLastLayoutSignature.ContainsKey($Page)){$signature=$script:DpLastLayoutSignature[$Page]}
     else{return ''}
     $hash=[Security.Cryptography.SHA256]::Create()
-    try{return [string]$Page+':'+([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($signature)))).Replace('-','')}
+    try{
+        $stamp='';if($script:hostReady -and [DeskPagesHost]::SnapshotCacheEnabled){$stamp=[DeskPagesHost]::SnapshotPageStamp($Page);if(-not $stamp){return ''}}
+        return [string]$Page+':'+([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($signature)))).Replace('-','')+$(if($stamp){':'+$stamp}else{''})
+    }
     finally{$hash.Dispose()}
 }
 function Start-DpNavigationSample {if($script:hostReady){[DeskPagesHost]::BeginNavigationSample()}}
@@ -23,7 +27,7 @@ function Try-DpCachedPreview {param([int]$Source,[int]$Target,[int]$Direction)
     if(-not [DeskPagesHost]::SnapshotCacheEnabled){return $false}
     Sync-DpSnapshotScene
     if(-not $script:DpSnapshotKeys){$script:DpSnapshotKeys=@{}}
-    foreach($page in @($Source,$Target)){if(-not $script:DpSnapshotKeys.ContainsKey($page)){$known=[DeskPagesHost]::SavedSnapshotKey($page);if($known){$script:DpSnapshotKeys[$page]=$known}}}
+    foreach($page in @($Source,$Target)){$known=[DeskPagesHost]::SavedSnapshotKey($page);if($known){$script:DpSnapshotKeys[$page]=$known}else{$script:DpSnapshotKeys.Remove($page)}}
     if(-not $script:DpSnapshotKeys.ContainsKey($Source) -or -not $script:DpSnapshotKeys.ContainsKey($Target)){return $false}
     return [DeskPagesHost]::TryBeginCachedPreview($Direction,$script:DpSnapshotKeys[$Source],$script:DpSnapshotKeys[$Target])
 }

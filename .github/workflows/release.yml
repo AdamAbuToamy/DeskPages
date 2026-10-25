@@ -30,6 +30,12 @@ jobs:
         run: |
           ./Interaction/Build-Groups.ps1
           ./Tests/Test-TaskbarGroupsWindows.ps1
+      - name: Early native taskbar regression
+        if: github.event_name == 'pull_request'
+        shell: powershell
+        run: |
+          ./Interaction/Build-Groups.ps1
+          ./Tests/Test-TaskbarGroupsWindows.ps1
       - name: Build native compositor, runtime and installer; run isolated acceptance
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell

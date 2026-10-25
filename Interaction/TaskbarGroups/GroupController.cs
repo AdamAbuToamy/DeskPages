@@ -20,26 +20,26 @@ internal sealed class GroupController:ApplicationContext {
     private readonly GroupModel model;private readonly GroupRecovery recovery;
     private readonly Dictionary<int,GroupAnchor> anchors=new Dictionary<int,GroupAnchor>();
     private readonly GroupTaskbar taskbar=new GroupTaskbar();
-    private readonly GroupAddButton plus;private readonly GroupDropCue cue=new GroupDropCue();
+    private readonly GroupCommandWindow commands;private readonly GroupCreateSignal createRequest;private readonly GroupDropCue cue=new GroupDropCue();
     private readonly GroupDragGhost ghost=new GroupDragGhost();private readonly GroupDragInput input;private readonly GroupPopup groupPopup;
     private GroupDragGesture captured;private int replayBusy,windowsBusy;private GroupDragSource[] resolvedSources=new GroupDragSource[0];private GroupWindowPicker picker;
-    private readonly ToolTip hint=new ToolTip();
     private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=40};
     private readonly GroupDropDwell dwell=new GroupDropDwell();
     private readonly EventWaitHandle stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
     private TaskbarSnapshot snapshot=new TaskbarSnapshot();private GroupWindow[] drag=new GroupWindow[0];
-    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastRaise,lastWindowRead;
+    private Point press;private bool held,moved,ready,disposed;private int readBusy,generation;private long lastRead,lastWindowRead;
     private readonly GroupWindowEvents windowEvents=new GroupWindowEvents();
     private long refreshRevision=1,seenRefreshRevision,seenWindowRevision,resolvedWindowRevision,lastGeometryRead;private bool pointerOnBar,wasOnBar;
     private string resolvedButtons="";
     private LiveGroup target;private Process guardian;private int resolveBusy;
     private TaskButton[] pressGroups=new TaskButton[0];private string sourceAppId;
     private static long Now{get{return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}}
-    public GroupController(){
-        model=new GroupModel(session);recovery=new GroupRecovery(session);plus=new GroupAddButton(AddGroup);var uiHandle=plus.Handle;
-        groupPopup=new GroupPopup(plus,g=>model.Find(g.AppId)==g,DeleteGroup,WindowShell.Activate,BeginMemberDrag,ChooseOpenApps);
+    public GroupController(GroupCreateSignal request){
+        createRequest=request;
+        model=new GroupModel(session);recovery=new GroupRecovery(session);commands=new GroupCommandWindow(AddGroup);var uiHandle=commands.Handle;
+        groupPopup=new GroupPopup(commands,g=>model.Find(g.AppId)==g,DeleteGroup,WindowShell.Activate,BeginMemberDrag,ChooseOpenApps);
         Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));stop.Reset();
-        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);},(id,point)=>Post(delegate{var group=model.Find(id);if(group!=null)groupPopup.Show(group,point);}));snapshot=TaskbarAccess.ReadBounds();PlacePlus();timer.Tick+=delegate{Tick();};timer.Start();
+        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);},(id,point)=>Post(delegate{var group=model.Find(id);if(group!=null)groupPopup.Show(group,point);}));snapshot=TaskbarAccess.ReadBounds();timer.Tick+=delegate{Tick();};timer.Start();if(commands.RegistrationCount==0)Post(delegate{Notify("The group shortcut is in use. Add groups from the DeskPages tray menu.");});
     }
     public static string EnabledPath{get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","TaskbarGroups","enabled.txt");}}
     private void StartGuardian(){
@@ -52,13 +52,14 @@ internal sealed class GroupController:ApplicationContext {
         if(!File.Exists(receipt) || guardian.HasExited)throw new InvalidOperationException("The taskbar recovery helper could not start");
     }
     private void AddGroup(){
+        if(disposed)return;
         LiveGroup group=null;GroupAnchor anchor=null;
         try{
             group=model.Add();var added=group;anchor=new GroupAnchor(group,delegate{OpenGroup(added);});
             // Set the window identity before Explorer sees its first visible state.
             WindowShell.Set(anchor.Handle,5,group.AppId);anchors.Add(group.Number,anchor);
             anchor.Show();taskbar.Add(anchor.Handle);
-            hint.Show("Drag an open app normally. Drop it on the numbered group to add it.",plus,0,-70,5000);RefreshSoon();
+            RefreshSoon();
         }catch(Exception ex){
             if(anchor!=null){try{taskbar.Remove(anchor.Handle);}catch(Exception){}anchor.Finish();}
             if(group!=null){anchors.Remove(group.Number);model.DeleteEmpty(group);}
@@ -69,11 +70,11 @@ internal sealed class GroupController:ApplicationContext {
         if(disposed)return;
         if(stop.WaitOne(0)){ExitThread();return;}
         try{
+            if(createRequest.Take())AddGroup();
             var pointer=Cursor.Position;pointerOnBar=snapshot.Bounds.Contains(pointer);
             if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
             bool interacting=pointerOnBar || captured!=null || drag.Length>0;
             bool dragging=captured!=null || drag.Length>0 || (held && pointerOnBar);
-            if(Now-lastRaise>=(interacting?250:1000)){lastRaise=Now;plus.KeepAbove();}
             if(Now-lastGeometryRead>=500){lastGeometryRead=Now;var bounds=TaskbarAccess.ReadBounds();if(bounds.Handle!=snapshot.Handle || bounds.Bounds!=snapshot.Bounds)RefreshSoon();}
             bool changed=seenRefreshRevision!=Interlocked.Read(ref refreshRevision) || seenWindowRevision!=windowEvents.Revision;
             if(GroupRefreshPolicy.Due(Now,lastRead,changed,interacting,dragging) && Interlocked.CompareExchange(ref readBusy,1,0)==0){
@@ -100,7 +101,7 @@ internal sealed class GroupController:ApplicationContext {
                 CancelDrag();Prune();RefreshSoon();
             }
             held=down;
-        }catch(Exception ex){CancelDrag();hint.Show(ex.Message,plus,0,-50,4000);}
+        }catch(Exception ex){CancelDrag();Notify(ex.Message);}
     }
     private void ResolvePress(Point point,int request){
         if(Interlocked.CompareExchange(ref resolveBusy,1,0)!=0)return;
@@ -112,7 +113,7 @@ internal sealed class GroupController:ApplicationContext {
                 if(button!=null && model.Find(button.AppId)!=null)return;
                 sourceAppId=button==null?null:button.AppId;
                 drag=resolved;
-                if(drag.Length==0 && button!=null)hint.Show("No unambiguous running window was found for this button. Closed pinned apps are not grouped.",plus,0,-60,4000);
+                if(drag.Length==0 && button!=null)Notify("No unambiguous running window was found for this button. Closed pinned apps are not grouped.");
             });
         });
     }
@@ -124,7 +125,7 @@ internal sealed class GroupController:ApplicationContext {
             TaskButton actual=null;try{actual=TaskbarAccess.Hit(point);if(actual==null || actual.AppId!=group.AppId)actual=TaskbarAccess.DropTarget(TaskbarAccess.Read(),original,point,source,id=>id==group.AppId);}catch(Exception){ }finally{Interlocked.Exchange(ref resolveBusy,0);}
             if(actual!=null && actual.AppId==group.AppId)Post(delegate{
                 if(model.Find(group.AppId)!=group || generation!=approvedGeneration)return;
-                try{Assign(group,items);}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}
+                try{Assign(group,items);}catch(Exception ex){Notify(ex.Message);}
             });
         });
     }
@@ -159,7 +160,7 @@ internal sealed class GroupController:ApplicationContext {
                 var approved=new[]{new TaskButton{AppId=destination.AppId,Bounds=gesture.TargetBounds}};
                 var hit=TaskbarAccess.DropTarget(fresh,approved,gesture.Release,gesture.Source.Button.AppId,id=>id==destination.AppId);
                 if(hit==null || hit.AppId!=destination.AppId || !WindowShell.OnTaskbar(gesture.Release,fresh.Handle))return;
-                if(windows==null || windows.Length==0){hint.Show("This taskbar button could not be matched to a running window. No application was changed.",plus,0,-50,4000);return;}
+                if(windows==null || windows.Length==0){Notify("This taskbar button could not be matched to a running window. No application was changed.");return;}
                 if(gesture.Source.Windows.Length>0 && !windows.Select(w=>w.Key).OrderBy(k=>k).SequenceEqual(gesture.Source.Windows.Select(w=>w.Key).OrderBy(k=>k)))return;
                 Assign(destination,windows);RefreshSoon();
             });
@@ -174,7 +175,7 @@ internal sealed class GroupController:ApplicationContext {
             var cache=Interlocked.CompareExchange(ref resolvedSources,null,null);
             var regions=new GroupInputMap{Created=observedAt,DragDistance=SystemInformation.DragSize.Width,Taskbar=next.Handle,Bounds=next.Bounds,Groups=next.Buttons.Where(b=>ids.Contains(b.AppId)).ToArray(),Sources=next.Buttons.Where(b=>!ids.Contains(b.AppId)).Select(b=>new GroupDragSource{Button=b,Windows=(cache.FirstOrDefault(c=>c.Button.AppId==b.AppId)??new GroupDragSource{Windows=new GroupWindow[0]}).Windows}).ToArray()};
             input.Publish(regions);
-            Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;PlacePlus();Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
+            Post(delegate{bool recreated=snapshot.Handle!=next.Handle;snapshot=next;Prune();if(recreated){taskbar.Reset();foreach(var g in model.Groups)if(!g.Used)taskbar.Add(anchors[g.Number].Handle);}});
             // Window/shortcut resolution cannot stall publication of hit regions.
             var liveIds=next.Buttons.Select(b=>b.AppId).ToArray();string buttonSignature=string.Join("\n",liveIds.OrderBy(id=>id,StringComparer.OrdinalIgnoreCase));
             bool resolveChanged=resolvedWindowRevision!=eventRevision || resolvedButtons!=buttonSignature;
@@ -189,13 +190,6 @@ internal sealed class GroupController:ApplicationContext {
         if(picker!=null && !picker.IsDisposed){picker.Activate();return;}
         picker=new GroupWindowPicker(group.Number,delegate(GroupWindow[] chosen){if(model.Find(group.AppId)!=group)throw new InvalidOperationException("The group was removed");Assign(group,chosen);});
         picker.FormClosed+=delegate{picker=null;};picker.Show();
-    }
-    private void PlacePlus(){
-        Rectangle area=Screen.PrimaryScreen.Bounds;
-        var bar=snapshot.Bounds;
-        if(!bar.IsEmpty && bar.Height>=10)area=Screen.FromRectangle(bar).Bounds;
-        var bounds=GroupLayoutPolicy.AddBounds(bar,snapshot.Weather,area,snapshot.Occupied,snapshot.Accessible);
-        plus.Bounds=bounds;if(!plus.Visible)plus.Show();
     }
     private void Assign(LiveGroup group,GroupWindow[] items){
         if(guardian.HasExited)throw new InvalidOperationException("Recovery is unavailable; no windows were grouped");
@@ -227,11 +221,12 @@ internal sealed class GroupController:ApplicationContext {
     private void BeginMemberDrag(GroupWindow window){CancelDrag();drag=new[]{window};press=Cursor.Position;held=true;}
     private void RefreshSoon(){Interlocked.Increment(ref refreshRevision);}
     private void CancelDrag(){generation++;drag=new GroupWindow[0];pressGroups=new TaskButton[0];sourceAppId=null;target=null;ready=false;moved=false;dwell.Reset();cue.Hide();}
-    private void Post(Action action){if(disposed)return;try{plus.BeginInvoke((Action)delegate{if(!disposed)try{action();}catch(Exception ex){hint.Show(ex.Message,plus,0,-50,4000);}});}catch(InvalidOperationException){ }}
+    private void Notify(string message){if(!disposed)MessageBox.Show(commands,message,"DeskPages groups",MessageBoxButtons.OK,MessageBoxIcon.Information);}
+    private void Post(Action action){if(disposed)return;try{commands.BeginInvoke((Action)delegate{if(!disposed)try{action();}catch(Exception ex){Notify(ex.Message);}});}catch(InvalidOperationException){ }}
     protected override void ExitThreadCore(){
         if(disposed)return;disposed=true;if(captured!=null)captured.Cancelled=true;input.Dispose();windowEvents.Dispose();timer.Stop();timer.Dispose();
         try{recovery.RestoreAll();}catch(Exception){/* The independent guardian retries the durable journal after exit. */}
-        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);if(picker!=null && !picker.IsDisposed)picker.Close();groupPopup.Dispose();ghost.Dispose();cue.Dispose();plus.Dispose();hint.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
+        finally{foreach(var group in model.Groups)if(anchors.ContainsKey(group.Number))RemoveAnchor(group);if(picker!=null && !picker.IsDisposed)picker.Close();groupPopup.Dispose();ghost.Dispose();cue.Dispose();commands.Dispose();taskbar.Dispose();stop.Dispose();if(guardian!=null)guardian.Dispose();}
         base.ExitThreadCore();
     }
 }

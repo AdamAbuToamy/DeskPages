@@ -7,7 +7,7 @@ function Reject([scriptblock]$Action,[string]$Reason){$failed=$false;try{& $Acti
 try{
     $guardian=Join-Path $base 'DeskPagesStartup.exe'
     $info=Read-DpPortableExecutable -Path $guardian -Machine 0x8664 -Managed
-    Assert-DpManagedIdentity -Path $guardian -Name 'DeskPagesStartup' -Version ([Version]'0.8.36.0')
+    Assert-DpManagedIdentity -Path $guardian -Name 'DeskPagesStartup' -Version ([Version]'0.8.37.0')
     $bad=Join-Path $root 'DeskPagesStartup.exe'
     [IO.File]::WriteAllBytes($bad,[byte[]]@())
     Reject {Read-DpPortableExecutable -Path $bad -Machine 0x8664 -Managed} 'empty or truncated'
@@ -26,7 +26,7 @@ try{
     Reject {Read-DpPortableExecutable -Path $bad -Machine 0x8664 -Managed} 'no CLR metadata header'
     Reject {Assert-DpManagedIdentity -Path $guardian -Name 'UnrelatedProgram'} 'identity/version'
     Reject {Assert-DpManagedIdentity -Path $guardian -Name 'DeskPagesStartup' -Version ([Version]'0.0.1.0')} 'identity/version'
-    Assert-DpPackage -Root $base -Version ([Version]'0.8.36.0')
-    Write-Host ('PASS: actual packaged guardian is '+$info.Length+' bytes; AMD64 PE32+, CLR metadata, exact DeskPagesStartup 0.8.36.0 identity verified')
+    Assert-DpPackage -Root $base -Version ([Version]'0.8.37.0')
+    Write-Host ('PASS: actual packaged guardian is '+$info.Length+' bytes; AMD64 PE32+, CLR metadata, exact DeskPagesStartup 0.8.37.0 identity verified')
     Write-Host 'PASS: empty, truncated, wrong-machine, missing-CLR, wrong-name and wrong-version fixtures rejected without executing any binary'
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
