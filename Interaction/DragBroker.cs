@@ -85,7 +85,7 @@ internal sealed class DragBroker:ApplicationContext {
             if(inputState.Observe(mouseDown,cursor.X,cursor.Y,out pressX,out pressY) && !candidate && !approved && pending==null){
                 Point press=new Point(pressX,pressY);IntPtr hit=WindowFromPoint(press);
                 string cls=ClassName(hit),root=ClassName(GetAncestor(hit,2));
-                if((cls=="SysListView32" || cls=="SHELLDLL_DefView") && (root=="Progman" || root=="WorkerW")){Reset();candidate=true;down=press;}
+                if((cls=="SysListView32" || cls=="SHELLDLL_DefView") && (root=="Progman" || root=="WorkerW")){Reset();candidate=true;down=press;Trace("drag candidate detected; hit="+cls+"; root="+root);}
             }
             if(cueNavigationId!=null){
                 string[] visual;
@@ -155,14 +155,14 @@ internal sealed class DragBroker:ApplicationContext {
     private void Enter(Surface surface,DragEventArgs e){
         acceptableData=false;e.Effect=DragDropEffects.None;if(!candidate || !enabled)return;
         try{
-            if(!e.Data.GetDataPresent(DataFormats.FileDrop))return;
+            if(!e.Data.GetDataPresent(DataFormats.FileDrop)){Trace("OLE enter rejected: original file-drop data unavailable");return;}
             string[] paths=e.Data.GetData(DataFormats.FileDrop) as string[];
-            if(paths==null || paths.Length<1 || paths.Length>256)return;
+            if(paths==null || paths.Length<1 || paths.Length>256){Trace("OLE enter rejected: invalid file selection");return;}
             if(files==null){files=(string[])paths.Clone();if(pending==null)Send("Arm",down.X,down.Y,files);}
-            else if(!Same(paths,files))return;
+            else if(!Same(paths,files)){Trace("OLE enter rejected: selection differs from armed drag");return;}
             acceptableData=true;activeSurface=surface;overCanvas=surface==canvas;
             if(approved)e.Effect=(e.AllowedEffect&DragDropEffects.Move)!=0?DragDropEffects.Move:DragDropEffects.None;
-        }catch{e.Effect=DragDropEffects.None;}
+        }catch(Exception ex){Trace("OLE enter failed: "+ex.GetType().Name+": "+ex.Message);e.Effect=DragDropEffects.None;}
     }
     private void Over(Surface surface,DragEventArgs e){
         e.Effect=approved && acceptableData && (e.KeyState&1)!=0 && (e.AllowedEffect&DragDropEffects.Move)!=0?DragDropEffects.Move:DragDropEffects.None;
@@ -191,8 +191,8 @@ internal sealed class DragBroker:ApplicationContext {
     }
     private void Cancel(string reason){
         edgeCue.Hide();cueNavigationId=null;
-        if(candidate || approved || pending!=null || files!=null)Trace("drag cancelled: "+reason);
-        dragImages.Cancel();left.Hide();right.Hide();canvas.Hide();candidate=false;edges.Reset();dropped=null;
+        if(candidate || approved || pending!=null || files!=null)Trace("drag cancelled: "+reason+"; armed="+approved+"; OLE="+acceptableData+"; pending="+(pending==null?"none":pending.Kind)+"; edgeVisible="+left.Visible+"/"+right.Visible+"; canvas="+canvas.Visible);
+        dragImages.Cancel();left.Hide();right.Hide();canvas.Hide();candidate=false;acceptableData=false;activeSurface=null;overCanvas=false;edges.Reset();dropped=null;
         if(approved || files!=null){if(pending==null){Send("Cancel",0,0,null);}else cancelNext=true;}
         approved=false;files=null;releaseAt=-1;
     }
