@@ -461,6 +461,8 @@ public sealed class DeskPagesHost : ApplicationContext
         private long dragDisplayRevision;
         private readonly HashSet<uint> swallowed=new HashSet<uint>();
         private bool leftWindowsDown,rightWindowsDown;
+        private long arrowProbeCount,arrowInterceptCount;
+        private string lastArrowProbe="none";
         public InputPump(DeskPagesHost host)
         {
             owner=host; receiver=new Receiver(this);
@@ -557,9 +559,25 @@ public sealed class DeskPagesHost : ApplicationContext
                         (GetAsyncKeyState(0x5B)&0x8000)!=0 || (GetAsyncKeyState(0x5C)&0x8000)!=0;
                     bool other=(GetAsyncKeyState(0x10)&0x8000)!=0 ||
                         (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0x12)&0x8000)!=0;
-                    // DesktopWindow is deliberately required: do not hijack
-                    // Windows Snap in an ordinary foreground application.
-                    if(down && owner.winArrows && win && !other && DesktopWindow(GetForegroundWindow())) {
+                    // Explorer can expose a desktop icon child as focus while a
+                    // shell-owned popup/WorkerW is foreground. Accept the physical
+                    // desktop under the pointer as well as the foreground root;
+                    // never steal Win+Arrow from a non-desktop window under it.
+                    Point pointer;
+                    bool pointerDesktop=GetCursorPos(out pointer) && DesktopAt(pointer);
+                    bool foregroundDesktop=DesktopWindow(GetForegroundWindow());
+                    if(down && win) {
+                        Interlocked.Increment(ref arrowProbeCount);
+                        lastArrowProbe="win="+win+"; other="+other+"; enabled="+owner.winArrows+
+                            "; foregroundDesktop="+foregroundDesktop+"; pointerDesktop="+pointerDesktop+
+                            "; foreground="+ClassName(GetAncestor(GetForegroundWindow(),2));
+                        // Log only a concise input decision, not user keystrokes
+                        // or desktop file names.
+                        DeskPagesStartupGate.Log("WinArrow probe: "+lastArrowProbe);
+                    }
+                    if(down && owner.winArrows && win && !other &&
+                        (foregroundDesktop || pointerDesktop)) {
+                        Interlocked.Increment(ref arrowInterceptCount);
                         if(swallowed.Add(key.Key)) {
                             keybd_event(0x11,0,0,UIntPtr.Zero);
                             keybd_event(0x11,0,2,UIntPtr.Zero);
