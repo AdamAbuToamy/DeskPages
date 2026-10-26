@@ -460,6 +460,7 @@ public sealed class DeskPagesHost : ApplicationContext
         private bool dragging;
         private long dragDisplayRevision;
         private readonly HashSet<uint> swallowed=new HashSet<uint>();
+        private bool leftWindowsDown,rightWindowsDown;
         public InputPump(DeskPagesHost host)
         {
             owner=host; receiver=new Receiver(this);
@@ -541,15 +542,27 @@ public sealed class DeskPagesHost : ApplicationContext
         {
             if(code>=0) {
                 var key=(KeyboardData)Marshal.PtrToStructure(data,typeof(KeyboardData));
+                int msg=message.ToInt32();
+                bool down=msg==0x100||msg==0x104, up=msg==0x101||msg==0x105;
+                // Keep the physical Windows-key state from this same low-level
+                // stream: GetAsyncKeyState can lag the arrow event or be reset by
+                // the synthetic Ctrl-up used to suppress the Start menu.
+                if((key.Flags&0x10)==0) {
+                    if(key.Key==0x5B){if(down)leftWindowsDown=true;else if(up)leftWindowsDown=false;}
+                    if(key.Key==0x5C){if(down)rightWindowsDown=true;else if(up)rightWindowsDown=false;}
+                }
                 if((key.Flags&0x10)==0 && (key.Key==0x25 || key.Key==0x27)) {
-                    int msg=message.ToInt32(); bool down=msg==0x100||msg==0x104; bool up=msg==0x101||msg==0x105;
-                    if(up && swallowed.Remove(key.Key)) return new IntPtr(1);
-                    bool win=(GetAsyncKeyState(0x5B)&0x8000)!=0 || (GetAsyncKeyState(0x5C)&0x8000)!=0;
-                    bool other=(GetAsyncKeyState(0x10)&0x8000)!=0 || (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0x12)&0x8000)!=0;
+                    if(up && swallowed.Remove(key.Key))return new IntPtr(1);
+                    bool win=leftWindowsDown || rightWindowsDown ||
+                        (GetAsyncKeyState(0x5B)&0x8000)!=0 || (GetAsyncKeyState(0x5C)&0x8000)!=0;
+                    bool other=(GetAsyncKeyState(0x10)&0x8000)!=0 ||
+                        (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0x12)&0x8000)!=0;
+                    // DesktopWindow is deliberately required: do not hijack
+                    // Windows Snap in an ordinary foreground application.
                     if(down && owner.winArrows && win && !other && DesktopWindow(GetForegroundWindow())) {
                         if(swallowed.Add(key.Key)) {
-                            // Prevent bare-Win Start-menu activation after a consumed arrow.
-                            keybd_event(0x11,0,0,UIntPtr.Zero); keybd_event(0x11,0,2,UIntPtr.Zero);
+                            keybd_event(0x11,0,0,UIntPtr.Zero);
+                            keybd_event(0x11,0,2,UIntPtr.Zero);
                             owner.Enqueue(key.Key==0x27?1:-1);
                         }
                         return new IntPtr(1);
