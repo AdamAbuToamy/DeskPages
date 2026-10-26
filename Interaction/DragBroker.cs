@@ -130,7 +130,20 @@ internal sealed class DragBroker:ApplicationContext {
                     canvas.Place(area);left.Hide();right.Hide();Send("Navigate",direction,0,null);cueNavigationId=pending.Id;
                 }
             }else{if(cueNavigationId==null)edgeCue.Hide();edges.Observe(Now(),Cursor.Position.X,area.Left,area.Right,false);}
-        }catch(IOException){/* Sharing contention is retried on the next tick, not a physical drag cancellation. */}catch(UnauthorizedAccessException){Cancel("access denied");}catch(ArgumentException){Cancel("invalid drag state");}
+        }catch(IOException){/* Sharing contention is retried on the next tick, not a physical drag cancellation. */}
+        catch(UnauthorizedAccessException ex){Trace("drag state access denied: "+ex.Message);Cancel("access denied");}
+        catch(ArgumentException ex){Trace("drag state invalid: "+ex.Message);Cancel("invalid drag state");}
+        catch(Exception ex){
+            // The message pump must survive recoverable OLE/Win32/display errors.
+            // Without this boundary one failed edge/drop can disable all later drags
+            // until DeskPages is restarted. Never replay a pending IPC operation.
+            Trace("unexpected drag broker tick failure: "+ex.GetType().Name+": "+ex.Message);
+            try{Cancel("unexpected broker error");}
+            catch(Exception recoveryError){
+                Trace("drag recovery cleanup failed: "+recoveryError.GetType().Name+": "+recoveryError.Message);
+                // Do not dispatch a new operation or alter saved desktop state.
+            }
+        }
     }
     private bool OwnerAlive(long heartbeat){
         try{string[] owner;if(!DeskPagesDragProtocol.TryReadLines(Path.Combine(folder,"owner.txt"),out owner))throw new IOException("Drag owner state temporarily unavailable");int pid;long startedAt;
