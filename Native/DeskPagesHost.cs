@@ -460,6 +460,9 @@ public sealed class DeskPagesHost : ApplicationContext
         private bool dragging;
         private long dragDisplayRevision;
         private readonly HashSet<uint> swallowed=new HashSet<uint>();
+        private bool leftWindowsDown,rightWindowsDown;
+        private long arrowProbeCount,arrowInterceptCount;
+        private string lastArrowProbe="none";
         public InputPump(DeskPagesHost host)
         {
             owner=host; receiver=new Receiver(this);
@@ -541,15 +544,43 @@ public sealed class DeskPagesHost : ApplicationContext
         {
             if(code>=0) {
                 var key=(KeyboardData)Marshal.PtrToStructure(data,typeof(KeyboardData));
+                int msg=message.ToInt32();
+                bool down=msg==0x100||msg==0x104, up=msg==0x101||msg==0x105;
+                // Keep the physical Windows-key state from this same low-level
+                // stream: GetAsyncKeyState can lag the arrow event or be reset by
+                // the synthetic Ctrl-up used to suppress the Start menu.
+                if((key.Flags&0x10)==0) {
+                    if(key.Key==0x5B){if(down)leftWindowsDown=true;else if(up)leftWindowsDown=false;}
+                    if(key.Key==0x5C){if(down)rightWindowsDown=true;else if(up)rightWindowsDown=false;}
+                }
                 if((key.Flags&0x10)==0 && (key.Key==0x25 || key.Key==0x27)) {
-                    int msg=message.ToInt32(); bool down=msg==0x100||msg==0x104; bool up=msg==0x101||msg==0x105;
-                    if(up && swallowed.Remove(key.Key)) return new IntPtr(1);
-                    bool win=(GetAsyncKeyState(0x5B)&0x8000)!=0 || (GetAsyncKeyState(0x5C)&0x8000)!=0;
-                    bool other=(GetAsyncKeyState(0x10)&0x8000)!=0 || (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0x12)&0x8000)!=0;
-                    if(down && owner.winArrows && win && !other && DesktopWindow(GetForegroundWindow())) {
+                    if(up && swallowed.Remove(key.Key))return new IntPtr(1);
+                    bool win=leftWindowsDown || rightWindowsDown ||
+                        (GetAsyncKeyState(0x5B)&0x8000)!=0 || (GetAsyncKeyState(0x5C)&0x8000)!=0;
+                    bool other=(GetAsyncKeyState(0x10)&0x8000)!=0 ||
+                        (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0x12)&0x8000)!=0;
+                    // Explorer can expose a desktop icon child as focus while a
+                    // shell-owned popup/WorkerW is foreground. Accept the physical
+                    // desktop under the pointer as well as the foreground root;
+                    // never steal Win+Arrow from a non-desktop window under it.
+                    Point pointer;
+                    bool pointerDesktop=GetCursorPos(out pointer) && DesktopAt(pointer);
+                    bool foregroundDesktop=DesktopWindow(GetForegroundWindow());
+                    if(down && win) {
+                        Interlocked.Increment(ref arrowProbeCount);
+                        lastArrowProbe="win="+win+"; other="+other+"; enabled="+owner.winArrows+
+                            "; foregroundDesktop="+foregroundDesktop+"; pointerDesktop="+pointerDesktop+
+                            "; foreground="+ClassName(GetAncestor(GetForegroundWindow(),2));
+                        // Log only a concise input decision, not user keystrokes
+                        // or desktop file names.
+                        DeskPagesStartupGate.Log("WinArrow probe: "+lastArrowProbe);
+                    }
+                    if(down && owner.winArrows && win && !other &&
+                        (foregroundDesktop || pointerDesktop)) {
+                        Interlocked.Increment(ref arrowInterceptCount);
                         if(swallowed.Add(key.Key)) {
-                            // Prevent bare-Win Start-menu activation after a consumed arrow.
-                            keybd_event(0x11,0,0,UIntPtr.Zero); keybd_event(0x11,0,2,UIntPtr.Zero);
+                            keybd_event(0x11,0,0,UIntPtr.Zero);
+                            keybd_event(0x11,0,2,UIntPtr.Zero);
                             owner.Enqueue(key.Key==0x27?1:-1);
                         }
                         return new IntPtr(1);

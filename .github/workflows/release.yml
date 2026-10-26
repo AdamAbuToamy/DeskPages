@@ -100,7 +100,7 @@ jobs:
           sha256sum -c SHA256SUMS.txt
           cd ..
           version="$(python3 -c 'from pathlib import Path; import re; text=Path("VERSION.txt").read_text(encoding="utf-8-sig").strip(); match=re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)",text); assert match, "Invalid VERSION.txt"; print(match.group(1))')"
-          tag="v${version}-alpha.1"
+          tag="v${version}-alpha.2"
           git check-ref-format "refs/tags/$tag"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag is already published; leaving its assets unchanged."
@@ -125,7 +125,7 @@ jobs:
           import base64, json, re, subprocess
           from pathlib import Path
           version = re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)", Path("VERSION.txt").read_text(encoding="utf-8-sig").strip()).group(1)
-          tag = f"v{version}-alpha.1"
+          tag = f"v{version}-alpha.2"
           metadata = json.loads(subprocess.check_output(["gh", "api", "repos/{owner}/{repo}/contents/README.md?ref=main"]))
           text = base64.b64decode(metadata["content"]).decode("utf-8")
           block = f"""<!-- deskpages-download:start -->
