@@ -36,7 +36,11 @@ try{
   }
  }
  if(-not $signatureReady){throw 'Defender signature update unavailable after PowerShell and CLI retries; scan not approved.'}
- Set-MpPreference -MAPSReporting Advanced -DisableArchiveScanning $false -DisableScriptScanning $false -DisableRealtimeMonitoring $false
+ # Hosted runners can reject preference writes even while existing settings
+ # are correct. Never weaken a policy or count a failed write as a pass:
+ # verify effective settings below before any scan verdict.
+ try{Set-MpPreference -MAPSReporting Advanced -DisableArchiveScanning $false -DisableScriptScanning $false -DisableRealtimeMonitoring $false -ErrorAction Stop}
+ catch{$report.PreferenceWriteError=$_.Exception.Message}
  # Hosted build images can remain in passive mode. An explicit custom scan
  # still works there; report that limit and do not claim real-time coverage.
  $pref=Get-MpPreference;$status=Get-MpComputerStatus
