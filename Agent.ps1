@@ -436,8 +436,7 @@ try {
             [DeskPagesHost]::ConfigureDragSession($dragToken)
         }
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
-    # Start the lightweight hotkey listener; the full groups controller starts on first Add.
-    try{if(Get-DpGroupsEnabled){$script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)}}catch{Write-DpLog ('Taskbar groups listener could not start: '+[string]$_)}
+    # The always-running DeskPages host owns the hotkey; Groups starts only on first Add.
     [DeskPagesHost]::Run($action)
 }
 catch {
