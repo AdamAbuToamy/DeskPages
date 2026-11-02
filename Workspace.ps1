@@ -355,7 +355,7 @@ function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
 
 function Get-DpGroupsEnabled {
     $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
-    return -not(Test-Path -LiteralPath $path) -or [IO.File]::ReadAllText($path).Trim() -ne 'off'
+    # Opt-in: unused taskbar groups must not launch a resident helper at sign-in.\n    return (Test-Path -LiteralPath $path) -and [IO.File]::ReadAllText($path).Trim() -eq 'on'
 }
 function Set-DpGroupsEnabled {param([bool]$Enabled)
     $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
