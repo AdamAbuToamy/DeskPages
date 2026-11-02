@@ -368,7 +368,8 @@ function Set-DpGroupsEnabled {param([bool]$Enabled)
         finally{if($mutex){if($acquired){$mutex.ReleaseMutex()};$mutex.Dispose()}}
     }
     [DeskPagesDragProtocol]::AtomicText($path,$(if($Enabled){'on'}else{'off'}))
-    if($Enabled){$script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)}
+    if($Enabled){# Hotkey is managed by DeskPagesHost; no groups process needed yet.
+    }
     else{$signal=$null;try{$signal=[Threading.EventWaitHandle]::OpenExisting('Local\DeskPagesTaskbarGroupsStop-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value);$null=$signal.Set()}catch [Threading.WaitHandleCannotBeOpenedException]{}finally{if($signal){$signal.Dispose()}}}
 }
 
