@@ -1,0 +1,31 @@
+name: One-time removal of synthetic demo media
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/remove-synthetic-media.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  remove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Remove the synthetic UI media, simulator and generator from Git
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -r -f --ignore-unmatch docs/demo docs/media
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Remove inaccurate synthetic Windows desktop media [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          exit 1
