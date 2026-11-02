@@ -5,58 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      defender_arm:
-    name: Independent Microsoft Defender Windows 11 ARM scan
-    if: always() && github.event_name == 'pull_request'
-    needs: build
-    runs-on: windows-11-arm
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: installer-candidate-for-analysis
-          path: candidate
-          run-id: ${{ github.run_id }}
-          github-token: ${{ github.token }}
-      - name: Verify installer checksum
-        shell: powershell
-        run: |
-          Set-Location candidate
-          $expected=Get-Content SHA256SUMS.txt
-          $entry=$expected | Where-Object {$_ -match 'DeskPages-Setup-0\\.8\\.37\\.exe'}
-          if(-not $entry){throw 'Installer checksum entry missing'}
-          $hash=($entry -split '\\s+')[0].ToLowerInvariant()
-          $actual=(Get-FileHash DeskPages-Setup-0.8.37.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne $actual){throw 'Installer checksum mismatch'}
-      - name: Scan installer with Microsoft Defender on separate Windows runner
-        shell: powershell
-        run: |
-          $ErrorActionPreference='Stop'
-          New-Item -ItemType Directory -Force independent-defender | Out-Null
-          $installer=(Resolve-Path candidate/DeskPages-Setup-0.8.37.exe).Path
-          $status=Get-MpComputerStatus
-          if(-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled){throw 'Defender not available on independent runner'}
-          Update-MpSignature -ErrorAction Stop
-          $started=Get-Date
-          Start-MpScan -ScanType CustomScan -ScanPath $installer -ErrorAction Stop
-          $findings=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started})
-          $report=[ordered]@{Engine='Microsoft Defender';Installer=(Split-Path $installer -Leaf);Sha256=(Get-FileHash $installer -Algorithm SHA256).Hash;Verdict=$(if($findings.Count){'DETECTION_RECORDED'}else{'NO_DETECTION_IN_THIS_SCAN'});Detections=$findings.Count;Definitions=(Get-MpComputerStatus).AntivirusSignatureVersion}
-          $report | ConvertTo-Json | Set-Content independent-defender/report.json -Encoding UTF8
-          if($findings.Count){throw 'Defender detected threat'}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: independent-defender-report
-          path: independent-defender/
-          if-no-files-found: warn
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deskpages-defender-verified-exe
-          path: candidate/DeskPages-Setup-0.8.37.exe
-          if-no-files-found: error
-  publish:
+      publish:
         description: Publish the validated build as a public GitHub Pre-release
         type: boolean
         default: false
@@ -102,12 +51,12 @@ jobs:
           name: installer-candidate-for-analysis
           path: dist/*
           if-no-files-found: error
-      - name: Scan the new installer with current Defender and verify cloud connectivity
+      - name: Explain hosted Windows Server Defender state
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: |
-          $version=([IO.File]::ReadAllText('VERSION.txt') -replace '^DeskPages\s+','').Trim()
-          ./Release/Scan-Installer.ps1 -Installer (Join-Path 'dist' ("DeskPages-Setup-"+$version+'.exe')) -ReportDirectory 'security-report' -PayloadRoot $pwd.Path -PayloadInventory 'security-input/payload-inventory.json'
+          Write-Host 'Windows Server hosted image is intended for build/test only.'
+          Write-Host 'A separate Windows 11 runner must complete Microsoft Defender scanning before preview release.'
       - name: Retain installer security report
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,15 +74,82 @@ jobs:
         with:
           name: windows-validation
           path: ~/AppData/Local/DeskPages/Verification/
+
+  defender:
+    name: Verify actual installer with Microsoft Defender on Windows 11
+    if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+    needs: build
+    runs-on: windows-11-arm
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-candidate-for-analysis
+          path: candidate
+      - name: Verify exact installer SHA256 from build inventory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe'
+          if($files.Count -ne 2){throw "Unexpected setup inventory: $($files.Count)"}
+          $lines = Get-Content candidate/SHA256SUMS.txt
+          foreach($file in $files){
+            $line = @($lines | Where-Object { $_.EndsWith($file.Name) })
+            if($line.Count -ne 1){throw "Missing or duplicate checksum for $($file.Name)"}
+            $expected = ($line[0] -split '\\s+')[0].ToLowerInvariant()
+            $actual = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($actual -ne $expected){throw "Installer hash mismatch for $($file.Name)"}
+          }
+      - name: Defender service diagnosis and on-demand scan
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path defender-report | Out-Null
+          $svc=Get-Service WinDefend -ErrorAction Stop
+          $status=Get-MpComputerStatus -ErrorAction Stop
+          [ordered]@{Service=$svc.Status.ToString();AntivirusEnabled=$status.AntivirusEnabled;AMServiceEnabled=$status.AMServiceEnabled;Engine=$status.AMEngineVersion} |
+            ConvertTo-Json | Set-Content defender-report/environment.json
+          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){
+            $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+            if($null -eq $platform){throw 'Defender platform not installed on Windows 11 runner'}
+            $app=Join-Path $platform.FullName 'MpCmdRun.exe'
+            & $app -WdEnable
+            Start-Sleep -Seconds 5
+            $svc=Get-Service WinDefend
+            $status=Get-MpComputerStatus
+          }
+          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){throw 'Microsoft Defender not active on Windows 11 scan runner; no scan pass'}
+          $pref=Get-MpPreference
+          if([int]$pref.SubmitSamplesConsent -ne 2){throw 'Sample submission consent differs from no-upload requirement'}
+          Update-MpSignature -ErrorAction Stop
+          $status=Get-MpComputerStatus
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures stale'}
+          $installer= @(Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe' | Where-Object { $_.Name -ne 'DeskPages-Setup.exe' })
+          if($installer.Count -ne 1){throw 'Expected exactly one versioned setup'}
+          $started=Get-Date
+          Start-MpScan -ScanType CustomScan -ScanPath $installer[0].FullName -ErrorAction Stop
+          $detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started})
+          $result=[ordered]@{Verdict=$(if($detections.Count){'DETECTION_RECORDED'}else{'NO_DETECTION_IN_THIS_SCAN'});Sha256=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant();EngineVersion=$status.AMEngineVersion;SignatureVersion=$status.AntivirusSignatureVersion;Detections=$detections.Count;UTC=[DateTime]::UtcNow.ToString('o')}
+          $result | ConvertTo-Json | Set-Content defender-report/report.json
+          $result | ConvertTo-Json | Write-Host
+          if($detections.Count){throw 'Defender detected a threat'}
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+        if: always()
+        with:
+          name: defender-windows11-report
+          path: defender-report/
+          if-no-files-found: warn
+      - name: Release only the Defender-verified installer
+        uses: actions/upload-artifact@v4
         with:
           name: deskpages-preview
-          path: dist/*
+          path: candidate/*
           if-no-files-found: error
   publish:
     if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish && !inputs.input_only)) && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, defender]
     runs-on: ubuntu-latest
     permissions:
       contents: write
