@@ -1,0 +1,72 @@
+name: Generate DeskPages demonstration media
+on:
+  pull_request:
+    paths:
+      - 'docs/demo/**'
+      - '.github/workflows/demo-media.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/demo/**'
+      - '.github/workflows/demo-media.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install reproducible browser and video encoder
+        run: |
+          python -m pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Capture interactive UI simulator screenshots and video
+        run: python docs/demo/render.py
+      - name: Update README to display recorded demo
+        run: python docs/demo/update_readme.py
+      - name: Check media sizes and HTML semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s docs/media/DeskPages-Simulation.mp4
+          test -s docs/media/DeskPages-Preview.gif
+          test -s docs/media/02-pages-panel.png
+          test -s docs/media/05-group-menu.png
+          grep -q 'Demonstration, not native footage' README.md
+          ffprobe -v error -show_entries format=duration -of default=nw=1 docs/media/DeskPages-Simulation.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskpages-simulated-demo-media
+          path: |
+            docs/media/
+            docs/demo/index.html
+          if-no-files-found: error
+      - name: Commit verified GIF/MP4/screenshots and README to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/media README.md
+          if git diff --cached --quiet; then
+            echo 'Demo media already up-to-date.'
+            exit 0
+          fi
+          git commit -m 'Publish interactive desktop demo screenshots and MP4 [skip ci]'
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          echo 'Unable to publish demo media after three safe retries.'
+          exit 1
