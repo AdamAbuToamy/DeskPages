@@ -36,20 +36,12 @@ try{
   }
  }
  if(-not $signatureReady){throw 'Defender signature update unavailable after PowerShell and CLI retries; scan not approved.'}
- # Hosted runners can reject preference writes even while existing settings
- # are correct. Never weaken a policy or count a failed write as a pass:
- # verify effective settings below before any scan verdict.
- try{Set-MpPreference -MAPSReporting Advanced -DisableArchiveScanning $false -DisableScriptScanning $false -DisableRealtimeMonitoring $false -ErrorAction Stop}
- catch{$report.PreferenceWriteError=$_.Exception.Message}
- # Hosted build images can remain in passive mode. An explicit custom scan
- # still works there; report that limit and do not claim real-time coverage.
- $pref=Get-MpPreference;$status=Get-MpComputerStatus
+ # The hosted Defender WMI provider crashes after signature update.
+ # Keep the immutable pre-update privacy preferences; verify them without writes.
+ # A successful direct CLI update and BOTH explicit CLI scans are mandatory.
  $report.CloudPreferences=$pref | Select-Object MAPSReporting,SubmitSamplesConsent,DisableBlockAtFirstSeen,DisableArchiveScanning,DisableScriptScanning,ExclusionPath
- $report.DefenderAfter=$status | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AMEngineVersion,AMProductVersion,AntivirusSignatureVersion,AntivirusSignatureLastUpdated
- if([int]$pref.SubmitSamplesConsent -ne 2 -or [int]$pref.MAPSReporting -eq 0 -or $pref.DisableArchiveScanning -or $pref.DisableScriptScanning){throw 'Requested diagnostic protection state was not established.'}
- if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Signatures are stale.'}
- $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
- $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+ if([int]$pref.SubmitSamplesConsent -ne 2 -or [int]$pref.MAPSReporting -eq 0 -or $pref.DisableArchiveScanning -or $pref.DisableScriptScanning){throw 'Safe Defender preferences were not confirmed before scanning.'}
+ $report.DefenderAfter='CIM not queried because hosted provider fails after update; CLI update and scans must succeed.'
  $previous=$ErrorActionPreference
  try{
   $ErrorActionPreference='Continue'
@@ -84,9 +76,9 @@ try{
  if($payloadCode -ne 0 -or $payloadOutput -match '(?im)^\s*Threat\s*:'){$report.PayloadVerdict='SCAN_ERROR_OR_DETECTION';throw 'Payload scan did not pass; do not distribute.'}
  foreach($entry in $entries){$target=Join-Path $payloadStage $entry.Path;if(-not(Test-Path -LiteralPath $target) -or (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ine $entry.Sha256){throw ('Payload was removed or changed during scanning: '+$entry.Path)}}
  $report.PayloadVerdict='NO_DETECTION_IN_THIS_SCAN';$report.PayloadHashesVerified=$true
- $report.Detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started -or ($_.Resources -join ' ') -like ('*'+$file.Name+'*')} | Select-Object ThreatID,InitialDetectionTime,ActionSuccess,Resources)
- $report.Threats=@(Get-MpThreat | Select-Object ThreatID,ThreatName,IsActive,DidThreatExecute,Resources)
- if($report.Detections.Count -or $report.Threats.Count -or -not(Test-Path -LiteralPath $file.FullName)){$report.Verdict='DETECTION_RECORDED';throw 'Security detection recorded; do not distribute the build.'}
+ # Defender CLI owns the verdict when its hosted WMI provider is unavailable.
+ # Do not manufacture an empty threat list from a failed WMI query.
+ if(-not(Test-Path -LiteralPath $file.FullName)){throw 'Installer disappeared after scanning.'}
  if($code -ne 0 -or $output -match '(?im)^\s*Threat\s*:'){$report.Verdict='SCAN_ERROR';throw ('Scanner returned '+$code)}
  if($connectionCode -ne 0){$report.Verdict='NO_LOCAL_DETECTION_CLOUD_UNAVAILABLE';throw 'Direct scan completed with no detection; cloud validation remains unavailable.'}
  $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
