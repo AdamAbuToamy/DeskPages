@@ -39,7 +39,7 @@ internal sealed class GroupController:ApplicationContext {
         model=new GroupModel(session);recovery=new GroupRecovery(session);commands=new GroupCommandWindow(AddGroup);var uiHandle=commands.Handle;
         groupPopup=new GroupPopup(commands,g=>model.Find(g.AppId)==g,DeleteGroup,WindowShell.Activate,BeginMemberDrag,ChooseOpenApps);
         Directory.CreateDirectory(Path.GetDirectoryName(EnabledPath));stop.Reset();
-        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);},(id,point)=>Post(delegate{var group=model.Find(id);if(group!=null)groupPopup.Show(group,point);}));snapshot=TaskbarAccess.ReadBounds();timer.Tick+=delegate{Tick();};timer.Start();if(commands.RegistrationCount==0)Post(delegate{Notify("The group shortcut is in use. Add groups from the DeskPages tray menu.");});
+        StartGuardian();input=new GroupDragInput(g=>Post(delegate{BeginCaptured(g);}),g=>Post(delegate{EndCaptured(g);}),delegate{Post(RefreshSoon);},(id,point)=>Post(delegate{var group=model.Find(id);if(group!=null)groupPopup.Show(group,point);}));snapshot=TaskbarAccess.ReadBounds();timer.Tick+=delegate{Tick();};timer.Start();// First-use and subsequent shortcuts are handled by DeskPagesHost.
     }
     public static string EnabledPath{get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","TaskbarGroups","enabled.txt");}}
     private void StartGuardian(){
@@ -212,7 +212,9 @@ internal sealed class GroupController:ApplicationContext {
         }
         foreach(var empty in model.Prune(WindowShell.Same))RemoveAnchor(empty);
     }
-    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
+    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];// Hide the anchor before deleting its taskbar entry to prevent a transient blank window.
+        WindowShell.Hide(anchor.Handle);
+        try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
     private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
     private void DeleteGroup(LiveGroup group){
         // Restore durable ownership before removing the numbered anchor. A failed
