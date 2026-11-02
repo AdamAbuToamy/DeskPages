@@ -62,7 +62,7 @@ internal sealed class GroupController:ApplicationContext {
             anchor.Show();taskbar.Add(anchor.Handle);
             RefreshSoon();
         }catch(Exception ex){
-            if(anchor!=null){try{taskbar.Remove(anchor.Handle);}catch(Exception){}anchor.Finish();}
+            if(anchor!=null){var hwnd=anchor.Handle;anchor.PrepareForRemoval();try{taskbar.Remove(hwnd);}catch(Exception){}anchor.Finish();}
             if(group!=null){anchors.Remove(group.Number);model.DeleteEmpty(group);}
             MessageBox.Show(ex.Message,"DeskPages groups");
         }
@@ -213,7 +213,15 @@ internal sealed class GroupController:ApplicationContext {
         }
         foreach(var empty in model.Prune(WindowShell.Same))RemoveAnchor(empty);
     }
-    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];ShowWindow(anchor.Handle,0);try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
+    private void RemoveAnchor(LiveGroup group){
+        var anchor=anchors[group.Number];
+        // Keep the original HWND stable until the explicit taskbar tab is gone.
+        // Otherwise Explorer may briefly discover it as a blank APPWINDOW.
+        var hwnd=anchor.Handle;
+        anchor.PrepareForRemoval();
+        try{taskbar.Remove(hwnd);}catch(COMException){ }
+        finally{anchor.Finish();anchors.Remove(group.Number);}
+    }
     private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
     private void DeleteGroup(LiveGroup group){
         // Restore durable ownership before removing the numbered anchor. A failed
