@@ -46,6 +46,7 @@ internal sealed class GroupIdleContext:ApplicationContext {
     internal GroupIdleContext(GroupCreateSignal signal){
         request=signal;
         stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+WindowsIdentity.GetCurrent().User.Value);
+        stop.Reset();
         commands=new GroupCommandWindow(Activate);
         var handle=commands.Handle; // Register Win+Alt+Plus without starting GroupController.
         timer.Tick+=delegate{if(stop.WaitOne(0)){ExitThread();return;}if(request.Take())Activate();};
