@@ -25,10 +25,34 @@ internal static class TaskbarGroupsProgram {
             if(create)request.Request();
             bool fresh;using(var mutex=new Mutex(true,"Local\\DeskPages.TaskbarGroups."+WindowsIdentity.GetCurrent().User.Value,out fresh)){
                 if(!fresh)return 0;GroupRecovery.RecoverOrphans();try{SetThreadDpiAwarenessContext(new IntPtr(-4));}catch(EntryPointNotFoundException){ }
-                Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new GroupController(request));
+                Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
+                // Idle phase keeps the shortcut alive without UI Automation, drag hooks,
+                // taskbar scans, 40 ms polling or a second guardian process.
+                if(!create){var idle=new GroupIdleContext(request);Application.Run(idle);if(!idle.Activated)return 0;request.Request();}
+                Application.Run(new GroupController(request));
             }}return 0;
         }catch(Exception ex){MessageBox.Show(ex.Message,"DeskPages taskbar groups");return 1;}
     }
     [DllImport("user32.dll")]private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")]private static extern bool PostMessageW(IntPtr hwnd,uint message,IntPtr wParam,IntPtr lParam);
+}
+
+internal sealed class GroupIdleContext:ApplicationContext {
+    private readonly GroupCreateSignal request;
+    private readonly GroupCommandWindow commands;
+    private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=300};
+    private readonly EventWaitHandle stop;
+    internal bool Activated{get;private set;}
+    internal GroupIdleContext(GroupCreateSignal signal){
+        request=signal;
+        stop=new EventWaitHandle(false,EventResetMode.ManualReset,"Local\\DeskPagesTaskbarGroupsStop-"+WindowsIdentity.GetCurrent().User.Value);
+        commands=new GroupCommandWindow(Activate);
+        var handle=commands.Handle; // Register Win+Alt+Plus without starting GroupController.
+        timer.Tick+=delegate{if(stop.WaitOne(0)){ExitThread();return;}if(request.Take())Activate();};
+        timer.Start();
+    }
+    private void Activate(){if(Activated)return;Activated=true;ExitThread();}
+    protected override void ExitThreadCore(){
+        timer.Stop();timer.Dispose();commands.Dispose();stop.Dispose();base.ExitThreadCore();
+    }
 }
