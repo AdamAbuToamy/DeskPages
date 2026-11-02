@@ -1,8 +1,8 @@
 # Public release checklist
 
-0.8.7 is a preview, not a claim of complete Windows certification.
+Alpha releases are experimental and are not claims of complete Windows certification.
 
-Implemented (not a substitute for Windows acceptance): installation folder choice and protected directory policy, compact panel, privacy/license links, author metadata, safe empty-page deletion, transaction journal recovery, saved layouts, main-page logon behavior, metadata export, package identity validation, signing build path and release verification gate. See VERIFICATION.txt for checks actually performed on this artifact.
+Implemented (not a substitute for Windows acceptance): installation folder choice and protected directory policy, compact panel, privacy/license links, author metadata, safe empty-page deletion, transaction journal recovery, saved layouts, main-page logon behavior, metadata export, package identity validation, signing build path and release verification gate. Use the linked GitHub Actions run and the actual Defender security report for the specific release; legacy verification snapshots are not current evidence.
 
 Before calling a version stable, record PASS evidence on a real Windows 11 machine for:
 
