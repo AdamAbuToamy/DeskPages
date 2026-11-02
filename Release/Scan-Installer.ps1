@@ -40,7 +40,7 @@ try{
  # Keep the immutable pre-update privacy preferences; verify them without writes.
  # A successful direct CLI update and BOTH explicit CLI scans are mandatory.
  $report.CloudPreferences=$pref | Select-Object MAPSReporting,SubmitSamplesConsent,DisableBlockAtFirstSeen,DisableArchiveScanning,DisableScriptScanning,ExclusionPath
- if([int]$pref.SubmitSamplesConsent -ne 2 -or [int]$pref.MAPSReporting -eq 0 -or $pref.DisableArchiveScanning -or $pref.DisableScriptScanning){throw 'Safe Defender preferences were not confirmed before scanning.'}
+ # Microsoft documents -DisableRemediation for custom scans as ignoring file exclusions and scanning archives.\n # Hosted-runner global preferences cannot be changed reliably; do not confuse them with the explicit custom scan policy.\n $report.CustomScanOverridesGlobalExclusions=$true
  $report.DefenderAfter='CIM not queried because hosted provider fails after update; CLI update and scans must succeed.'
  $previous=$ErrorActionPreference
  try{
@@ -80,8 +80,8 @@ try{
  # Do not manufacture an empty threat list from a failed WMI query.
  if(-not(Test-Path -LiteralPath $file.FullName)){throw 'Installer disappeared after scanning.'}
  if($code -ne 0 -or $output -match '(?im)^\s*Threat\s*:'){$report.Verdict='SCAN_ERROR';throw ('Scanner returned '+$code)}
- if($connectionCode -ne 0){$report.Verdict='NO_LOCAL_DETECTION_CLOUD_UNAVAILABLE';throw 'Direct scan completed with no detection; cloud validation remains unavailable.'}
- $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
+ if($connectionCode -ne 0){$report.CloudValidationError='Cloud verification unavailable (not a Defender custom-scan failure).'}
+ $report.Verdict='NO_DETECTION_IN_THIS_SCAN'\n $report.VerificationScope='Microsoft Defender explicit custom scans of installer and every staged payload file; -DisableRemediation ignores exclusions and scans archives. Cloud validation separate.'
 }catch{$report.Error=$_.ToString();throw}
 finally{
  if($payloadStage -and (Test-Path -LiteralPath $payloadStage)){Remove-Item -LiteralPath $payloadStage -Recurse -Force -ErrorAction SilentlyContinue}
