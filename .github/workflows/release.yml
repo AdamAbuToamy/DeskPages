@@ -98,7 +98,7 @@ jobs:
           foreach($file in $files){
             $line = @($lines | Where-Object { $_.EndsWith($file.Name) })
             if($line.Count -ne 1){throw "Missing or duplicate checksum for $($file.Name)"}
-            $expected = ($line[0] -split '\\s+')[0].ToLowerInvariant()
+            $expected = ($line[0] -split ' +')[0].ToLowerInvariant()
             $actual = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             if($actual -ne $expected){throw "Installer hash mismatch for $($file.Name)"}
           }
