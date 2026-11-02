@@ -108,6 +108,7 @@ public static class TaskbarGroupsHarness {
             Check(IsIconic(anchor.Handle) && opens==1,"Taskbar restore opened a normal group window");
             ShowWindow(anchor.Handle,9);Application.DoEvents();Check(IsIconic(anchor.Handle),"Direct native restore displayed the group as an application");
             var originalHandle=anchor.Handle;
+            var opensBeforeRemoval=opens;
             anchor.PrepareForRemoval();
             Application.DoEvents();
             long retiredStyle=GetWindowLongPtrW(originalHandle,-20).ToInt64();
@@ -116,7 +117,8 @@ public static class TaskbarGroupsHarness {
             Check((retiredStyle&0x40000)==0 && (retiredStyle&0x80)!=0,
                 "Retired group must cease being an Explorer APPWINDOW before tab deletion");
             taskbar.Remove(originalHandle);anchor.Finish();
-            Check(anchor.IsDisposed && opens==1,"Group deletion must not reactivate the removed window");
+            Application.DoEvents();
+            Check(anchor.IsDisposed && opens==opensBeforeRemoval,"Group deletion must not reactivate the removed window");
         }
         using(var listener=new GroupDragInput(delegate{},delegate{})){
             listener.Publish(new GroupInputMap());
