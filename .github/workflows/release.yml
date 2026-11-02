@@ -102,39 +102,49 @@ jobs:
             $actual = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             if($actual -ne $expected){throw "Installer hash mismatch for $($file.Name)"}
           }
-      - name: Defender service diagnosis and on-demand scan
+      - name: Defender health, fresh signatures and synchronous scanner verdict
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path defender-report | Out-Null
           $svc=Get-Service WinDefend -ErrorAction Stop
           $status=Get-MpComputerStatus -ErrorAction Stop
-          [ordered]@{Service=$svc.Status.ToString();AntivirusEnabled=$status.AntivirusEnabled;AMServiceEnabled=$status.AMServiceEnabled;Engine=$status.AMEngineVersion} |
-            ConvertTo-Json | Set-Content defender-report/environment.json
-          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){
-            $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-            if($null -eq $platform){throw 'Defender platform not installed on Windows 11 runner'}
-            $app=Join-Path $platform.FullName 'MpCmdRun.exe'
-            & $app -WdEnable
-            Start-Sleep -Seconds 5
-            $svc=Get-Service WinDefend
+          $report=[ordered]@{
+            Service=$svc.Status.ToString()
+            AntivirusEnabled=$status.AntivirusEnabled
+            AMServiceEnabled=$status.AMServiceEnabled
+            Engine=$status.AMEngineVersion
+            SignatureVersion=$status.AntivirusSignatureVersion
+            SignatureUpdated=$status.AntivirusSignatureLastUpdated.ToString('o')
+            Verdict='NOT_SCANNED'
+          }
+          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){throw 'Microsoft Defender Antivirus service not active'}
+          $pref=Get-MpPreference
+          if([int]$pref.SubmitSamplesConsent -ne 2){throw 'No-sample-upload privacy setting not satisfied'}
+          $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if($null -eq $platform){throw 'Defender platform missing'}
+          $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+          if(-not(Test-Path $scanner)){throw 'Microsoft Defender scanner missing'}
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){
+            $update=(& $scanner -SignatureUpdate -MMPC 2>&1 | Out-String);$updateExit=$LASTEXITCODE
+            $update | Set-Content defender-report/signature-update.txt
+            if($updateExit -ne 0){throw "Defender signature update failed: $updateExit"}
             $status=Get-MpComputerStatus
           }
-          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){throw 'Microsoft Defender not active on Windows 11 scan runner; no scan pass'}
-          $pref=Get-MpPreference
-          if([int]$pref.SubmitSamplesConsent -ne 2){throw 'Sample submission consent differs from no-upload requirement'}
-          Update-MpSignature -ErrorAction Stop
-          $status=Get-MpComputerStatus
-          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures stale'}
-          $installer= @(Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe' | Where-Object { $_.Name -ne 'DeskPages-Setup.exe' })
-          if($installer.Count -ne 1){throw 'Expected exactly one versioned setup'}
-          $started=Get-Date
-          Start-MpScan -ScanType CustomScan -ScanPath $installer[0].FullName -ErrorAction Stop
-          $detections=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started})
-          $result=[ordered]@{Verdict=$(if($detections.Count){'DETECTION_RECORDED'}else{'NO_DETECTION_IN_THIS_SCAN'});Sha256=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant();EngineVersion=$status.AMEngineVersion;SignatureVersion=$status.AntivirusSignatureVersion;Detections=$detections.Count;UTC=[DateTime]::UtcNow.ToString('o')}
-          $result | ConvertTo-Json | Set-Content defender-report/report.json
-          $result | ConvertTo-Json | Write-Host
-          if($detections.Count){throw 'Defender detected a threat'}
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures are stale'}
+          $installer=@(Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe')
+          if($installer.Count -ne 1){throw 'Expected single versioned installer'}
+          $before=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $scanOutput=(& $scanner -Scan -ScanType 3 -DisableRemediation -File (Resolve-Path candidate).Path 2>&1 | Out-String)
+          $scanExit=$LASTEXITCODE
+          $scanOutput | Set-Content defender-report/scanner-output.txt
+          $report.ScannerExitCode=$scanExit
+          $report.Sha256=$before
+          if($scanExit -ne 0 -or $scanOutput -match '(?im)^\\s*Threat\\s*:'){throw "Microsoft Defender scan did not pass: exit $scanExit"}
+          if((Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $before){throw 'Installer changed during security scan'}
+          $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
+          $report | ConvertTo-Json -Depth 5 | Set-Content defender-report/report.json
+          $report | ConvertTo-Json -Depth 5 | Write-Host
       - uses: actions/upload-artifact@v4
         if: always()
         with:
