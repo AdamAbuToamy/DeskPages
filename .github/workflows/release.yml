@@ -93,7 +93,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $files = Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe'
-          if($files.Count -ne 2){throw "Unexpected setup inventory: $($files.Count)"}
+          if($files.Count -ne 1){throw "Unexpected setup inventory: $($files.Count)"}
           $lines = Get-Content candidate/SHA256SUMS.txt
           foreach($file in $files){
             $line = @($lines | Where-Object { $_.EndsWith($file.Name) })
