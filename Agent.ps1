@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.37.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.38.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -436,12 +436,7 @@ try {
             [DeskPagesHost]::ConfigureDragSession($dragToken)
         }
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
-    try{
-        $groupsEnabled=Join-Path $env:LOCALAPPDATA 'DeskPages\TaskbarGroups\enabled.txt'
-        if(Get-DpGroupsEnabled){
-            $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)
-        }
-    }catch{Write-DpLog ('Taskbar groups could not start: '+[string]$_)}
+    # Main DeskPages host owns Win+Alt+Plus. No resident Groups helper until first use.
     [DeskPagesHost]::Run($action)
 }
 catch {

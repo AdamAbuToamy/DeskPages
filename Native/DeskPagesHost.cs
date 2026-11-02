@@ -280,9 +280,18 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     private sealed class SessionWindow:NativeWindow,IDisposable{
         private readonly DeskPagesHost owner;
-        public SessionWindow(DeskPagesHost host){owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});}
+        private readonly System.Collections.Generic.List<int> groupKeys=new System.Collections.Generic.List<int>();
+        public SessionWindow(DeskPagesHost host){
+            owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});
+            uint[] keys={0xBB,0xBB,0x6B,0x6B};
+            for(int i=0;i<keys.Length;i++){
+                int id=1180+i;
+                if(RegisterHotKey(Handle,id,0x4009U+(i%2==1?4U:0U),keys[i]))groupKeys.Add(id);
+            }
+        }
         protected override void WndProc(ref Message m){
             if(m.Msg==CommandMessage){owner.TryDispatchCommand();m.Result=IntPtr.Zero;return;}
+            if(m.Msg==0x312 && groupKeys.Contains(m.WParam.ToInt32())){owner.Enqueue(9760);m.Result=IntPtr.Zero;return;}
             if(m.Msg==0x7e || m.Msg==0x02e0 || (m.Msg==0x1a && m.WParam.ToInt64()==0x2f)){
                 owner.DisplayChanged();if(owner.snapshots!=null)owner.snapshots.Invalidate();
             }
@@ -291,7 +300,7 @@ public sealed class DeskPagesHost : ApplicationContext
             if(m.Msg==0x16){owner.EndSession(m.WParam!=IntPtr.Zero,m.LParam.ToInt64());m.Result=IntPtr.Zero;return;}
             base.WndProc(ref m);
         }
-        public void Dispose(){DestroyHandle();}
+        public void Dispose(){foreach(int id in groupKeys)UnregisterHotKey(Handle,id);DestroyHandle();}
     }
     private void Enqueue(int code) {QueueCommand(code,false);}
     private void EnqueuePanel(int code) {QueueCommand(code,true);}
@@ -356,7 +365,7 @@ public sealed class DeskPagesHost : ApplicationContext
     public static string Diagnostics()
     {
         if(active==null) return "Host not running.";
-        return "Build: 0.8.37\r\n"+active.hidStatus+
+        return "Build: 0.8.38\r\n"+active.hidStatus+
             "\r\nHID packets blocked by desktop/button/transition scope: "+Interlocked.Read(ref active.hidBlockedFrames)+
             "\r\nHorizontal hook events: "+Interlocked.Read(ref active.wheelMessages)+
             "\r\nHorizontal raw-input events: "+Interlocked.Read(ref active.rawMessages)+
@@ -668,14 +677,14 @@ public sealed class DeskPagesHost : ApplicationContext
         private int recognized;
         private string lastDirection="none";
         public TouchpadProbe() {
-            Text="DeskPages 0.8.37 - HID touchpad check (no page changes)";
+            Text="DeskPages 0.8.38 - HID touchpad check (no page changes)";
             Width=850;Height=500;StartPosition=FormStartPosition.CenterScreen;
             BackColor=Color.FromArgb(25,31,42);ForeColor=Color.White;DoubleBuffered=true;
             touchpad.Register(Handle);
             repaint=new System.Windows.Forms.Timer {Interval=150};repaint.Tick+=delegate {Invalidate();};repaint.Start();
         }
         public string Report() {
-            return "DeskPages 0.8.37 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
+            return "DeskPages 0.8.38 HID input check (Digitizers 0D/05)\r\n"+touchpad.Diagnostics()+
                 "\r\nRecognized horizontal gestures: "+recognized+"\r\nLast direction: "+lastDirection+
                 "\r\nNo desktop page changes were performed.";
         }

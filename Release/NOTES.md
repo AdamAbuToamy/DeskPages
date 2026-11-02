@@ -1,18 +1,20 @@
-# DeskPages 0.8.37 Alpha 2 — input and drag reliability update
+# DeskPages 0.8.38 Alpha 1 — taskbar group startup and removal fixes
 
-The floating taskbar + button has been removed. Create a numbered group from the existing DeskPages tray menu (Add taskbar group) or Win+Alt+Plus, using the main keyboard or numeric keypad. Win+Plus retains its Windows Magnifier function. Group creation uses a hidden message window, with no second tray icon or visible add overlay.
+This release builds on 0.8.37 and includes the latest tested taskbar-group fixes. It is an engineering pre-release for Windows 11 x64.
 
-Cached navigation reads immutable resident RAM images only. Startup and neighbouring pages preload from the protected disk store on a separate worker. Idle screenshots, DPAPI, compression, decompression and persistence no longer hold navigation behind disk locks. Current/next/previous pages receive eviction protection within a RAM budget of 1/32 physical memory (128-512 MiB cap); images have no timed expiry. Persistence backlog is separately bounded and reported.
+## What's fixed
 
-Ordinary battery/power-status notifications and graphics-device recreation no longer discard unchanged CPU snapshots. Content fingerprints invalidate only affected pages; duplicate file notifications preserve images. Desktop file metadata is collected asynchronously and compared with persisted image keys after restart. Genuine display/theme/session changes retain scene invalidation.
+- **Create the first group immediately:** Win+Alt+Plus is registered by DeskPages' main host at startup. The main keyboard Plus/Equal (with or without Shift) and the numeric keypad Plus are supported. You do not need to open the tray menu first.
+- **Lower idle memory for Groups:** Groups stays enabled by default, but the separate controller and its recovery helper no longer start merely because DeskPages starts. They launch when a group is first requested; desktop snapshot caching is unchanged.
+- **Delete without the extra blank app:** Before removing a numbered group tab from the taskbar, DeskPages hides its anchor window and removes the APPWINDOW classification without recreating its HWND. This prevents Explorer from briefly discovering it as an ordinary program window. Group member ownership is restored before the anchor is removed.
+- **Safer teardown:** Group removal and failed creation both hide the original anchor before calling the native taskbar removal API.
 
-Input and rendering threads use AboveNormal CPU priority and HighQoS; navigation dispatch retains its bounded priority scope. The compression writer uses Windows background scheduling. Stable navigation uses the native display revision fence; periodic geometry checks remain enabled. Background maintenance is deferred after navigation input. Diagnostic writes are asynchronous; transition-performance-v5.csv adds resident budget/count, preloads, captures, worker errors and persistence deferrals.
+## Validation and scope
 
-Adds blocked-disk/capture concurrency, pinned-neighbour memory-pressure, battery-event, GPU rebuild, stale-generation, asynchronous per-page fingerprint and stable-monitor fast-path tests. Existing graphics, workspace, recovery, input, groups, installer and Defender gates remain enabled. Physical Windows 11 touchpad/mixed-GPU latency requires user acceptance. Alpha pre-release; device-specific behavior is not guaranteed.
+GitHub's Windows build checks shortcut registration, group-window lifecycle, native taskbar adapter operations, installation and workspace stress tests. The release pipeline also requires a Microsoft Defender on-demand scan with fresh signatures and unchanged SHA-256. Passing these checks does not replace visual verification on a physical Windows 11 taskbar.
 
+This Alpha installer is **not Authenticode-signed** and Windows SmartScreen may display an unknown-publisher warning. DeskPages does not need administrator access for ordinary usage.
 
-## Alpha 2 changes
+## Existing functionality retained
 
-- Track physical left/right Windows key events and recognize desktop pointer scope when handling Win+Left/Right. Ctrl+Alt+Left/Right remains an alternative. If the Windows key is disabled by the keyboard or system even when DeskPages is closed, this update cannot restore it.
-- Improve drag broker cancellation cleanup and log candidate/drag-enter failures to investigate repeat drag attempts. A recoverable unexpected error no longer ends the broker message loop. Physical repeated drags still require acceptance testing.
-- No change to touchpad handling or stored desktop file contents and page layouts.
+DeskPages maintains native Windows desktop pages, resident screenshot caching, saved page assignments and navigation gestures/keyboard controls. This update does not replace the desktop directory or intentionally modify the user's files.

@@ -16,6 +16,7 @@ internal sealed class GroupTaskbar:IDisposable {
     public GroupTaskbar(){Reset();}public void Reset(){if(api!=null)Marshal.ReleaseComObject(api);api=(IList)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));api.HrInit();}public void Add(IntPtr h){api.AddTab(h);}public void Remove(IntPtr h){api.DeleteTab(h);}public void Dispose(){Marshal.ReleaseComObject(api);}
 }
 internal sealed class GroupController:ApplicationContext {
+    [DllImport("user32.dll")]private static extern bool ShowWindow(IntPtr hwnd,int command);
     private readonly string session=Guid.NewGuid().ToString("N"),executable=Application.ExecutablePath;
     private readonly GroupModel model;private readonly GroupRecovery recovery;
     private readonly Dictionary<int,GroupAnchor> anchors=new Dictionary<int,GroupAnchor>();
@@ -61,7 +62,7 @@ internal sealed class GroupController:ApplicationContext {
             anchor.Show();taskbar.Add(anchor.Handle);
             RefreshSoon();
         }catch(Exception ex){
-            if(anchor!=null){try{taskbar.Remove(anchor.Handle);}catch(Exception){}anchor.Finish();}
+            if(anchor!=null){var hwnd=anchor.Handle;anchor.PrepareForRemoval();try{taskbar.Remove(hwnd);}catch(Exception){}anchor.Finish();}
             if(group!=null){anchors.Remove(group.Number);model.DeleteEmpty(group);}
             MessageBox.Show(ex.Message,"DeskPages groups");
         }
@@ -75,6 +76,9 @@ internal sealed class GroupController:ApplicationContext {
             if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
             bool interacting=pointerOnBar || captured!=null || drag.Length>0;
             bool dragging=captured!=null || drag.Length>0 || (held && pointerOnBar);
+            // Keep drag interactions responsive; slow the UI heartbeat while idle.
+            int interval=interacting || held?40:200;
+            if(timer.Interval!=interval)timer.Interval=interval;
             if(Now-lastGeometryRead>=500){lastGeometryRead=Now;var bounds=TaskbarAccess.ReadBounds();if(bounds.Handle!=snapshot.Handle || bounds.Bounds!=snapshot.Bounds)RefreshSoon();}
             bool changed=seenRefreshRevision!=Interlocked.Read(ref refreshRevision) || seenWindowRevision!=windowEvents.Revision;
             if(GroupRefreshPolicy.Due(Now,lastRead,changed,interacting,dragging) && Interlocked.CompareExchange(ref readBusy,1,0)==0){
@@ -209,7 +213,15 @@ internal sealed class GroupController:ApplicationContext {
         }
         foreach(var empty in model.Prune(WindowShell.Same))RemoveAnchor(empty);
     }
-    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
+    private void RemoveAnchor(LiveGroup group){
+        var anchor=anchors[group.Number];
+        // Keep the original HWND stable until the explicit taskbar tab is gone.
+        // Otherwise Explorer may briefly discover it as a blank APPWINDOW.
+        var hwnd=anchor.Handle;
+        anchor.PrepareForRemoval();
+        try{taskbar.Remove(hwnd);}catch(COMException){ }
+        finally{anchor.Finish();anchors.Remove(group.Number);}
+    }
     private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
     private void DeleteGroup(LiveGroup group){
         // Restore durable ownership before removing the numbered anchor. A failed

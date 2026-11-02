@@ -51,12 +51,12 @@ jobs:
           name: installer-candidate-for-analysis
           path: dist/*
           if-no-files-found: error
-      - name: Scan the new installer with current Defender and verify cloud connectivity
+      - name: Explain hosted Windows Server Defender state
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: |
-          $version=([IO.File]::ReadAllText('VERSION.txt') -replace '^DeskPages\s+','').Trim()
-          ./Release/Scan-Installer.ps1 -Installer (Join-Path 'dist' ("DeskPages-Setup-"+$version+'.exe')) -ReportDirectory 'security-report' -PayloadRoot $pwd.Path -PayloadInventory 'security-input/payload-inventory.json'
+          Write-Host 'Windows Server hosted image is intended for build/test only.'
+          Write-Host 'A separate Windows 11 runner must complete Microsoft Defender scanning before preview release.'
       - name: Retain installer security report
         if: always()
         uses: actions/upload-artifact@v4
@@ -74,15 +74,101 @@ jobs:
         with:
           name: windows-validation
           path: ~/AppData/Local/DeskPages/Verification/
+
+  defender:
+    name: Verify actual installer with Microsoft Defender on Windows 11
+    if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+    needs: build
+    runs-on: windows-11-arm
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-candidate-for-analysis
+          path: candidate
+      - name: Verify exact installer SHA256 from build inventory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe'
+          if($files.Count -ne 1){throw "Unexpected setup inventory: $($files.Count)"}
+          $lines = Get-Content candidate/SHA256SUMS.txt
+          foreach($file in $files){
+            $line = @($lines | Where-Object { $_.EndsWith($file.Name) })
+            if($line.Count -ne 1){throw "Missing or duplicate checksum for $($file.Name)"}
+            $expected = ($line[0] -split ' +')[0].ToLowerInvariant()
+            $actual = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($actual -ne $expected){throw "Installer hash mismatch for $($file.Name)"}
+          }
+      - name: Defender health, fresh signatures and synchronous scanner verdict
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path defender-report | Out-Null
+          $svc=Get-Service WinDefend -ErrorAction Stop
+          $status=Get-MpComputerStatus -ErrorAction Stop
+          $report=[ordered]@{
+            Service=$svc.Status.ToString()
+            AntivirusEnabled=$status.AntivirusEnabled
+            AMServiceEnabled=$status.AMServiceEnabled
+            Engine=$status.AMEngineVersion
+            SignatureVersion=$status.AntivirusSignatureVersion
+            SignatureUpdated=$status.AntivirusSignatureLastUpdated.ToString('o')
+            Verdict='NOT_SCANNED'
+          }
+          if($svc.Status -ne 'Running' -or -not $status.AntivirusEnabled -or -not $status.AMServiceEnabled){throw 'Microsoft Defender Antivirus service not active'}
+          $pref=Get-MpPreference
+          if([int]$pref.SubmitSamplesConsent -ne 2){throw 'No-sample-upload privacy setting not satisfied'}
+          $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if($null -eq $platform){throw 'Defender platform missing'}
+          $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+          if(-not(Test-Path $scanner)){throw 'Microsoft Defender scanner missing'}
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){
+            # Windows Defender may return 0x80070652 while a Windows Update
+            # installation is running. Retry, but never accept stale signatures.
+            $updateExit=-1
+            for($attempt=1;$attempt -le 6;$attempt++){
+              $update=(& $scanner -SignatureUpdate -MMPC 2>&1 | Out-String)
+              $updateExit=$LASTEXITCODE
+              "Attempt $attempt; exit $updateExit" | Add-Content defender-report/signature-update.txt
+              $update | Add-Content defender-report/signature-update.txt
+              $status=Get-MpComputerStatus
+              if($status.AntivirusSignatureLastUpdated -ge (Get-Date).AddDays(-2)){break}
+              if($attempt -lt 6){Start-Sleep -Seconds 20}
+            }
+            if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw "Defender signatures still stale after update attempts (last exit $updateExit)"}
+          }
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures are stale'}
+          $installer=@(Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe')
+          if($installer.Count -ne 1){throw 'Expected single versioned installer'}
+          $before=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $scanOutput=(& $scanner -Scan -ScanType 3 -DisableRemediation -File (Resolve-Path candidate).Path 2>&1 | Out-String)
+          $scanExit=$LASTEXITCODE
+          $scanOutput | Set-Content defender-report/scanner-output.txt
+          $report.ScannerExitCode=$scanExit
+          $report.Sha256=$before
+          if($scanExit -ne 0 -or $scanOutput -match '(?im)^\\s*Threat\\s*:'){throw "Microsoft Defender scan did not pass: exit $scanExit"}
+          if((Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $before){throw 'Installer changed during security scan'}
+          $report.Verdict='NO_DETECTION_IN_THIS_SCAN'
+          $report | ConvertTo-Json -Depth 5 | Set-Content defender-report/report.json
+          $report | ConvertTo-Json -Depth 5 | Write-Host
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+        if: always()
+        with:
+          name: defender-windows11-report
+          path: defender-report/
+          if-no-files-found: warn
+      - name: Release only the Defender-verified installer
+        uses: actions/upload-artifact@v4
         with:
           name: deskpages-preview
-          path: dist/*
+          path: candidate/*
           if-no-files-found: error
   publish:
     if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish && !inputs.input_only)) && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, defender]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -100,7 +186,7 @@ jobs:
           sha256sum -c SHA256SUMS.txt
           cd ..
           version="$(python3 -c 'from pathlib import Path; import re; text=Path("VERSION.txt").read_text(encoding="utf-8-sig").strip(); match=re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)",text); assert match, "Invalid VERSION.txt"; print(match.group(1))')"
-          tag="v${version}-alpha.2"
+          tag="v${version}-alpha.1"
           git check-ref-format "refs/tags/$tag"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag is already published; leaving its assets unchanged."
@@ -125,7 +211,7 @@ jobs:
           import base64, json, re, subprocess
           from pathlib import Path
           version = re.fullmatch(r"DeskPages ([0-9]+\.[0-9]+\.[0-9]+)", Path("VERSION.txt").read_text(encoding="utf-8-sig").strip()).group(1)
-          tag = f"v{version}-alpha.2"
+          tag = f"v{version}-alpha.1"
           metadata = json.loads(subprocess.check_output(["gh", "api", "repos/{owner}/{repo}/contents/README.md?ref=main"]))
           text = base64.b64decode(metadata["content"]).decode("utf-8")
           block = f"""<!-- deskpages-download:start -->
