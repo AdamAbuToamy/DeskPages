@@ -1,5 +1,0 @@
-PASS: raw-byte encoding preflight accepted 87 scripts.
-PASS: current-host parser and targeted legacy-delegate guard accepted 87 scripts.
-SKIP: actual Windows PowerShell 5.1 parser is unavailable on this host.
-PASS: reported 0.8.0 callback syntax is rejected by the native parser or targeted cross-host guard.
-PASS: exact production named-delegate assignment, string-array arguments/results, Unicode and empty response binding; no desktop changes.
