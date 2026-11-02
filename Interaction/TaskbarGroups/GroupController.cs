@@ -75,6 +75,9 @@ internal sealed class GroupController:ApplicationContext {
             if(pointerOnBar && !wasOnBar)RefreshSoon();wasOnBar=pointerOnBar;
             bool interacting=pointerOnBar || captured!=null || drag.Length>0;
             bool dragging=captured!=null || drag.Length>0 || (held && pointerOnBar);
+            // Keep drag interactions responsive; slow the UI heartbeat while idle.
+            int interval=interacting || held?40:200;
+            if(timer.Interval!=interval)timer.Interval=interval;
             if(Now-lastGeometryRead>=500){lastGeometryRead=Now;var bounds=TaskbarAccess.ReadBounds();if(bounds.Handle!=snapshot.Handle || bounds.Bounds!=snapshot.Bounds)RefreshSoon();}
             bool changed=seenRefreshRevision!=Interlocked.Read(ref refreshRevision) || seenWindowRevision!=windowEvents.Revision;
             if(GroupRefreshPolicy.Due(Now,lastRead,changed,interacting,dragging) && Interlocked.CompareExchange(ref readBusy,1,0)==0){
