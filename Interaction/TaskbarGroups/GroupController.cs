@@ -16,6 +16,7 @@ internal sealed class GroupTaskbar:IDisposable {
     public GroupTaskbar(){Reset();}public void Reset(){if(api!=null)Marshal.ReleaseComObject(api);api=(IList)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));api.HrInit();}public void Add(IntPtr h){api.AddTab(h);}public void Remove(IntPtr h){api.DeleteTab(h);}public void Dispose(){Marshal.ReleaseComObject(api);}
 }
 internal sealed class GroupController:ApplicationContext {
+    [DllImport("user32.dll")]private static extern bool ShowWindow(IntPtr hwnd,int command);
     private readonly string session=Guid.NewGuid().ToString("N"),executable=Application.ExecutablePath;
     private readonly GroupModel model;private readonly GroupRecovery recovery;
     private readonly Dictionary<int,GroupAnchor> anchors=new Dictionary<int,GroupAnchor>();
@@ -212,7 +213,7 @@ internal sealed class GroupController:ApplicationContext {
         }
         foreach(var empty in model.Prune(WindowShell.Same))RemoveAnchor(empty);
     }
-    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
+    private void RemoveAnchor(LiveGroup group){var anchor=anchors[group.Number];ShowWindow(anchor.Handle,0);try{taskbar.Remove(anchor.Handle);}catch(COMException){ }anchor.Finish();anchors.Remove(group.Number);}
     private void OpenGroup(LiveGroup group){groupPopup.Show(group,Cursor.Position);}
     private void DeleteGroup(LiveGroup group){
         // Restore durable ownership before removing the numbered anchor. A failed
