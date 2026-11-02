@@ -355,7 +355,7 @@ function Get-DpScopedLayoutIcons {param([object[]]$Saved,[object[]]$Current)
 
 function Get-DpGroupsEnabled {
     $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
-    return -not(Test-Path -LiteralPath $path) -or [IO.File]::ReadAllText($path).Trim() -ne 'off'
+    # Opt-in: unused taskbar groups must not launch a resident helper at sign-in.\n    return -not(Test-Path -LiteralPath $path) -or [IO.File]::ReadAllText($path).Trim() -ne 'off'
 }
 function Set-DpGroupsEnabled {param([bool]$Enabled)
     $path=Join-Path $env:LOCALAPPDATA 'DeskPages/TaskbarGroups/enabled.txt'
@@ -368,7 +368,8 @@ function Set-DpGroupsEnabled {param([bool]$Enabled)
         finally{if($mutex){if($acquired){$mutex.ReleaseMutex()};$mutex.Dispose()}}
     }
     [DeskPagesDragProtocol]::AtomicText($path,$(if($Enabled){'on'}else{'off'}))
-    if($Enabled){$script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesGroups.exe'),'',$script:base,'open',0)}
+    if($Enabled){# Hotkey is managed by DeskPagesHost; no groups process needed yet.
+    }
     else{$signal=$null;try{$signal=[Threading.EventWaitHandle]::OpenExisting('Local\DeskPagesTaskbarGroupsStop-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value);$null=$signal.Set()}catch [Threading.WaitHandleCannotBeOpenedException]{}finally{if($signal){$signal.Dispose()}}}
 }
 

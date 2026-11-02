@@ -24,6 +24,8 @@ internal sealed class GroupCommandWindow:Form {
         base.OnHandleCreated(e);hotkeyHandle=Handle;
         // Win+Plus belongs to Magnifier. Add Alt; support the main keyboard
         // plus/equal key (with or without Shift) and numeric keypad Plus.
+        // Host takes ownership first during normal startup. Retain this fallback
+        // for standalone groups operation and native shortcut regression tests.
         uint[] keys={0xBB,0xBB,0x6B,0x6B};
         for(int i=0;i<keys.Length;i++)if(RegisterHotKey(hotkeyHandle,1000+i,0x4009U+(i%2==1?4U:0U),keys[i]))registered.Add(1000+i);
     }

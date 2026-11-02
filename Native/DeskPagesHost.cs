@@ -280,9 +280,18 @@ public sealed class DeskPagesHost : ApplicationContext
     }
     private sealed class SessionWindow:NativeWindow,IDisposable{
         private readonly DeskPagesHost owner;
-        public SessionWindow(DeskPagesHost host){owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});}
+        private readonly System.Collections.Generic.List<int> groupHotkeys=new System.Collections.Generic.List<int>();
+        public SessionWindow(DeskPagesHost host){
+            owner=host;CreateHandle(new CreateParams{Caption="DeskPages session checkpoint",ExStyle=0x80|0x08000000});
+            uint[] keys={0xBB,0xBB,0x6B,0x6B};
+            for(int i=0;i<keys.Length;i++){
+                int id=1180+i;
+                if(RegisterHotKey(Handle,id,0x4009U+(i%2==1?4U:0U),keys[i]))groupHotkeys.Add(id);
+            }
+        }
         protected override void WndProc(ref Message m){
             if(m.Msg==CommandMessage){owner.TryDispatchCommand();m.Result=IntPtr.Zero;return;}
+            if(m.Msg==0x312 && groupHotkeys.Contains(m.WParam.ToInt32())){owner.Enqueue(9760);m.Result=IntPtr.Zero;return;}
             if(m.Msg==0x7e || m.Msg==0x02e0 || (m.Msg==0x1a && m.WParam.ToInt64()==0x2f)){
                 owner.DisplayChanged();if(owner.snapshots!=null)owner.snapshots.Invalidate();
             }
@@ -291,7 +300,7 @@ public sealed class DeskPagesHost : ApplicationContext
             if(m.Msg==0x16){owner.EndSession(m.WParam!=IntPtr.Zero,m.LParam.ToInt64());m.Result=IntPtr.Zero;return;}
             base.WndProc(ref m);
         }
-        public void Dispose(){DestroyHandle();}
+        public void Dispose(){foreach(int id in groupHotkeys)UnregisterHotKey(Handle,id);groupHotkeys.Clear();DestroyHandle();}
     }
     private void Enqueue(int code) {QueueCommand(code,false);}
     private void EnqueuePanel(int code) {QueueCommand(code,true);}

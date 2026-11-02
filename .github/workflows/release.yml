@@ -5,7 +5,54 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      publish:
+      malware_scan:
+    if: github.event_name != 'workflow_dispatch' || !inputs.input_only
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-candidate-for-analysis
+          path: candidate
+      - name: Verify package hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd candidate
+          sha256sum -c SHA256SUMS.txt
+          test -f DeskPages-Setup-0.8.37.exe
+      - name: Install and update ClamAV virus definitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clamav clamav-freshclam
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam --stdout
+          clamscan --version
+      - name: Scan packaged installer and all release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p security-report
+          clamscan --recursive=yes --infected --scan-archive=yes --max-filesize=150M --max-scansize=800M --log=security-report/clamav.txt candidate/
+          grep -Eq 'Infected files: 0' security-report/clamav.txt
+          echo "Scan completed with fresh ClamAV definitions; this is not a Defender or code signing verdict." > security-report/SCOPE.txt
+      - name: Upload malware scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-malware-scan-report
+          path: security-report/
+      - name: Publish security-gated preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskpages-tested-preview
+          path: candidate/*
+          if-no-files-found: error
+  publish:
         description: Publish the validated build as a public GitHub Pre-release
         type: boolean
         default: false
@@ -20,7 +67,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +98,7 @@ jobs:
           name: installer-candidate-for-analysis
           path: dist/*
           if-no-files-found: error
-      - name: Scan the new installer with current Defender and verify cloud connectivity
+      - name: Mandatory Microsoft Defender custom scan of installer and payload
         if: github.event_name != 'workflow_dispatch' || !inputs.input_only
         shell: powershell
         run: |

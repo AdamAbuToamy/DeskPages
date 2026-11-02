@@ -1,6 +1,6 @@
 # Live taskbar groups - device-test preview
 
-Groups are enabled by default and can be disabled in Settings. Choose **Add taskbar group** from the existing DeskPages tray menu to enable them and create a group. Windows taskbar combine should be **Always** for one collapsed group button. The helper runs with Explorer's normal user token.
+Groups are enabled by default, but only a lightweight hotkey listener starts until the first group is created. Settings can disable group creation. The helper remains active during a group session after first creation.
 
 1. Use **Add taskbar group** in the DeskPages tray menu, or press **Win+Alt+Plus** (main keyboard or numeric keypad) to create a numbered native taskbar group. Holding the shortcut creates only one group until the Plus key is released. Win+Plus remains Windows Magnifier.
 2. Drag a running application button from the taskbar onto the group. Release on the group to commit immediately. There is no hold timer or automatic selection window.
