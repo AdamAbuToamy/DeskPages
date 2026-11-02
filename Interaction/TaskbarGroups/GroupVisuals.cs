@@ -21,6 +21,12 @@ internal static class GroupVisuals {
     [DllImport("user32.dll")]private static extern bool DestroyIcon(IntPtr icon);
 }
 internal sealed class GroupAnchor:Form {
+    // Exclude a retiring anchor from Explorer's automatic taskbar enumeration
+    // while keeping its HWND alive for ITaskbarList.DeleteTab.  Changing
+    // ShowInTaskbar here would recreate the HWND before DeleteTab can use it.
+    [DllImport("user32.dll",EntryPoint="GetWindowLongW",SetLastError=true)]private static extern int GetWindowLong(IntPtr window,int index);
+    [DllImport("user32.dll",EntryPoint="SetWindowLongW",SetLastError=true)]private static extern int SetWindowLong(IntPtr window,int index,int value);
+    private const int ExStyle=-20,AppWindow=0x00040000,ToolWindow=0x00000080;
     private readonly Action open;private bool leaving,opening;
     public GroupAnchor(LiveGroup group,Action show){
         open=show;Text="DeskPages · "+group.Number.ToString("00");Icon=GroupVisuals.Number(group.Number);ShowInTaskbar=true;FormBorderStyle=FormBorderStyle.FixedSingle;StartPosition=FormStartPosition.Manual;Size=new Size(280,150);WindowState=FormWindowState.Minimized;
@@ -35,7 +41,23 @@ internal sealed class GroupAnchor:Form {
         base.WndProc(ref m);
     }
     protected override void OnFormClosing(FormClosingEventArgs e){if(!leaving){e.Cancel=true;open();}base.OnFormClosing(e);}
-    public void Finish(){if(leaving)return;leaving=true;var icon=Icon;Close();icon.Dispose();Dispose();}
+    public void PrepareForRemoval(){
+        if(leaving)return;
+        leaving=true;
+        // Stop the Form from reopening itself in WM_CLOSE/WM_SYSCOMMAND.
+        Hide();
+        // Do not change ShowInTaskbar here: WinForms can recreate the HWND,
+        // producing an extra blank taskbar entry before DeleteTab completes.
+        var hwnd=Handle;
+        int ex=GetWindowLong(hwnd,ExStyle);
+        SetWindowLong(hwnd,ExStyle,(ex & ~AppWindow)|ToolWindow);
+    }
+    public void Finish(){
+        if(IsDisposed)return;
+        PrepareForRemoval();
+        var icon=Icon;
+        try{Close();}finally{icon.Dispose();Dispose();}
+    }
 }
 internal sealed class GroupDropCue:Form {
     private bool ready;
