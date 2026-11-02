@@ -1,7 +1,0 @@
-Simulated unavailable arrange capability against 0.6.6: expected failure. This does not identify the actual HRESULT on the user device.
-ParentContainsErrorRecordException: <source>/NewItemPlacement.ps1:48
-Line |
-  48 |      if([DeskPagesLayout]::AutoArrange($script:originalDesktop)){Write …
-     |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | Exception calling "AutoArrange" with "1" argument(s): "Arrange option
-     | unavailable on empty desktop"
