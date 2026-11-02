@@ -5,7 +5,58 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      publish:
+      defender_arm:
+    name: Independent Microsoft Defender Windows 11 ARM scan
+    if: always() && github.event_name == 'pull_request'
+    needs: build
+    runs-on: windows-11-arm
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-candidate-for-analysis
+          path: candidate
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify installer checksum
+        shell: powershell
+        run: |
+          Set-Location candidate
+          $expected=Get-Content SHA256SUMS.txt
+          $entry=$expected | Where-Object {$_ -match 'DeskPages-Setup-0\\.8\\.37\\.exe'}
+          if(-not $entry){throw 'Installer checksum entry missing'}
+          $hash=($entry -split '\\s+')[0].ToLowerInvariant()
+          $actual=(Get-FileHash DeskPages-Setup-0.8.37.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hash -ne $actual){throw 'Installer checksum mismatch'}
+      - name: Scan installer with Microsoft Defender on separate Windows runner
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force independent-defender | Out-Null
+          $installer=(Resolve-Path candidate/DeskPages-Setup-0.8.37.exe).Path
+          $status=Get-MpComputerStatus
+          if(-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled){throw 'Defender not available on independent runner'}
+          Update-MpSignature -ErrorAction Stop
+          $started=Get-Date
+          Start-MpScan -ScanType CustomScan -ScanPath $installer -ErrorAction Stop
+          $findings=@(Get-MpThreatDetection | Where-Object {$_.InitialDetectionTime -ge $started})
+          $report=[ordered]@{Engine='Microsoft Defender';Installer=(Split-Path $installer -Leaf);Sha256=(Get-FileHash $installer -Algorithm SHA256).Hash;Verdict=$(if($findings.Count){'DETECTION_RECORDED'}else{'NO_DETECTION_IN_THIS_SCAN'});Detections=$findings.Count;Definitions=(Get-MpComputerStatus).AntivirusSignatureVersion}
+          $report | ConvertTo-Json | Set-Content independent-defender/report.json -Encoding UTF8
+          if($findings.Count){throw 'Defender detected threat'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-defender-report
+          path: independent-defender/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskpages-defender-verified-exe
+          path: candidate/DeskPages-Setup-0.8.37.exe
+          if-no-files-found: error
+  publish:
         description: Publish the validated build as a public GitHub Pre-release
         type: boolean
         default: false
