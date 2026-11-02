@@ -28,6 +28,15 @@ jobs:
           $path=(Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
           if(-not $path){throw 'Defender platform directory missing'}
           $scanner=Join-Path $path MpCmdRun.exe
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){
+            $update=(& $scanner -SignatureUpdate -MMPC 2>&1 | Out-String)
+            $updateCode=$LASTEXITCODE
+            $update | Set-Content defender-diagnostic/update-output.txt
+            if($updateCode -ne 0){throw "Defender CLI signature update failed: $updateCode"}
+            $status=Get-MpComputerStatus
+            $status | Select-Object AMServiceEnabled,AntivirusEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated,AMEngineVersion | ConvertTo-Json | Set-Content defender-diagnostic/health-after-update.json
+          }
+          if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures are stale'}
           $out=(& $scanner -Scan -ScanType 3 -DisableRemediation -File (Resolve-Path candidate).Path 2>&1 | Out-String)
           $code=$LASTEXITCODE
           $out | Set-Content defender-diagnostic/scanner-output.txt
