@@ -16,3 +16,8 @@ Adds blocked-disk/capture concurrency, pinned-neighbour memory-pressure, battery
 - Track physical left/right Windows key events and recognize desktop pointer scope when handling Win+Left/Right. Ctrl+Alt+Left/Right remains an alternative. If the Windows key is disabled by the keyboard or system even when DeskPages is closed, this update cannot restore it.
 - Improve drag broker cancellation cleanup and log candidate/drag-enter failures to investigate repeat drag attempts. A recoverable unexpected error no longer ends the broker message loop. Physical repeated drags still require acceptance testing.
 - No change to touchpad handling or stored desktop file contents and page layouts.
+
+
+## Preview verification
+
+Release candidates require Windows build and acceptance plus an independent, freshly updated ClamAV archive scan. The hosted GitHub Windows Defender WMI service can be unavailable; its diagnostic result is not represented as a passing Defender scan. No malware scan guarantees a clean program or substitutes for device-level Windows 11 acceptance or executable code signing.
