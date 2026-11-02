@@ -17,7 +17,25 @@ try{
  # different machine's protection policy to make it fit this diagnostic job.
  $pref=Get-MpPreference
  if([int]$pref.SubmitSamplesConsent -ne 2){throw 'This scanner may submit samples; refused because the user did not authorize file submission.'}
- Update-MpSignature
+ # Hosted Windows runners sometimes reject the Defender CIM signature update with
+ # RPC 0x800706BE. Retry through the Defender CLI without relaxing scan gates.
+ $platform=Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+ if(-not $platform){throw 'Defender platform unavailable; cannot scan.'}
+ $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+ $signatureReady=$false
+ for($attempt=0;$attempt -lt 3 -and -not $signatureReady;$attempt++){
+  try{Update-MpSignature -ErrorAction Stop;$signatureReady=$true}
+  catch{
+   $report.SignatureUpdateError=$_.Exception.Message
+   $cliOutput=(& $scanner -SignatureUpdate 2>&1 | Out-String)
+   $cliCode=$LASTEXITCODE
+   $report.SignatureCliExitCode=$cliCode
+   $cliOutput | Set-Content (Join-Path $ReportDirectory 'signature-update.txt') -Encoding UTF8
+   if($cliCode -eq 0){$signatureReady=$true}
+   elseif($attempt -lt 2){Start-Sleep -Seconds 3}
+  }
+ }
+ if(-not $signatureReady){throw 'Defender signature update unavailable after PowerShell and CLI retries; scan not approved.'}
  Set-MpPreference -MAPSReporting Advanced -DisableArchiveScanning $false -DisableScriptScanning $false -DisableRealtimeMonitoring $false
  # Hosted build images can remain in passive mode. An explicit custom scan
  # still works there; report that limit and do not claim real-time coverage.
