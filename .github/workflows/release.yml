@@ -126,10 +126,19 @@ jobs:
           $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
           if(-not(Test-Path $scanner)){throw 'Microsoft Defender scanner missing'}
           if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){
-            $update=(& $scanner -SignatureUpdate -MMPC 2>&1 | Out-String);$updateExit=$LASTEXITCODE
-            $update | Set-Content defender-report/signature-update.txt
-            if($updateExit -ne 0){throw "Defender signature update failed: $updateExit"}
-            $status=Get-MpComputerStatus
+            # Windows Defender may return 0x80070652 while a Windows Update
+            # installation is running. Retry, but never accept stale signatures.
+            $updateExit=-1
+            for($attempt=1;$attempt -le 6;$attempt++){
+              $update=(& $scanner -SignatureUpdate -MMPC 2>&1 | Out-String)
+              $updateExit=$LASTEXITCODE
+              "Attempt $attempt; exit $updateExit" | Add-Content defender-report/signature-update.txt
+              $update | Add-Content defender-report/signature-update.txt
+              $status=Get-MpComputerStatus
+              if($status.AntivirusSignatureLastUpdated -ge (Get-Date).AddDays(-2)){break}
+              if($attempt -lt 6){Start-Sleep -Seconds 20}
+            }
+            if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw "Defender signatures still stale after update attempts (last exit $updateExit)"}
           }
           if($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)){throw 'Defender signatures are stale'}
           $installer=@(Get-ChildItem candidate -Filter 'DeskPages-Setup-*.exe')
