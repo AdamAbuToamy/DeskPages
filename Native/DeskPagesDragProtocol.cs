@@ -15,9 +15,15 @@ public sealed class DeskPagesDragInputState {
     private bool held,queued;private int pressX,pressY;
     public void Press(int x,int y){lock(gate){pressX=x;pressY=y;queued=true;}}
     public bool Observe(bool down,int x,int y,out int startX,out int startY){
+        return Observe(down,x,y,true,out startX,out startY);
+    }
+    public bool Observe(bool down,int x,int y,bool canBegin,out int startX,out int startY){
         lock(gate){
             startX=x;startY=y;
             if(!down){held=false;queued=false;return false;}
+            // Keep the original press while a previous drag is finishing IPC.
+            // Consuming it here loses the next drag until the user releases again.
+            if(!canBegin)return false;
             bool begin=queued || !held;
             if(queued){startX=pressX;startY=pressY;}
             held=true;queued=false;return begin;

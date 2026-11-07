@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 public sealed class DeskPagesDragMailbox:IDisposable {
     private readonly string folder;
-    private string lastId,lastInvalidText,response,navigationId,lastVisual;
+    private string lastId,lastInvalidText,response,lastResponse,navigationId,lastVisual;
     private long lastPublish;
     public DeskPagesDragRequest Pending{get;private set;}
     public DeskPagesDragMailbox(string token){folder=DeskPagesDragProtocol.SessionPath(token);Directory.CreateDirectory(folder);using(var process=Process.GetCurrentProcess())DeskPagesDragProtocol.AtomicText(Path.Combine(folder,"owner.txt"),process.Id+"\n"+process.StartTime.ToUniversalTime().Ticks);Publish(1,false,0);}
@@ -33,12 +33,20 @@ public sealed class DeskPagesDragMailbox:IDisposable {
         try{request=DeskPagesDragProtocol.Decode(text);}
         catch(ArgumentException){lastInvalidText=text;throw;}
         catch(FormatException){lastInvalidText=text;throw;}
-        if(request.Id==lastId)return false;Pending=request;return true;
+        if(request.Id==lastId){
+            // The peer may have missed a successfully written reply. Restore that
+            // exact result without executing the page/file operation a second time.
+            string existing;
+            if(lastResponse!=null && (!DeskPagesDragProtocol.TryReadText(Path.Combine(folder,"response.txt"),out existing) || existing!=lastResponse))
+                DeskPagesDragProtocol.TryAtomicText(Path.Combine(folder,"response.txt"),lastResponse);
+            return false;
+        }
+        Pending=request;return true;
     }
     public void Complete(bool success,int page){
         if(Pending==null)return;
         // Mark consumed before attempting IO; sharing failures retain this exact reply.
-        if(response==null){if(success && Pending.Kind=="Navigate")navigationId=Pending.Id;lastId=Pending.Id;response=Pending.Id+"\n"+(success?"OK":"ERROR")+"\n"+page;}
+        if(response==null){if(success && Pending.Kind=="Navigate")navigationId=Pending.Id;lastId=Pending.Id;response=Pending.Id+"\n"+(success?"OK":"ERROR")+"\n"+page;lastResponse=response;}
         FlushResponse();
     }
     public void Dispose(){try{foreach(string file in new[]{"state.txt","request.txt","response.txt","owner.txt","visual-state.txt"})File.Delete(Path.Combine(folder,file));Directory.Delete(folder);}catch(IOException){}catch(UnauthorizedAccessException){}}

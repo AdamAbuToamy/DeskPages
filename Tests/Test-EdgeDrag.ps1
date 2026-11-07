@@ -12,6 +12,13 @@ $null=$inputState.Observe($false,40,50,[ref]$x,[ref]$y)
 $inputState.Press(1,2);$null=$inputState.Observe($false,4,5,[ref]$x,[ref]$y)
 if(-not $inputState.Observe($true,6,7,[ref]$x,[ref]$y) -or $x -ne 6){throw 'Released stale press was reused'}
 Write-Host 'PASS: captured grab point, missing-hook polling recovery, held-button deduplication and stale press cleanup.'
+$inputState=[DeskPagesDragInputState]::new();$inputState.Press(20,30)
+for($i=0;$i -lt 5;$i++){if($inputState.Observe($true,900,100,$false,[ref]$x,[ref]$y)){throw 'Busy broker started another drag'}}
+if(-not $inputState.Observe($true,900,100,$true,[ref]$x,[ref]$y) -or $x -ne 20 -or $y -ne 30){throw 'Pending cancellation consumed the next drag press'}
+if($inputState.Observe($true,901,100,$true,[ref]$x,[ref]$y)){throw 'Deferred press replayed'}
+$inputState.Press(40,50);$null=$inputState.Observe($false,900,100,$false,[ref]$x,[ref]$y)
+if(-not $inputState.Observe($true,60,70,$true,[ref]$x,[ref]$y) -or $x -ne 60 -or $y -ne 70){throw 'Released deferred press survived into another drag'}
+Write-Host 'PASS: next press preserved during pending IPC; deferred presses consumed once; released presses discarded.'
 $policy=[DeskPagesEdgeDragPolicy]::new()
 if($policy.Observe(0,999,0,1000,$false) -ne 0){throw 'Non-drag activated edge'}
 if($policy.Observe(0,999,0,1000,$true) -ne 0 -or $policy.Observe(319,999,0,1000,$true) -ne 0 -or $policy.Observe(320,999,0,1000,$true) -ne 1){throw 'Edge dwell incorrect'}

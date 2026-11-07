@@ -1,20 +1,18 @@
-# DeskPages 0.8.38 Alpha 1 — taskbar group startup and removal fixes
+# DeskPages 0.8.39 Alpha 1 — edge drag recovery
 
-This release builds on 0.8.37 and includes the latest tested taskbar-group fixes. It is an engineering pre-release for Windows 11 x64.
+This update fixes two cases that can prevent files from being dragged between desktop pages. It is an engineering pre-release for Windows 11 x64.
 
-## What's fixed
+## Fixes
 
-- **Create the first group immediately:** Win+Alt+Plus is registered by DeskPages' main host at startup. The main keyboard Plus/Equal (with or without Shift) and the numeric keypad Plus are supported. You do not need to open the tray menu first.
-- **Lower idle memory for Groups:** Groups stays enabled by default, but the separate controller and its recovery helper no longer start merely because DeskPages starts. They launch when a group is first requested; desktop snapshot caching is unchanged.
-- **Delete without the extra blank app:** Before removing a numbered group tab from the taskbar, DeskPages hides its anchor window and removes the APPWINDOW classification without recreating its HWND. This prevents Explorer from briefly discovering it as an ordinary program window. Group member ownership is restored before the anchor is removed.
-- **Safer teardown:** Group removal and failed creation both hide the original anchor before calling the native taskbar removal API.
+- Restore the exact acknowledgement when a completed drag operation's response is missing or stale. The operation is never executed again, preventing duplicate page switches or file membership changes.
+- Preserve the next drag's original mouse press while the preceding drag is finishing. A released press is discarded, and each deferred press is consumed once.
 
-## Validation and scope
+## Validation
 
-GitHub's Windows build checks shortcut registration, group-window lifecycle, native taskbar adapter operations, installation and workspace stress tests. The release pipeline also requires a Microsoft Defender on-demand scan with fresh signatures and unchanged SHA-256. Passing these checks does not replace visual verification on a physical Windows 11 taskbar.
+The missing-response regression reproduces on the previous mailbox code and passes with this fix. Drag mailbox, input, recovery, placement, image, startup and drop-transaction tests passed locally, along with workspace, visibility, file integrity and recovery checks.
 
-This Alpha installer is **not Authenticode-signed** and Windows SmartScreen may display an unknown-publisher warning. DeskPages does not need administrator access for ordinary usage.
+The local Windows taskbar group shortcut-registration fixture could not register its global shortcuts. Its production logic is unchanged. Publication uses the existing GitHub Windows build, regression/stress tests and Microsoft Defender scan gates; the local experimental installer is not used as the release asset.
 
-## Existing functionality retained
+Physical Explorer dragging, touchpad input and monitor behavior still require device acceptance. This Alpha installer is not Authenticode-signed.
 
-DeskPages maintains native Windows desktop pages, resident screenshot caching, saved page assignments and navigation gestures/keyboard controls. This update does not replace the desktop directory or intentionally modify the user's files.
+Page membership, file paths and contents, drop placement, layout rollback, settings and taskbar group behavior retain their existing logic.

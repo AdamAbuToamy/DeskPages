@@ -50,6 +50,13 @@ try{
  $text=[IO.File]::ReadAllText($reply)
  if($text -ne ($nav.Id+"`nOK`n2") -or $mailbox.Pending){throw 'Exact acknowledgement not retried'}
  if($mailbox.Poll(2,$true,2)){throw 'Acknowledged navigation replayed'}
+ # A lost/corrupted reply must recover without replaying the committed navigation.
+ foreach($lost in @($true,$false)){
+  if($lost){[IO.File]::Delete($reply)}else{[IO.File]::WriteAllText($reply,'stale-response')}
+  if($mailbox.Poll(2,$true,2)){throw 'Lost acknowledgement replayed navigation'}
+  if([IO.File]::ReadAllText($reply) -ne $text -or $mailbox.Pending){throw 'Lost acknowledgement left the drag permanently waiting'}
+ }
+ Write-Host 'PASS: missing and stale replies restored exactly without repeating committed navigation.'
  $drop=Send-Request Drop;if(-not $mailbox.Poll(2,$true,2) -or $mailbox.Pending.Id -ne $drop.Id){throw 'Next request blocked by completed acknowledgement'};$mailbox.Complete($true,2)
  $mailbox.PublishVisualState($false)
  $visual=$null;$null=[DeskPagesDragProtocol]::TryReadLines($visualPath,[ref]$visual)

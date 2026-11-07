@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
 [assembly:AssemblyCopyright("Copyright 2026 Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.38.0")]
-[assembly:AssemblyFileVersion("0.8.38.0")]
+[assembly:AssemblyVersion("0.8.39.0")]
+[assembly:AssemblyFileVersion("0.8.39.0")]
 
 // Runs with Explorer's normal user token. An elevated process cannot accept
 // Explorer OLE drops across UIPI; this process never changes files or attributes.
@@ -61,7 +61,7 @@ internal sealed class DragBroker:ApplicationContext {
         left=new Surface(this);right=new Surface(this);canvas=new Surface(this);
         mouseHook=OnMouse;keyHook=OnKey;
         StartInputHooks();
-        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.38");
+        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.39");
     }
     private long preferenceRead;
     private void Tick(){
@@ -82,7 +82,7 @@ internal sealed class DragBroker:ApplicationContext {
             if(!enabled){Cancel("disabled or fewer than two pages");return;}
             int pressX,pressY;Point cursor=Cursor.Position;
             bool mouseDown=(GetAsyncKeyState(1)&0x8000)!=0;
-            if(inputState.Observe(mouseDown,cursor.X,cursor.Y,out pressX,out pressY) && !candidate && !approved && pending==null){
+            if(inputState.Observe(mouseDown,cursor.X,cursor.Y,!candidate && !approved && pending==null,out pressX,out pressY)){
                 Point press=new Point(pressX,pressY);IntPtr hit=WindowFromPoint(press);
                 string cls=ClassName(hit),root=ClassName(GetAncestor(hit,2));
                 if((cls=="SysListView32" || cls=="SHELLDLL_DefView") && (root=="Progman" || root=="WorkerW")){Reset();candidate=true;down=press;Trace("drag candidate detected; hit="+cls+"; root="+root);}

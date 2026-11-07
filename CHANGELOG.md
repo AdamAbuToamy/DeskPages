@@ -1,4 +1,10 @@
 # Changelog
+## 0.8.39 · Edge drag recovery
+
+- Recover missing or stale acknowledgements without replaying committed drag operations.
+- Retain the next drag's original press while prior IPC completes; discard released presses.
+- Add regressions for lost replies and deferred drag input; preserve existing file and layout transactions.
+
 
 ## 0.8.26 · Native taskbar drag trial
 
