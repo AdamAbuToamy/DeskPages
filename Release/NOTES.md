@@ -1,18 +1,18 @@
-# DeskPages 0.8.39 Alpha 1 — edge drag recovery
+# DeskPages 0.8.39 Alpha 1 — drag lifetime and input recovery
 
-This update fixes two cases that can prevent files from being dragged between desktop pages. It is an engineering pre-release for Windows 11 x64.
+Replacement build of the existing 0.8.39 release for intermittent edge dragging that stops after idle time or switching applications while ordinary page navigation continues.
 
-## Fixes
+## Changes
 
-- Restore the exact acknowledgement when a completed drag operation's response is missing or stale. The operation is never executed again, preventing duplicate page switches or file membership changes.
-- Preserve the next drag's original mouse press while the preceding drag is finishing. A released press is discarded, and each deferred press is consumed once.
+- Do not stop the drag broker because a state snapshot is temporarily missing or malformed, or because process liveness is unknown. Exit only after verified owner death or startup failure.
+- Renew low-level mouse/keyboard hooks on application changes and every 15 seconds while idle. Recover a stopped input thread on the same broker.
+- Supervise the helper from the main host and relaunch it through the normal-user Explorer Shell after confirmed process death. Drain the last packet and wait for button release before recovery; retain the committed page and file/layout transactions.
+- Prevent duplicate helper instances for the same session, log exit reasons, and retain small health snapshots containing input counters and state flags without file contents.
 
 ## Validation
 
-The missing-response regression reproduces on the previous mailbox code and passes with this fix. Drag mailbox, input, recovery, placement, image, startup and drop-transaction tests passed locally, along with workspace, visibility, file integrity and recovery checks.
+The old 0.8.39 broker permanently exits in the new regression when a state snapshot temporarily disappears after uptime. The patched broker survives the same test.
 
-The local Windows taskbar group shortcut-registration fixture could not register its global shortcuts. Its production logic is unchanged. Publication uses the existing GitHub Windows build, regression/stress tests and Microsoft Defender scan gates; the local experimental installer is not used as the release asset.
+Native Windows tests explicitly remove the mouse hook, verify input resumes after renewal, stop the input thread and verify recovery, exercise 30 application-change renewals, and kill an isolated helper process. Lifetime tests cover an hour of simulated idle time, uncertain process access, PID reuse, in-flight operations and held-button recovery fences. Existing mailbox, input and startup/relaunch tests also pass.
 
-Physical Explorer dragging, touchpad input and monitor behavior still require device acceptance. This Alpha installer is not Authenticode-signed.
-
-Page membership, file paths and contents, drop placement, layout rollback, settings and taskbar group behavior retain their existing logic.
+Physical Explorer dragging after extended use of other applications remains device acceptance. This Alpha installer is not Authenticode-signed. The replacement assets use the existing GitHub build, regression/stress and Microsoft Defender scan gates.

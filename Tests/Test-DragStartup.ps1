@@ -6,6 +6,8 @@ public static class DeskPagesDragStartupBindingProbe {
  public static string Value;
  public static bool CoreReady;
  public static void ConfigureDragSession(string value){Value=value;}
+ public static System.Action Recovery;
+ public static void ConfigureDragRecovery(System.Action value){Recovery=value;}
 }
 '@
 # Reproduce the actual PowerShell -> C# string binding that caused 0.7.0 to fail.
@@ -25,10 +27,12 @@ New-Item -ItemType Directory -Path $fake | Out-Null
 try{
  [IO.File]::WriteAllText((Join-Path $fake 'DeskPagesDrag.exe'),'fixture only')
  $script:base=$fake;$script:logged=@()
+ $script:connects=0
  function Write-DpLog {param($Message) $script:logged+=@($Message)}
+ function Connect-DpDesktop {$script:connects++}
  foreach($mode in @('Supported','ShellFailure')){
-  $application=[PSCustomObject]@{Fail=($mode -eq 'ShellFailure');Called=$false}
-  $application | Add-Member -MemberType ScriptMethod -Name ShellExecute -Value {param($file,$arguments,$directory,$verb,$show) $this.Called=$true;if($this.Fail){throw 'fixture shell launch failure'}}
+  $application=[PSCustomObject]@{Fail=($mode -eq 'ShellFailure');Called=$false;Token=''}
+  $application | Add-Member -MemberType ScriptMethod -Name ShellExecute -Value {param($file,$arguments,$directory,$verb,$show) $this.Called=$true;$this.Token=$arguments;if($this.Fail){throw 'fixture shell launch failure'}}
   # .Application intentionally has no ShellExecute: this recreates the device's object hierarchy.
   $script:originalDesktop=[PSCustomObject]@{Application=[PSCustomObject]@{};Document=[PSCustomObject]@{Application=$application}}
   [DeskPagesDragStartupBindingProbe]::Value='old-token'
@@ -36,6 +40,10 @@ try{
   if(-not $application.Called){throw 'Launch used the wrong COM object'}
   if($mode -eq 'Supported'){
    if($null -eq [DeskPagesDragStartupPolicy]::NormalizeToken([DeskPagesDragStartupBindingProbe]::Value)){throw 'Successful launch did not enable a valid session'}
+   $sessionToken=$application.Token;$application.Called=$false
+   $script:DpEdgeDrag='obsolete drag';$script:DpDragUndoBefore='obsolete checkpoint'
+   [DeskPagesDragStartupBindingProbe]::Recovery.Invoke()
+   if(-not $application.Called -or $application.Token -ne $sessionToken -or $script:connects -ne 1 -or $null -ne $script:DpEdgeDrag -or $null -ne $script:DpDragUndoBefore){throw 'Recovery did not clear obsolete input state and relaunch via a reconnected normal-user Shell'}
   }else{
    if($null -ne [DeskPagesDragStartupPolicy]::NormalizeToken([DeskPagesDragStartupBindingProbe]::Value) -or -not $script:logged.Count){throw 'Shell failure was not isolated'}
   }

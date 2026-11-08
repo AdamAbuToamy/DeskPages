@@ -100,8 +100,17 @@ public sealed class DeskPagesHost : ApplicationContext
     private string panelSnapshot="";
     private static string dragSessionToken;
     private DeskPagesDragMailbox dragMailbox;
+    private static Action dragRecovery;
+    private DeskPagesDragSupervisor dragSupervisor;
     private bool edgeDrag=true;
     public static void ConfigureDragSession(string token){dragSessionToken=DeskPagesDragStartupPolicy.NormalizeToken(token);}
+    public static void ConfigureDragRecovery(Action action){dragRecovery=action;}
+    private void RecoverDragPeer(){
+        busy=true;
+        try{dragRecovery();DeskPagesStartupGate.Log("drag helper relaunched after verified process exit; committed page retained");}
+        catch(Exception ex){DeskPagesStartupGate.Log("drag helper recovery deferred: "+ex.Message);}
+        finally{busy=false;}
+    }
     public static DeskPagesDragRequest DragRequest{get{return active==null || active.dragMailbox==null?null:active.dragMailbox.Pending;}}
     public static void CompleteDragRequest(bool success,int page){if(active!=null && active.dragMailbox!=null)active.dragMailbox.Complete(success,page);}
     public static void BeginContentUpdate(){DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";if(active!=null && active.snapshots!=null)active.snapshots.Invalidate();BeginAnimation(1);if(active!=null)active.slideRequested=false;}
@@ -120,7 +129,7 @@ public sealed class DeskPagesHost : ApplicationContext
         try{indicator=new DeskPagesIndicatorController(DeskPagesStartupGate.Log);}catch(Exception ex){DeskPagesStartupGate.Log("page feedback unavailable: "+ex.Message);}
         if(DeskPagesWorkspaceApi.Input!=null)ApplyWorkspaceInput(DeskPagesWorkspaceApi.Input);
         if(dragSessionToken!=null){
-            try{dragMailbox=new DeskPagesDragMailbox(dragSessionToken);}
+            try{dragMailbox=new DeskPagesDragMailbox(dragSessionToken);dragSupervisor=new DeskPagesDragSupervisor(dragSessionToken,ElapsedMs());}
             catch(Exception ex){dragMailbox=null;edgeDrag=false;DeskPagesStartupGate.Log("drag helper unavailable; core agent will continue: "+ex.Message);}
         }
         if(enableAnimationOnLaunch){animate=true;SavePreferences();}
@@ -204,6 +213,9 @@ public sealed class DeskPagesHost : ApplicationContext
                     busy=true;explicitUiCommand=true;
                     try{dispatch(9600);}finally{busy=false;explicitUiCommand=false;}
                 }}catch(Exception ex){DeskPagesStartupGate.Log("drag request rejected: "+ex.Message);dragMailbox.Complete(false,currentPage);}
+                if(edgeDrag && knownPages.Length>1 && dragRecovery!=null && dragSupervisor!=null && !DeskPagesAnimation.IsVisible && dragSupervisor.ShouldRestart(ElapsedMs(),dragMailbox.Pending!=null,CreationInputBusy)){
+                    RecoverDragPeer();
+                }
             }
             if(DeskPagesAnimation.IsVisible)return;
             if(TryDispatchCommand())return;
@@ -392,6 +404,7 @@ public sealed class DeskPagesHost : ApplicationContext
         if(input!=null) input.Stop();
         inputThread.Join(1500);
         if(dragMailbox!=null){dragMailbox.Dispose();dragMailbox=null;}
+        dragRecovery=null;dragSupervisor=null;
         if(indicator!=null){indicator.Dispose();indicator=null;}
         if(panel!=null){panel.Dispose();panel=null;}
         tray.Visible=false; tray.Dispose();applicationIcon.Dispose(); menu.Dispose(); active=null;

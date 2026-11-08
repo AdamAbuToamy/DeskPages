@@ -1,5 +1,11 @@
 # Changelog
+
 ## 0.8.39 · Edge drag recovery
+
+- Survive temporary drag-state gaps and unknown owner liveness.
+- Renew idle/app-switch input hooks and recover a stopped input thread.
+- Relaunch a confirmed-dead drag helper after draining pending operations; preserve the committed page.
+- Add native hook-removal, thread-loss, process-death and idle regressions plus session health snapshots.
 
 - Recover missing or stale acknowledgements without replaying committed drag operations.
 - Retain the next drag's original press while prior IPC completes; discard released presses.

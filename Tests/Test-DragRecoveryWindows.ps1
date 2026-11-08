@@ -4,7 +4,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('dp-drag-recovery-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
 try{
- $sources=@('Tests/DragRecoveryHarness.cs','Native/DeskPagesMonitorPolicy.cs','Native/DeskPagesDragProtocol.cs','Native/DeskPagesDragMailbox.cs','Native/DeskPagesDragImageSession.cs','Interaction/DragBroker.cs','Interaction/ShellDragImage.cs') | ForEach-Object {Join-Path $root $_}
+ $sources=@('Tests/DragRecoveryHarness.cs','Native/DeskPagesMonitorPolicy.cs','Native/DeskPagesDragProtocol.cs','Native/DeskPagesDragMailbox.cs','Native/DeskPagesDragLifetime.cs','Native/DeskPagesDragImageSession.cs','Interaction/DragBroker.cs','Interaction/ShellDragImage.cs') | ForEach-Object {Join-Path $root $_}
  $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
  $exe=Join-Path $temp 'DragRecovery.exe'
  & $compiler /nologo /target:exe /platform:x64 /main:DeskPagesDragRecoveryHarness /r:System.Windows.Forms.dll /r:System.Drawing.dll "/out:$exe" @sources

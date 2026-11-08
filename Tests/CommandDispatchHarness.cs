@@ -37,6 +37,15 @@ public static class CommandDispatchHarness {
             Console.WriteLine("Fixture: busy wake was fenced.");Field(host,"busy",false);typeof(DeskPagesHost).GetMethod("TryDispatchCommand",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(host,null);Check(dispatched==1,"Pending command lost after busy wake");
             Console.WriteLine("Fixture: deferred command dispatched.");enqueue.Invoke(host,new object[]{1,false});Application.DoEvents();Check(dispatched==2,"Input wake still requires a timer tick");
             Check(Thread.CurrentThread.Priority==before,"Production dispatch leaked priority boost");
+            DeskPagesHost.ConfigureDragRecovery(delegate{
+                Check((bool)typeof(DeskPagesHost).GetField("busy",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(host),"Helper recovery did not fence COM/message-pump reentry");
+                enqueue.Invoke(host,new object[]{1,false});Application.DoEvents();Check(dispatched==2,"Navigation reentered helper recovery");
+                throw new InvalidOperationException("fixture recovery launch failure");
+            });
+            typeof(DeskPagesHost).GetMethod("RecoverDragPeer",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(host,null);
+            Check(!(bool)typeof(DeskPagesHost).GetField("busy",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(host),"Failed recovery left host busy");
+            typeof(DeskPagesHost).GetMethod("TryDispatchCommand",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(host,null);Check(dispatched==3,"Failed recovery lost queued navigation");
+            DeskPagesHost.ConfigureDragRecovery(null);
         }finally{((IDisposable)window).Dispose();}
         Console.WriteLine("PASS: real posted-message wake without timer, busy/reentry fence, FIFO display-change order, timestamps, bounded priority and exception restoration. No Explorer mutation or physical-input latency claim.");
     }

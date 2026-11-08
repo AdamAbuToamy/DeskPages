@@ -28,6 +28,11 @@ internal sealed class DragBroker:ApplicationContext {
     private volatile bool cancelRequested;
     private readonly DeskPagesDragInputState inputState=new DeskPagesDragInputState();
     private Thread inputThread;private uint inputThreadId;
+    private const uint RenewInputMessage=0x8001;
+    private long inputEvents,hookGeneration,lastHookRenewal,lastHealth;
+    private long ownerStarted;
+    private IntPtr lastForeground;
+    private string peerIdentity;
     private readonly System.Windows.Forms.Timer timer;
     private readonly Surface left,right,canvas;
     private Surface activeSurface;
@@ -51,9 +56,20 @@ internal sealed class DragBroker:ApplicationContext {
             if(args.Length!=1)return 2;
             if(new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 3;
             try{SetThreadDpiAwarenessContext(new IntPtr(-4));}catch(EntryPointNotFoundException){}
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new DragBroker(args[0]));return 0;
-        }catch{return 1;}
+            // Recovery and a slow original startup cannot create two OLE brokers.
+            using(var single=new Mutex(false,"Local\\DeskPagesDrag-"+args[0])){
+                bool owns=false;
+                try{try{owns=single.WaitOne(0);}catch(AbandonedMutexException){owns=true;}
+                    if(!owns)return 0;
+                    Application.Run(new DragBroker(args[0]));return 0;
+                }finally{if(owns)single.ReleaseMutex();}
+            }
+        }catch(Exception ex){
+            try{File.AppendAllText(Path.Combine(DeskPagesDragProtocol.SessionPath(args[0]),"drag-visual.log"),DateTime.UtcNow.ToString("o")+" broker exited after exception: "+ex.GetType().Name+": "+ex.Message+Environment.NewLine);}catch{}
+            return 1;
+        }
     }
     private DragBroker(string token){
         folder=DeskPagesDragProtocol.SessionPath(token);
@@ -61,11 +77,22 @@ internal sealed class DragBroker:ApplicationContext {
         left=new Surface(this);right=new Surface(this);canvas=new Surface(this);
         mouseHook=OnMouse;keyHook=OnKey;
         StartInputHooks();
+        peerIdentity=DeskPagesDragLifetime.Identity();PublishHealth();
         timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.39");
     }
     private long preferenceRead;
     private void Tick(){
         try{
+            if(Now()-lastHealth>=2000)PublishHealth();
+            IntPtr foreground=GetForegroundWindow();
+            bool foregroundChanged=foreground!=lastForeground;
+            // Windows can silently remove a timed-out low-level hook. Refresh
+            // on application changes and periodically, only while no button is
+            // held. Registration/unregistration stays on its owning input thread.
+            if((foregroundChanged || Now()-Interlocked.Read(ref lastHookRenewal)>=15000) && !candidate && !approved && pending==null && (GetAsyncKeyState(1)&0x8000)==0){
+                if(inputThread!=null && !inputThread.IsAlive){Interlocked.Exchange(ref lastHookRenewal,Now());StartInputHooks();lastForeground=foreground;Trace("drag input thread restarted");}
+                else if(PostThreadMessageW(inputThreadId,RenewInputMessage,UIntPtr.Zero,IntPtr.Zero))lastForeground=foreground;
+            }
             if(Now()-preferenceRead>2000 && !candidate && !approved){
                 preferenceRead=Now();string[] settings;
                 string path=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskPages","HiddenPages","interaction.txt");
@@ -75,9 +102,14 @@ internal sealed class DragBroker:ApplicationContext {
             }
             if(cancelRequested || (GetAsyncKeyState(0x1B)&0x8000)!=0){cancelRequested=false;Cancel("Escape");}
             string state=Path.Combine(folder,"state.txt");
-            if(!File.Exists(state)){if(Now()-started>10000)ExitThread();return;}
-            string[] lines;if(!DeskPagesDragProtocol.TryReadLines(state,out lines))return;long at;
-            if(lines.Length!=5 || lines[0]!="DeskPagesDragState1" || !long.TryParse(lines[4],out at) || !OwnerAlive(at)){ExitThread();return;}
+            string[] lines;bool? owner=OwnerAlive();
+            if(owner==false){Trace("broker exiting: verified agent process ended or PID reused");ExitThread();return;}
+            if(!DeskPagesDragProtocol.TryReadLines(state,out lines)){
+                if(ownerProcessId==0 && Now()-started>30000){Trace("broker exiting: agent never established ownership");ExitThread();}
+                return;
+            }
+            long at;
+            if(lines.Length!=5 || lines[0]!="DeskPagesDragState1" || !long.TryParse(lines[4],out at) || ownerProcessId==0)return;
             int count;enabled=lines[2]=="True" && int.TryParse(lines[3],out count) && count>1;
             if(!enabled){Cancel("disabled or fewer than two pages");return;}
             int pressX,pressY;Point cursor=Cursor.Position;
@@ -145,12 +177,19 @@ internal sealed class DragBroker:ApplicationContext {
             }
         }
     }
-    private bool OwnerAlive(long heartbeat){
-        try{string[] owner;if(!DeskPagesDragProtocol.TryReadLines(Path.Combine(folder,"owner.txt"),out owner))throw new IOException("Drag owner state temporarily unavailable");int pid;long startedAt;
-            if(owner.Length!=2 || !int.TryParse(owner[0],out pid) || !long.TryParse(owner[1],out startedAt))return false;
-            ownerProcessId=pid;
-            using(var process=Process.GetProcessById(pid))return !process.HasExited && process.StartTime.ToUniversalTime().Ticks==startedAt;
-        }catch(ArgumentException){return false;}catch(System.ComponentModel.Win32Exception){return DateTime.UtcNow.Ticks-heartbeat<TimeSpan.TicksPerMinute*2;}
+    private bool? OwnerAlive(){
+        if(ownerProcessId==0){
+            string[] owner;int pid;long at;
+            if(!DeskPagesDragProtocol.TryReadLines(Path.Combine(folder,"owner.txt"),out owner) || owner.Length!=2 || !int.TryParse(owner[0],out pid) || pid<=0 || !long.TryParse(owner[1],out at) || at<=0)return null;
+            ownerProcessId=pid;ownerStarted=at;
+        }
+        return DeskPagesDragLifetime.Alive(ownerProcessId,ownerStarted);
+    }
+    private void PublishHealth(){
+        if(peerIdentity==null)return;
+        DeskPagesDragProtocol.TryAtomicText(Path.Combine(folder,"broker-owner.txt"),peerIdentity);
+        DeskPagesDragProtocol.TryAtomicText(Path.Combine(folder,"broker-health.txt"),"DeskPagesDragHealth1\n"+DateTime.UtcNow.ToString("o")+"\nInputThread="+(inputThread!=null && inputThread.IsAlive)+"\nInputEvents="+Interlocked.Read(ref inputEvents)+"\nHookGeneration="+Interlocked.Read(ref hookGeneration)+"\nCandidate="+candidate+"\nApproved="+approved+"\nPending="+(pending==null?"none":pending.Kind));
+        lastHealth=Now();
     }
     private void Enter(Surface surface,DragEventArgs e){
         acceptableData=false;e.Effect=DragDropEffects.None;if(!candidate || !enabled)return;
@@ -198,6 +237,7 @@ internal sealed class DragBroker:ApplicationContext {
     }
     private void Reset(){edgeCue.Hide();cueNavigationId=null;dragImages.Cancel();left.Hide();right.Hide();canvas.Hide();candidate=false;approved=false;files=null;acceptableData=false;activeSurface=null;overCanvas=false;dropped=null;cancelNext=false;releaseAt=-1;edges.Reset();}
     private IntPtr OnMouse(int code,IntPtr msg,IntPtr data){
+        if(code>=0)Interlocked.Increment(ref inputEvents);
         if(code>=0 && msg.ToInt32()==0x201){var value=(MouseData)Marshal.PtrToStructure(data,typeof(MouseData));inputState.Press(value.Point.X,value.Point.Y);}
         return CallNextHookEx(mouseHandle,code,msg,data);
     }
@@ -212,9 +252,15 @@ internal sealed class DragBroker:ApplicationContext {
                 // Create the message queue before publishing the thread ID.
                 NativeMessage message;PeekMessageW(out message,IntPtr.Zero,0,0,0);
                 inputThreadId=GetCurrentThreadId();
-                mouseHandle=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);keyHandle=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
-                if(mouseHandle==IntPtr.Zero || keyHandle==IntPtr.Zero)throw new InvalidOperationException("Drag input unavailable");
-                ready.TrySetResult(null);Application.Run();
+                RenewInputHooks();
+                ready.TrySetResult(null);
+                int result;
+                while((result=GetMessageW(out message,IntPtr.Zero,0,0))>0){
+                    if(message.Message==RenewInputMessage){
+                        if((GetAsyncKeyState(1)&0x8000)==0){try{RenewInputHooks();}catch(Exception ex){Trace("drag input renewal deferred: "+ex.Message);}}
+                    }else{TranslateMessage(ref message);DispatchMessageW(ref message);}
+                }
+                if(result<0)Trace("drag input message loop failed; polling remains active");
             }catch(Exception ex){ready.TrySetResult(ex);Trace("drag input hook thread stopped; polling remains active: "+ex.Message);}
             finally{if(mouseHandle!=IntPtr.Zero)UnhookWindowsHookEx(mouseHandle);if(keyHandle!=IntPtr.Zero)UnhookWindowsHookEx(keyHandle);}
         });
@@ -222,8 +268,19 @@ internal sealed class DragBroker:ApplicationContext {
         if(!ready.Task.Wait(3000)){if(inputThreadId!=0)PostThreadMessageW(inputThreadId,0x12,UIntPtr.Zero,IntPtr.Zero);throw new InvalidOperationException("Drag input startup timed out");}
         if(ready.Task.Result!=null)throw new InvalidOperationException("Drag input unavailable",ready.Task.Result);
     }
+    private void RenewInputHooks(){
+        IntPtr mouse=SetWindowsHookExW(14,mouseHook,GetModuleHandleW(null),0);
+        IntPtr key=SetWindowsHookExW(13,keyHook,GetModuleHandleW(null),0);
+        if(mouse==IntPtr.Zero || key==IntPtr.Zero){
+            if(mouse!=IntPtr.Zero)UnhookWindowsHookEx(mouse);if(key!=IntPtr.Zero)UnhookWindowsHookEx(key);
+            throw new InvalidOperationException("Drag input unavailable");
+        }
+        IntPtr oldMouse=mouseHandle,oldKey=keyHandle;mouseHandle=mouse;keyHandle=key;
+        if(oldMouse!=IntPtr.Zero)UnhookWindowsHookEx(oldMouse);if(oldKey!=IntPtr.Zero)UnhookWindowsHookEx(oldKey);
+        Interlocked.Exchange(ref lastHookRenewal,Now());Interlocked.Increment(ref hookGeneration);
+    }
     protected override void ExitThreadCore(){
-        if(closed)return;closed=true;timer.Stop();timer.Dispose();if(inputThreadId!=0)PostThreadMessageW(inputThreadId,0x12,UIntPtr.Zero,IntPtr.Zero);
+        if(closed)return;closed=true;Trace("drag broker stopping");timer.Stop();timer.Dispose();if(inputThreadId!=0)PostThreadMessageW(inputThreadId,0x12,UIntPtr.Zero,IntPtr.Zero);
         dragImages.Cancel();dragImageApi.Dispose();edgeCue.Dispose();left.Dispose();right.Dispose();canvas.Dispose();base.ExitThreadCore();
     }
     private sealed class Surface:Form {
@@ -280,6 +337,10 @@ internal sealed class DragBroker:ApplicationContext {
     private delegate bool EnumCallback(IntPtr h,IntPtr p);
     [DllImport("user32.dll")]private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")]private static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")]private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]private static extern int GetMessageW(out NativeMessage message,IntPtr hwnd,uint first,uint last);
+    [DllImport("user32.dll")]private static extern bool TranslateMessage(ref NativeMessage message);
+    [DllImport("user32.dll")]private static extern IntPtr DispatchMessageW(ref NativeMessage message);
     [DllImport("user32.dll")]private static extern IntPtr SetWindowsHookExW(int id,Hook hook,IntPtr module,uint thread);
     [DllImport("user32.dll")]private static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")]private static extern IntPtr CallNextHookEx(IntPtr h,int c,IntPtr m,IntPtr d);

@@ -434,6 +434,17 @@ try {
             # the normal-user OLE broker must not inherit this elevated token.
             $script:originalDesktop.Document.Application.ShellExecute($broker,$dragToken,$script:base,'open',0)
             [DeskPagesHost]::ConfigureDragSession($dragToken)
+            $script:DpDragSessionToken=$dragToken
+            [DeskPagesHost]::ConfigureDragRecovery([Action]{
+                # Called on the agent STA only after the old helper is confirmed
+                # dead and its final request has drained. Cancel in-memory drag
+                # bookkeeping, preserving the committed page and all files.
+                $script:DpEdgeDrag=$null
+                $script:DpDragUndoBefore=$null
+                Connect-DpDesktop
+                $script:originalDesktop.Document.Application.ShellExecute((Join-Path $script:base 'DeskPagesDrag.exe'),$script:DpDragSessionToken,$script:base,'open',0)
+                Write-DpLog 'Drag interaction helper restarted; committed page and layouts retained.'
+            })
         }
     }catch{[DeskPagesHost]::ConfigureDragSession($null);Write-DpLog ('Drag interaction helper could not start: '+[string]$_)}
     # Main DeskPages host owns Win+Alt+Plus. No resident Groups helper until first use.
