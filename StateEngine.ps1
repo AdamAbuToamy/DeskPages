@@ -63,7 +63,10 @@ function Invoke-DpPageTransaction {
         Write-DpAtomicXml -Path $journal -Value ([PSCustomObject]@{From=$source;To=$Page;At=[DateTime]::UtcNow})
         Invoke-DpFaultPoint 'JournalWritten'
         if ($Animate -and $script:hostReady -and -not $earlyPreview) {if(Get-Command Set-DpSnapshotSource -ErrorAction SilentlyContinue){Set-DpSnapshotSource $source};[DeskPagesHost]::BeginAnimation($motion)}
-        Set-DpFilePage -Page $Page -Commit:$false -RegisterNew:$false
+        # Source membership is already durable and the transition journal exists.
+        # Target preparation cannot discover items or change membership; the
+        # verified target is committed below. Do not fsync the old manifest twice.
+        Set-DpFilePage -Page $Page -Commit:$false -RegisterNew:$false -PersistMembership:$false
         Invoke-DpFaultPoint 'VisibilityApplied'
         $systemChanged=Set-DpSystemIcons $Page
         Invoke-DpFaultPoint 'SystemApplied'

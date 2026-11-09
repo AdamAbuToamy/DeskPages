@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.40 · Command and snapshot performance repairs
+
+- Atomically bound concurrent input submissions to three queued commands.
+- Refresh only notified file metadata; recover lost watcher events with a full background rescan.
+- Avoid persisting the unchanged source manifest during target preparation; retain the final verified commit.
+- Add queue concurrency and snapshot recovery regressions; document measured component results and unverified navigation goals.
+
+
 ## 0.8.39 · Edge drag recovery
 
 - Survive temporary drag-state gaps and unknown owner liveness.

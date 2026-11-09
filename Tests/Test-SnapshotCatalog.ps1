@@ -13,8 +13,9 @@ public static class CatalogFixture {
    int[] startup;while(changed.TryDequeue(out startup)){}
    var first=c.Digest(1);var second=c.Digest(2);int count=reads;
    for(int i=0;i<10000;i++)Check(c.Digest(2)==second,"Digest changed without content change");Check(reads==count,"Digest lookup performed file I/O");
-   c.FileChanged("a",1);Check(c.Digest(1)==first,"Duplicate notification temporarily hid a ready image");Thread.Sleep(100);Check(c.Digest(1)==first && changed.IsEmpty,"Duplicate file event invalidated resident images");
+   c.FileChanged("a",1);Check(c.Digest(1)==first,"Duplicate notification temporarily hid a ready image");Thread.Sleep(100);Check(c.Digest(1)==first && changed.IsEmpty,"Duplicate file event invalidated resident images");Check(reads==count+1,"One file event rescanned unrelated file metadata");
    values["a"]="2";c.FileChanged("a",1);Wait(()=>c.Digest(1).Length>0 && c.Digest(1)!=first);int[] ids;Wait(()=>!changed.IsEmpty);Check(changed.TryDequeue(out ids)&&ids.Length==1&&ids[0]==1,"File change invalidated unrelated pages");Check(c.Digest(2)==second,"Page 2 cache stamp changed");
+   values["b"]="missed-event";count=reads;c.Rescan();Wait(()=>c.Digest(2)!=second);Wait(()=>!changed.IsEmpty);Check(changed.TryDequeue(out ids)&&ids.Length==1&&ids[0]==2,"Watcher recovery did not invalidate missed changes selectively");Check(reads==count+3,"Watcher recovery did not recheck the full metadata catalog");
    values["p"]="2";c.FileChanged("p",1);Wait(()=>!changed.IsEmpty);Check(changed.TryDequeue(out ids)&&ids.Length==3,"Pinned icon change did not invalidate all affected pages");
    c.SetRows(new[]{"a|2|False","b|2|False","p|1|True"});Wait(()=>!changed.IsEmpty);Check(changed.TryDequeue(out ids)&&ids.Contains(1)&&ids.Contains(2),"Membership move failed to invalidate source and target");
   }

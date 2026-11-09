@@ -1,18 +1,21 @@
-# DeskPages 0.8.39 Alpha 1 — drag lifetime and input recovery
+# DeskPages 0.8.40 Alpha 1 — bounded commands and lighter snapshot updates
 
-Replacement build of the existing 0.8.39 release for intermittent edge dragging that stops after idle time or switching applications while ordinary page navigation continues.
+Windows 11 x64 engineering preview with measured component repairs. This is not a claim that all responsiveness issues are resolved or that physical input-to-transition latency is below 50ms.
 
 ## Changes
 
-- Do not stop the drag broker because a state snapshot is temporarily missing or malformed, or because process liveness is unknown. Exit only after verified owner death or startup failure.
-- Renew low-level mouse/keyboard hooks on application changes and every 15 seconds while idle. Recover a stopped input thread on the same broker.
-- Supervise the helper from the main host and relaunch it through the normal-user Explorer Shell after confirmed process death. Drain the last packet and wait for button release before recovery; retain the committed page and file/layout transactions.
-- Prevent duplicate helper instances for the same session, log exit reasons, and retain small health snapshots containing input counters and state flags without file contents.
+- Reserve command queue capacity atomically so concurrent submissions cannot exceed its three-command limit. Release reservations on dequeue or enqueue failure.
+- Reuse background file metadata for unchanged desktop items, refresh notified paths, and fully rescan after membership changes or watcher recovery. Remove metadata for deleted catalog entries and preserve selective page invalidation.
+- Remove the redundant old-manifest write during target visibility preparation. Source membership and the transition journal remain durable; the verified target still commits at the existing final commit point.
 
-## Validation
+## Measured component results
 
-The old 0.8.39 broker permanently exits in the new regression when a state snapshot temporarily disappears after uptime. The patched broker survives the same test.
+- Queue: 1,000 rounds with 16 simultaneous senders exceeded capacity 158 times before and zero times after. With two BelowNormal CPU workers and 64MiB of test memory: 238 violations before and zero after. No queue latency speedup is claimed; measured P99 increased in the initial paired trials.
+- Snapshot catalog: 100 notifications against 1,000 temporary files reduced metadata probes from 100,000 to 100. Mean background update time changed from 82.14ms to 5.16ms, P95 from 111.54ms to 7.87ms, and P99 from 121.55ms to 9.53ms. Three reverse-order repeat trials confirmed the reduction. These are catalog completion times, not navigation timings.
+- Isolated target preparation, 100 calls: redundant manifest writes changed from 100 to zero, mean from 107.01ms to 86.11ms and P99 from 310.98ms to 223.10ms. These are preparation timings, not whole-navigation timings.
 
-Native Windows tests explicitly remove the mouse hook, verify input resumes after renewal, stop the input thread and verify recovery, exercise 30 application-change renewals, and kill an isolated helper process. Lifetime tests cover an hour of simulated idle time, uncertain process access, PID reuse, in-flight operations and held-button recovery fences. Existing mailbox, input and startup/relaunch tests also pass.
+## Validation and remaining scope
 
-Physical Explorer dragging after extended use of other applications remains device acceptance. This Alpha installer is not Authenticode-signed. The replacement assets use the existing GitHub build, regression/stress and Microsoft Defender scan gates.
+Native builds and targeted queue, catalog, missed-notification, posted-message dispatch, animation sequence, visibility, drag recovery/drop and child-process crash-recovery tests passed locally. The local broad run failed the existing global taskbar shortcut-registration fixture; its logic is unchanged. Other following suites passed separately. Publication requires the repository's GitHub Windows regression/stress and Microsoft Defender scan gates.
+
+Physical 100/1,000 desktop navigation loops, hours-long endurance, fully stressed RAM/CPU, comprehensive resource-leak measurements and the 50ms input-to-transition objective remain unverified. The controlled load test is not full resource exhaustion. The Alpha installer is not Authenticode-signed.

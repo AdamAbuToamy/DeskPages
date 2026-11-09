@@ -1,4 +1,4 @@
-﻿param([switch]$Child)
+param([switch]$Child)
 $ErrorActionPreference='Stop'
 # Use a fresh process: the normal Check command already loaded the real host.
 if(-not $Child){
@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Path $root | Out-Null
 try {
     function Write-DpLog {param($Message)}
     function Save-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('source-layout');if($script:rejectSource){throw 'Injected source checkpoint failure'}}
-    function Set-DpFilePage {param($Page,$Commit,$RegisterNew) [DeskPagesHost]::Events.Add('visibility:'+ $Page)}
+    function Set-DpFilePage {param($Page,$Commit,$RegisterNew,[bool]$PersistMembership=$true) if($RegisterNew -eq $false -and $PersistMembership){throw 'Target preparation redundantly persisted unverified membership'};[DeskPagesHost]::Events.Add('visibility:'+ $Page)}
     function Set-DpSystemIcons {param($Page) return $false}
     function Refresh-DpDesktop {}
     function Restore-DpPageLayout {param($Page) [DeskPagesHost]::Events.Add('layout:'+ $Page)}

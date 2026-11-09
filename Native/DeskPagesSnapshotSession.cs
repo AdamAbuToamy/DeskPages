@@ -111,6 +111,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         if(Enabled && scopeDirty!=0){EnsureScene();DeskPagesAnimation.PrimeSnapshots(pages,currentPage);}
         if(Interlocked.Exchange(ref observerFailed,0)!=0){
             bool healthy=true;foreach(var watcher in watchers)try{watcher.EnableRaisingEvents=false;watcher.EnableRaisingEvents=Enabled;}catch(Exception ex){healthy=false;DeskPagesStartupGate.Log("snapshot watcher retry: "+ex.Message);}
+            catalog.Rescan();
             Interlocked.Exchange(ref observerUnhealthy,healthy?0:1);if(!healthy)Interlocked.Exchange(ref observerFailed,1);Invalidate();DeskPagesStartupGate.Log("snapshot watcher rescan; caching preference retained");
         }
         long now=Now;if(Enabled && now>=nextHook){nextHook=now+2000;RefreshHook();}if(now<nextReport)return;nextReport=now+5000;

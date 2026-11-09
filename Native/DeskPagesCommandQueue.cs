@@ -8,12 +8,16 @@ public sealed class DeskPagesInputCommand {
 }
 public sealed class DeskPagesCommandQueue {
     readonly ConcurrentQueue<DeskPagesInputCommand> queue=new ConcurrentQueue<DeskPagesInputCommand>();
+    int reserved;
     public bool IsEmpty {get{return queue.IsEmpty;}}
     public bool Enqueue(int code,bool ui,long received){
-        if(queue.Count>=3)return false;
-        queue.Enqueue(new DeskPagesInputCommand{Code=code,ExplicitUi=ui,ReceivedAt=received});return true;
+        int count;
+        do{count=Volatile.Read(ref reserved);if(count>=3)return false;}
+        while(Interlocked.CompareExchange(ref reserved,count+1,count)!=count);
+        try{queue.Enqueue(new DeskPagesInputCommand{Code=code,ExplicitUi=ui,ReceivedAt=received});return true;}
+        catch{Interlocked.Decrement(ref reserved);throw;}
     }
-    public bool TryDequeue(out DeskPagesInputCommand command){return queue.TryDequeue(out command);}
+    public bool TryDequeue(out DeskPagesInputCommand command){if(!queue.TryDequeue(out command))return false;Interlocked.Decrement(ref reserved);return true;}
 }
 // Raise only the current dispatch thread and restore even after a failed switch.
 // The process, renderer, input hooks and background workers retain their priorities.
