@@ -30,6 +30,7 @@ private:
  Frame requestedCapture;uint64_t requestSerial=0;size_t dirtyBytes=0;
  std::atomic<uint64_t> inputSerial{0},inputAt{0};
  std::atomic<bool> enabled{true};
+ std::atomic<bool> planActive{false};
  static int Page(const std::wstring& key){try{return std::stoi(key);}catch(...){return 0;}}
  void Start(){if(!worker.joinable()){stop=false;worker=std::thread([this]{Run();});}}
  void Run(){
@@ -38,12 +39,12 @@ private:
    Frame f;int operation=0;std::wstring root,stamp;SnapshotArea a;std::vector<int> order;uint64_t generation=0,serial=0,revision=0;
    {std::unique_lock<std::mutex> lock(mutex);wake.wait(lock,[this]{return stop||configurePending||!dirty.empty()||!deferred.empty()||capturePending||planPending;});
     if(stop && dirty.empty() && deferred.empty())break;
-    if(configurePending){operation=1;root=folder;stamp=scope;configurePending=false;}
+    if(configurePending){operation=1;root=folder;stamp=scope;configurePending=false;planActive=true;}
     else if(!dirty.empty()){operation=2;auto it=dirty.begin();f=std::move(it->second);dirtyBytes-=f.pixels->size();dirty.erase(it);}
     else if(!deferred.empty()){auto it=deferred.begin();f=it->second.metadata;f.pixels=it->second.pixels.lock();deferred.erase(it);if(f.pixels)operation=2;else ++errors;}
     else if(now()-inputAt.load()<200){wake.wait_for(lock,std::chrono::milliseconds(40));continue;}
     else if(capturePending){operation=3;f=requestedCapture;capturePending=false;serial=f.serial;revision=f.revision;}
-    else if(planPending){operation=4;order=pages;a=area;generation=epoch.load();serial=inputSerial.load();planPending=false;}
+    else if(planPending){operation=4;order=pages;a=area;generation=epoch.load();serial=inputSerial.load();planPending=false;planActive=true;}
    }
    try{
     if(operation==1)configure(root,stamp);
@@ -73,6 +74,7 @@ private:
      }
     }
    }catch(...){++errors;if(operation==3)warmResult=-1;}
+   if(operation==1 || operation==4)planActive=false;
   }
  }
  void QueueSave(const Frame& f){
@@ -85,6 +87,7 @@ private:
  }
 public:
  std::atomic<int> warmResult{0};std::atomic<uint64_t> preloads{0},captures{0},errors{0},deferredWrites{0};
+ bool Planning(){std::lock_guard<std::mutex> lock(mutex);return configurePending || planPending || planActive.load();}
  SnapshotPipeline(SnapshotCache& c,std::atomic<uint64_t>& e,std::function<uint64_t()> clock,
   std::function<void(std::wstring,std::wstring)> config,std::function<std::wstring(int)> lookup,Load read,Save write,Capture shot,std::function<void()> init={}):
   cache(c),epoch(e),now(clock),configure(config),known(lookup),load(read),save(write),capture(shot),initialize(init){}

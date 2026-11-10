@@ -5,6 +5,7 @@ Add-Type @'
 public static class DeskPagesHost {
  public static bool SnapshotCacheEnabled=true;
  public static int Captures;
+ public static bool SnapshotRefreshRequired=true;
  public static bool NeedsSnapshotCapture(string key){return false;}
  public static void SnapshotSceneContext(string context){}
  public static void TrackSnapshotItems(string[] rows){}
@@ -21,6 +22,10 @@ try{
  # Repeated actual warm requests with unchanged geometry must replace pixels.
  foreach($i in 1..100){Warm-DpCurrentSnapshot}
  if([DeskPagesHost]::Captures -ne 100){throw 'An unchanged layout suppressed image refresh.'}
+ [DeskPagesHost]::SnapshotRefreshRequired=$false
+ foreach($i in 1..100){Warm-DpCurrentSnapshot}
+ if([DeskPagesHost]::Captures -ne 100){throw 'Unchanged restored disk snapshot was captured again'}
+ [DeskPagesHost]::SnapshotRefreshRequired=$true
  $script:DpSuspended=$true;Warm-DpCurrentSnapshot;$script:DpSuspended=$false
  New-Item -ItemType File -Path (Join-Path $temp 'transition.xml') | Out-Null
  Warm-DpCurrentSnapshot

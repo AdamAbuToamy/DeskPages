@@ -66,6 +66,7 @@ std::atomic<HWND> coverWindow{nullptr};
 std::atomic<int> visible{0},playing{0},motionEnded{0};
 std::atomic<unsigned int> captureSample{0};
 std::atomic<uint64_t> snapshotEpoch{1},snapshotRevision{1},snapshotBytes{0},sourceHits{0},targetHits{0},snapshotMisses{0},captureCalls{0},sourceMs{0},targetMs{0},warmMs{0};
+std::atomic<uint64_t> sceneSignals{1};
 std::atomic<uint64_t> foregroundCaptures{0};
 deskpages::SnapshotDisk diskSnapshots;
 size_t ResidentBudget(){MEMORYSTATUSEX m{};m.dwLength=sizeof(m);return GlobalMemoryStatusEx(&m)?size_t(std::max<uint64_t>(128ull<<20,std::min<uint64_t>(512ull<<20,m.ullTotalPhys/32))):128ull<<20;}
@@ -165,8 +166,12 @@ class Renderer {
                 return 0;
             }
             if(message==WM_DISPLAYCHANGE || message==WM_DPICHANGED || message==WM_QUERYENDSESSION || (message==WM_SETTINGCHANGE && wp==SPI_SETDESKWALLPAPER) || message==WM_THEMECHANGED || message==WM_DWMCOLORIZATIONCOLORCHANGED || (message==WM_POWERBROADCAST && deskpages::ScenePowerEvent(wp))){
-                ++snapshotEpoch;++snapshotRevision;self->ClearSnapshots();
-                self->Abort();Report("Transition cancelled: display/session configuration changed");return message==WM_QUERYENDSESSION?TRUE:0;
+                // Notifications are not proof that the desktop pixels changed.
+                // The managed scene fingerprint validates geometry/theme/wallpaper
+                // before invalidating CPU or disk snapshots. GPU retirement alone
+                // must not turn the next two page switches into fresh captures.
+                ++sceneSignals;++snapshotRevision;
+                self->Abort();Report("Transition cancelled: scene verification requested; resident snapshots retained");return message==WM_QUERYENDSESSION?TRUE:0;
             }
         }
         return DefWindowProcW(window,message,wp,lp);
@@ -593,7 +598,7 @@ __declspec(dllexport) void __cdecl DPInvalidateSnapshotPage(int page){
 }
 __declspec(dllexport) void __cdecl DPInvalidateSnapshots(){++snapshotEpoch;++snapshotRevision;}
 __declspec(dllexport) int __cdecl DPClearSnapshots(){snapshotPipeline.Suspend();++snapshotRevision;auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ClearSnapshots;return Submit(job);}
-__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return residentSnapshots.Bytes();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();case 11:return residentSnapshots.Limit();case 12:return residentSnapshots.Count();case 13:return snapshotPipeline.preloads.load();case 14:return snapshotPipeline.captures.load();case 15:return snapshotPipeline.errors.load();case 16:return snapshotPipeline.deferredWrites.load();case 17:return foregroundCaptures.load();default:return 0;}}
+__declspec(dllexport) unsigned long long __cdecl DPGetSnapshotValue(int index){switch(index){case 0:return residentSnapshots.Bytes();case 1:return sourceHits.load();case 2:return targetHits.load();case 3:return snapshotMisses.load();case 4:return captureCalls.load();case 5:return sourceMs.load();case 6:return targetMs.load();case 7:return warmMs.load();case 8:return diskSnapshots.hits.load();case 9:return diskSnapshots.writes.load();case 10:return diskSnapshots.errors.load();case 11:return residentSnapshots.Limit();case 12:return residentSnapshots.Count();case 13:return snapshotPipeline.preloads.load();case 14:return snapshotPipeline.captures.load();case 15:return snapshotPipeline.errors.load();case 16:return snapshotPipeline.deferredWrites.load();case 17:return foregroundCaptures.load();case 18:return sceneSignals.load();case 19:return snapshotPipeline.Planning()?1:0;default:return 0;}}
 __declspec(dllexport) int __cdecl DPConfirmCachedTarget(int count,const wchar_t* key){auto job=new(std::nothrow)Job;if(!job)return 0;job->op=Op::ConfirmTarget;job->iconCount=count;if(key)job->targetKey=key;return Submit(job);}
 __declspec(dllexport) int __cdecl DPWarmSnapshot(const wchar_t* key,int left,int top,int width,int height){
     if(!key || std::wcslen(key)>256 || width<=0 || height<=0 || static_cast<uint64_t>(width)*height>40000000)return 0;

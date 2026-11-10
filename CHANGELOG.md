@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.41 · Persistent screenshot reuse
+
+- Validate scene notifications before invalidating resident screenshots.
+- Rehydrate missing RAM images in the background and avoid recapturing matching disk snapshots.
+- Add native notification-retention, cold-RAM reload and fresh-process aged-file restoration tests.
+
+
 ## 0.8.40 · Command and snapshot performance repairs
 
 - Atomically bound concurrent input submissions to three queued commands.

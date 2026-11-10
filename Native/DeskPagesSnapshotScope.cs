@@ -10,7 +10,9 @@ public static class DeskPagesSnapshotScope {
  [DllImport("user32.dll")]static extern IntPtr MonitorFromPoint(Point point,uint flags);
  [DllImport("shcore.dll")]static extern int GetDpiForMonitor(IntPtr monitor,int kind,out uint x,out uint y);
  public static string Hash(string context){
-  var b=new StringBuilder("DeskPagesSnapshot5|").Append(System.Globalization.CultureInfo.CurrentUICulture.Name).Append(context);
+  var b=new StringBuilder("DeskPagesSnapshot6|").Append(System.Globalization.CultureInfo.CurrentUICulture.Name).Append(context);
+  var font=System.Drawing.SystemFonts.IconTitleFont;
+  b.Append('|').Append(Environment.OSVersion.Version).Append('|').Append(font.Name).Append('|').Append(font.SizeInPoints).Append('|').Append(font.Style).Append('|').Append(SystemInformation.IconSize).Append('|').Append(SystemInformation.IconSpacingSize).Append('|').Append(SystemInformation.HighContrast);
   foreach(var screen in Screen.AllScreens){b.Append('|').Append(screen.DeviceName).Append(screen.WorkingArea).Append(screen.Bounds);uint x,y;if(GetDpiForMonitor(MonitorFromPoint(new Point{X=screen.Bounds.Left,Y=screen.Bounds.Top},2),0,out x,out y)==0)b.Append('|').Append(x).Append(':').Append(y);}
   foreach(var path in new[]{@"Control Panel\Desktop",@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",@"Software\Microsoft\Windows\DWM"})using(var key=Registry.CurrentUser.OpenSubKey(path)){
    if(key==null)continue;foreach(var name in new[]{"Wallpaper","WallPaperStyle","TileWallpaper","AppsUseLightTheme","SystemUsesLightTheme","ColorizationColor","AccentColor"}){var value=key.GetValue(name);b.Append('|').Append(name).Append('=').Append(value);if(name=="Wallpaper" && value is string && File.Exists((string)value))b.Append(File.GetLastWriteTimeUtc((string)value).Ticks);}

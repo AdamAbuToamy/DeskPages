@@ -15,6 +15,11 @@ int main(){
  pipe.Configure(L"test",L"scope");pipe.Prime({1,2,3},area);
  Wait([&]{return pipe.preloads.load()==3;});
  auto key=ResidentKey(L"1:layout:stamp",area);auto original=cache.GetShared(key,1,Clock());assert(original && (*original)[0]==42);
+ // Idle re-prime restores cold RAM from disk without scheduling a new capture.
+ auto loaded=pipe.preloads.load();cache.Clear();pipe.Prime({1,2,3},area);
+ Wait([&]{return pipe.preloads.load()==loaded+3;});assert(pipe.captures==0 && !shooting);
+ original=cache.GetShared(key,1,Clock());assert(original && (*original)[0]==42);
+ assert(cache.GetShared(key,1,Clock()+366ull*24*60*60*1000)==original);
  pipe.Prime({1,2,3,8},area);Wait([&]{return reading.load();});
  // Deliberately stalled disk decoder must not hold the navigation RAM lock.
  int before=reads;auto start=Clock();for(int i=0;i<20000;i++)assert(cache.GetShared(key,1,Clock())==original);assert(Clock()-start<2000 && reads==before);

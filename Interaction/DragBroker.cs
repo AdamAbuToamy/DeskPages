@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly:AssemblyProduct("DeskPages")]
 [assembly:AssemblyCompany("Adam Abu Toamy")]
 [assembly:AssemblyCopyright("Copyright 2026 Adam Abu Toamy")]
-[assembly:AssemblyVersion("0.8.40.0")]
-[assembly:AssemblyFileVersion("0.8.40.0")]
+[assembly:AssemblyVersion("0.8.41.0")]
+[assembly:AssemblyFileVersion("0.8.41.0")]
 
 // Runs with Explorer's normal user token. An elevated process cannot accept
 // Explorer OLE drops across UIPI; this process never changes files or attributes.
@@ -78,7 +78,7 @@ internal sealed class DragBroker:ApplicationContext {
         mouseHook=OnMouse;keyHook=OnKey;
         StartInputHooks();
         peerIdentity=DeskPagesDragLifetime.Identity();PublishHealth();
-        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.40");
+        timer=new System.Windows.Forms.Timer{Interval=40};timer.Tick+=delegate{Tick();};timer.Start();Trace("drag broker ready; version=0.8.41");
     }
     private long preferenceRead;
     private void Tick(){

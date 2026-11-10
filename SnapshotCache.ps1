@@ -45,5 +45,6 @@ function Warm-DpCurrentSnapshot {
     # ShouldWarm is event driven. A shell icon-image change may keep exactly
     # the same membership, labels and positions, so key equality is not a veto.
     $key=Get-DpSnapshotKey -Page $page;Remember-DpSnapshotKey $page $key
+    if(-not [DeskPagesHost]::SnapshotRefreshRequired -and -not [DeskPagesHost]::NeedsSnapshotCapture($key)){return}
     [DeskPagesHost]::WarmSnapshot($key)
 }

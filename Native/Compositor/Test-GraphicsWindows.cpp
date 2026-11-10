@@ -26,6 +26,12 @@ struct GraphicsFixture {
    residentSnapshots.PutShared(L"1:gpu-reset-fixture",retained,generation,GetTickCount64());
    renderer.root.reset();renderer.Prepare();
    WinCheck(snapshotEpoch.load()==generation && residentSnapshots.GetShared(L"1:gpu-reset-fixture",generation,GetTickCount64())==retained,"GPU rebuild discarded resident CPU snapshots");
+   auto signals=sceneSignals.load();
+   for(UINT message:{WM_POWERBROADCAST,WM_QUERYENDSESSION,WM_DISPLAYCHANGE,WM_THEMECHANGED,WM_DWMCOLORIZATIONCOLORCHANGED}){
+    SendMessageW(renderer.hwnd,message,message==WM_POWERBROADCAST?PBT_APMRESUMEAUTOMATIC:0,0);
+    WinCheck(snapshotEpoch.load()==generation && residentSnapshots.GetShared(L"1:gpu-reset-fixture",generation,GetTickCount64())==retained,"Unvalidated scene notification discarded unchanged screenshots");
+   }
+   WinCheck(sceneSignals.load()==signals+5,"Scene notifications did not request fingerprint validation");
    const auto handles=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
    for(int repeat=0;repeat<2;repeat++)for(int direction:{-1,1})for(int delay:{0,100,650})for(bool changed:{false,true}){
     Job begin;begin.op=Op::Begin;begin.left=30;begin.top=30;begin.width=480;begin.height=260;

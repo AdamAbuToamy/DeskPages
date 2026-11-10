@@ -1,21 +1,22 @@
-# DeskPages 0.8.40 Alpha 1 — bounded commands and lighter snapshot updates
+# DeskPages 0.8.41 Alpha 1 — preserve unchanged desktop screenshots
 
-Windows 11 x64 engineering preview with measured component repairs. This is not a claim that all responsiveness issues are resolved or that physical input-to-transition latency is below 50ms.
+Windows 11 x64 engineering preview addressing cold page switches after idle time, application use and session/power notifications.
 
 ## Changes
 
-- Reserve command queue capacity atomically so concurrent submissions cannot exceed its three-command limit. Release reservations on dequeue or enqueue failure.
-- Reuse background file metadata for unchanged desktop items, refresh notified paths, and fully rescan after membership changes or watcher recovery. Remove metadata for deleted catalog entries and preserve selective page invalidation.
-- Remove the redundant old-manifest write during target visibility preparation. Source membership and the transition journal remain durable; the verified target still commits at the existing final commit point.
+- Power, display, theme and session notifications request scene validation instead of immediately discarding resident CPU screenshots. Real geometry, DPI, wallpaper, theme, icon font/spacing and OS rendering changes still invalidate the scene.
+- Re-prime missing hot images from persistent storage on the background worker while idle. Existing resident hits do not reread image files.
+- Let existing disk preloads finish before scheduling an idle capture. Startup/layout verification reuses a matching stored image; explicit pixel-change events still refresh it.
+- Log unchanged scene validation and retain the previous drag lifetime and performance repairs.
 
-## Measured component results
+Snapshots remain compressed and protected for the current Windows user under LocalAppData/DeskPages/HiddenPages/Snapshots. They have no age-based expiry. The expanded scene fingerprint can require one initial recapture after upgrading. Actual disk loading still takes time after process startup; this update schedules it before navigation where possible.
 
-- Queue: 1,000 rounds with 16 simultaneous senders exceeded capacity 158 times before and zero times after. With two BelowNormal CPU workers and 64MiB of test memory: 238 violations before and zero after. No queue latency speedup is claimed; measured P99 increased in the initial paired trials.
-- Snapshot catalog: 100 notifications against 1,000 temporary files reduced metadata probes from 100,000 to 100. Mean background update time changed from 82.14ms to 5.16ms, P95 from 111.54ms to 7.87ms, and P99 from 121.55ms to 9.53ms. Three reverse-order repeat trials confirmed the reduction. These are catalog completion times, not navigation timings.
-- Isolated target preparation, 100 calls: redundant manifest writes changed from 100 to zero, mean from 107.01ms to 86.11ms and P99 from 310.98ms to 223.10ms. These are preparation timings, not whole-navigation timings.
+## Validation
 
-## Validation and remaining scope
+The old renderer failed a regression where an actual Windows resume notification discarded an unchanged resident snapshot. The patched renderer passed power/session/display/theme/color notification retention and validation-signal checks, GPU rebuild retention, and 24 DWM fixture transitions under CPU contention.
 
-Native builds and targeted queue, catalog, missed-notification, posted-message dispatch, animation sequence, visibility, drag recovery/drop and child-process crash-recovery tests passed locally. The local broad run failed the existing global taskbar shortcut-registration fixture; its logic is unchanged. Other following suites passed separately. Publication requires the repository's GitHub Windows regression/stress and Microsoft Defender scan gates.
+Cache tests cleared RAM then reloaded through the disk loader with zero captures. The native encrypted store test aged a temporary record's timestamps by 366 days, launched a fresh Windows process and verified identical restored pixels without capture; changed scene/layout/geometry and corrupted data remained rejected. This is simulated file age plus fresh-process restoration, not an actual year-long wait or physical Windows reboot.
 
-Physical 100/1,000 desktop navigation loops, hours-long endurance, fully stressed RAM/CPU, comprehensive resource-leak measurements and the 50ms input-to-transition objective remain unverified. The controlled load test is not full resource exhaustion. The Alpha installer is not Authenticode-signed.
+Warm-request tests preserved 100 explicit image refreshes while 100 unchanged restored-image checks added zero captures. Native/managed builds and focused key, catalog, scene, transaction, PowerShell and package checks passed locally. Public assets require the repository's GitHub Windows regression/stress and Microsoft Defender gates.
+
+Extended physical Chrome/YouTube/Netflix workflows, physical reboot behavior, hours-long endurance and the 50ms navigation objective remain device acceptance. This Alpha installer is not Authenticode-signed.

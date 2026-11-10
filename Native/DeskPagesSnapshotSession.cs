@@ -14,6 +14,9 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     readonly List<FileSystemWatcher> watchers=new List<FileSystemWatcher>();
     long dirtyAt,nextReport,nextHook,retryAt;int pending=1,observerFailed,observerUnhealthy,scopeDirty=1;bool disposed;
     string sceneContext="",scope="";bool storeReady;
+    ulong sceneSignals;long nextPrime;
+    int forcePixels;bool forceWarm;
+    public bool RefreshPixels {get{return forceWarm;}}
     readonly Dictionary<int,string> readyKeys=new Dictionary<int,string>();
     readonly DeskPagesSnapshotCatalog catalog;string warmingKey;int[] pages=new int[0];int catalogReady;
     public void SetPages(int[] value){pages=(int[])value.Clone();catalog.SetPages(value);}
@@ -21,10 +24,13 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
     public string PageStamp(int page){return catalog.Digest(page);}
     void InvalidatePages(int[] values){if(disposed)return;foreach(int page in values)DeskPagesAnimation.InvalidateSnapshotPage(page);if(Array.IndexOf(values,Volatile.Read(ref currentPage))>=0)RequestCheck();}
     void FileChanged(string path){catalog.FileChanged(path,Volatile.Read(ref currentPage));}
-    public void ScheduleWarm(string key){if(string.IsNullOrEmpty(key)){RequestCheck();return;}if(DeskPagesAnimation.ScheduleWarmSnapshot(key))warmingKey=key;else{retryAt=Now+100;RequestCheck();}}
+    public void ScheduleWarm(string key){if(string.IsNullOrEmpty(key)){RequestCheck(forceWarm);return;}if(DeskPagesAnimation.ScheduleWarmSnapshot(key))warmingKey=key;else{retryAt=Now+100;RequestCheck(forceWarm);}}
     public void SceneContext(string value){value=value??"";if(sceneContext!=value){sceneContext=value;Invalidate();}}
     public bool EnsureScene(){
-        if(!Enabled)return false;if(Volatile.Read(ref observerUnhealthy)!=0)Interlocked.Exchange(ref scopeDirty,1);if(Interlocked.Exchange(ref scopeDirty,0)==0 && storeReady)return true;
+        if(!Enabled)return false;
+        ulong signal=DeskPagesAnimation.SceneSignals;bool verifySignal=signal!=sceneSignals;
+        if(verifySignal){sceneSignals=signal;Interlocked.Exchange(ref scopeDirty,1);}
+        if(Volatile.Read(ref observerUnhealthy)!=0)Interlocked.Exchange(ref scopeDirty,1);if(Interlocked.Exchange(ref scopeDirty,0)==0 && storeReady)return true;
         string next=DeskPagesSnapshotScope.Hash(sceneContext);
         if(!storeReady){
             string folder=Path.Combine(Folder,"Snapshots");Directory.CreateDirectory(folder);
@@ -34,6 +40,7 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
             Directory.SetAccessControl(folder,acl);DeskPagesAnimation.ConfigureSnapshotStore(folder,next);storeReady=true;
         }
         if(scope!=next){DeskPagesAnimation.InvalidateSnapshots();DeskPagesAnimation.ConfigureSnapshotStore(Path.Combine(Folder,"Snapshots"),next);readyKeys.Clear();scope=next;DeskPagesStartupGate.Log("snapshot scene changed; encrypted records validated by scope");}
+        else if(verifySignal)DeskPagesStartupGate.Log("snapshot scene notification validated unchanged; resident and persistent images retained");
         return true;
     }
     public string KnownKey(int page){if(!EnsureScene())return "";var stamp=PageStamp(page);if(stamp.Length==0)return "";string key=DeskPagesAnimation.SavedSnapshotKey(page);return key.EndsWith(":"+stamp,StringComparison.Ordinal)?key:"";}
@@ -78,9 +85,9 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         if((evt==0x800b || evt==0x800c) && child<=0)return;
         string root=Class(GetAncestor(hwnd,2));if((root=="Progman" || root=="WorkerW") && (Class(hwnd)=="SysListView32" || Class(hwnd)=="SHELLDLL_DefView" || obj==0))RequestCheck();
     }
-    public void RequestLayoutRefresh(){retryAt=0;RequestCheck();Interlocked.Exchange(ref dirtyAt,Now-40);}
-    void RequestCheck(){if(disposed)return;Interlocked.Exchange(ref dirtyAt,Now);Interlocked.Exchange(ref pending,1);}
-    public void Invalidate(){Interlocked.Exchange(ref scopeDirty,1);RequestCheck();}
+    public void RequestLayoutRefresh(){retryAt=0;RequestCheck(false);Interlocked.Exchange(ref dirtyAt,Now-40);}
+    void RequestCheck(bool pixels=true){if(disposed)return;if(pixels)Interlocked.Exchange(ref forcePixels,1);Interlocked.Exchange(ref dirtyAt,Now);Interlocked.Exchange(ref pending,1);}
+    public void Invalidate(){Interlocked.Exchange(ref scopeDirty,1);RequestCheck(false);}
     public void SetEnabled(bool value){
         // Never enable a stale cache when file or shell event observation failed.
         if(value){RefreshHook();scope="";}
@@ -90,9 +97,9 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         if(!value)DeskPagesAnimation.ClearSnapshots();
     }
     public bool ShouldWarm(){
-        if(!Enabled || disposed || warmingKey!=null || Now<retryAt)return false;
+        if(!Enabled || disposed || warmingKey!=null || Now<retryAt || DeskPagesAnimation.PreloadPending)return false;
         if(Interlocked.CompareExchange(ref pending,0,0)==0 || Now-Interlocked.Read(ref dirtyAt)<40 || (GetAsyncKeyState(1)&0x8000)!=0)return false;
-        if(!EnsureScene())return false;Interlocked.Exchange(ref pending,0);return true;
+        if(!EnsureScene() || DeskPagesAnimation.PreloadPending)return false;Interlocked.Exchange(ref pending,0);forceWarm=Interlocked.Exchange(ref forcePixels,0)!=0;return true;
     }
     public void BeginSample(long received=0,long waited=0){inputAgeAtStart=received>0?Math.Max(0,Now-received):0;queueWait=waited;navigation=Stopwatch.StartNew();firstSlide=-1;cachedPreview=false;captureAtStart=DeskPagesAnimation.ForegroundCaptureCalls;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     public void Source(string key){DeskPagesAnimation.SnapshotSourceKey=key;}
@@ -106,12 +113,17 @@ public sealed class DeskPagesSnapshotSession:IDisposable {
         }}catch(Exception ex){DeskPagesStartupGate.Log("performance sample: "+ex.Message);}finally{navigation=null;DeskPagesAnimation.SnapshotSourceKey="";DeskPagesAnimation.SnapshotTargetKey="";}
     }
     public void Poll(){
+        // Rehydrate missing hot images from persistent storage while idle, not
+        // on the first navigation after a resource purge or application switch.
+        // Prime performs disk work on the native worker; hot hits do no disk I/O.
+        if(Enabled && EnsureScene() && Now>=nextPrime){nextPrime=Now+1000;DeskPagesAnimation.PrimeSnapshots(pages,currentPage);}
         if(Interlocked.Exchange(ref catalogReady,0)!=0)DeskPagesAnimation.PrimeSnapshots(pages,currentPage);
         if(warmingKey!=null){int result=DeskPagesAnimation.TakeWarmResult();if(result!=1){string key=warmingKey;warmingKey=null;Captured(key,result==2);}}
         if(Enabled && scopeDirty!=0){EnsureScene();DeskPagesAnimation.PrimeSnapshots(pages,currentPage);}
         if(Interlocked.Exchange(ref observerFailed,0)!=0){
             bool healthy=true;foreach(var watcher in watchers)try{watcher.EnableRaisingEvents=false;watcher.EnableRaisingEvents=Enabled;}catch(Exception ex){healthy=false;DeskPagesStartupGate.Log("snapshot watcher retry: "+ex.Message);}
             catalog.Rescan();
+            RequestCheck();
             Interlocked.Exchange(ref observerUnhealthy,healthy?0:1);if(!healthy)Interlocked.Exchange(ref observerFailed,1);Invalidate();DeskPagesStartupGate.Log("snapshot watcher rescan; caching preference retained");
         }
         long now=Now;if(Enabled && now>=nextHook){nextHook=now+2000;RefreshHook();}if(now<nextReport)return;nextReport=now+5000;
