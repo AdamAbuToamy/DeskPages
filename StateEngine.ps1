@@ -120,6 +120,28 @@ function Suspend-DpSession {
     $script:DpSuspended=$true
     Write-DpAtomicXml -Path (Join-Path $script:DpStore 'suspended.xml') -Value ([PSCustomObject]@{At=[DateTime]::UtcNow;Current=$script:DpState.Current;Reason='Show all / recovery'})
 }
+function Resume-DpProtectedSession {
+    if(-not $script:DpSuspended){return}
+    # Explicit show-all/recovery is a user choice, never auto-resume that mode.
+    if(Test-Path -LiteralPath (Join-Path $script:DpStore 'suspended.xml')){throw 'DeskPages is in explicit recovery mode. Resume the saved pages using Run-Admin.cmd.'}
+    try{
+        $script:DpState=Read-DpManifest $script:DpManifest
+        if(Get-Command Assert-DpWorkspaceState -ErrorAction SilentlyContinue){Assert-DpWorkspaceState $script:DpState}
+        Connect-DpDesktop
+        $signal=$null
+        if(Get-Command Get-DpDisplaySignal -ErrorAction SilentlyContinue){$signal=Get-DpDisplaySignal}
+        if(Get-Command Repair-DpWorkspaceTransaction -ErrorAction SilentlyContinue){Repair-DpWorkspaceTransaction}
+        Resume-DpCommittedPage
+        if($null -ne $signal -and (Get-DpDisplaySignal)[0] -ne $signal[0]){throw 'The display changed again during recovery.'}
+        # Do not save the mixed live view or clear protection before verification.
+        $script:DpSuspended=$false
+        Write-DpLog 'Protected session resumed after committed membership/layout verification; saved layouts retained.'
+    }catch{
+        $script:DpSuspended=$true
+        Write-DpLog ('Protected session recovery deferred: '+[string]$_)
+        throw ('Navigation remains protected because the saved desktop could not be restored: '+[string]$_)
+    }
+}
 function Restore-DpStartupPage {
     param([bool]$Main=$false)
     $previous=[int]$script:DpState.Current

@@ -56,7 +56,7 @@ try {
             exit $child.ExitCode
         }
     }
-    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.41.0')}
+    if($SelfTest){. (Join-Path $script:base 'PackageIntegrity.ps1');Assert-DpPackage -Root $script:base -Version ([Version]'0.8.42.0')}
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Web.Extensions
@@ -264,7 +264,7 @@ try {
     function Invoke-DpAction {
         param([int]$Code)
         try {
-            if ($script:DpSuspended -and $Code -lt 9000) {throw 'Session suspended; switching is blocked.'}
+            if ($script:DpSuspended -and $Code -lt 9000) {Resume-DpProtectedSession}
             if($Code -lt 9000 -or $Code -in @(9000,9002,9101,9102,9300)){Stop-DpNewItemPlacement}
             $pages=@(Get-DpActivePages | ForEach-Object {[int]$_})
             $current=[int]$script:DpState.Current

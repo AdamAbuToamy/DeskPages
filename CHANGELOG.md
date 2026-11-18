@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.42 · Verified protected-session recovery
+
+- Retry committed-page restoration on navigation after transient suspension.
+- Clear protection only after layout verification with stable display revision.
+- Preserve explicit recovery mode and expose the actual recovery failure reason.
+- Add isolated suspended-session recovery regressions.
+
+
 ## 0.8.41 · Persistent screenshot reuse
 
 - Validate scene notifications before invalidating resident screenshots.
