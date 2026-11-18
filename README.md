@@ -7,9 +7,9 @@ Created by **Adam Abu Toamy** · **Windows 11 x64** · **Alpha**
 <!-- deskpages-download:start -->
 ## Download
 
-[**Download DeskPages 0.8.40 for Windows 11 x64 — EXE installer**](https://github.com/AdamAbuToamy/DeskPages/releases/download/v0.8.40-alpha.1/DeskPages-Setup-0.8.40.exe)
+[**Download DeskPages 0.8.41 for Windows 11 x64 — EXE installer**](https://github.com/AdamAbuToamy/DeskPages/releases/download/v0.8.41-alpha.1/DeskPages-Setup-0.8.41.exe)
 
-Published installer and source: **0.8.40 Alpha**.
+Published installer and source: **0.8.41 Alpha**.
 <!-- deskpages-download:end -->
 
 
